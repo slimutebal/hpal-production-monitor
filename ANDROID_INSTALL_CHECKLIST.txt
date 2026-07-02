@@ -1,0 +1,8 @@
+HPAL Production Monitor PWA — Android install checklist
+
+1. Upload folder HPALProductionMonitor_PWA ke hosting HTTPS, contoh Netlify atau GitHub Pages.
+2. Buka link HTTPS dari Chrome Android.
+3. Menu titik tiga > Add to Home screen / Install app.
+4. Buka dari icon HPAL di home screen.
+5. Buka sekali saat online agar cache offline tersimpan.
+6. Untuk update, replace file di hosting dan naikkan CACHE_NAME di service-worker.js.
