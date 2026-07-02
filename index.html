@@ -1083,14 +1083,22 @@ function renderNIChart(){
   const highlightPlugin = {
     id:'niDropHighlight',
     beforeDraw(chart){
-      const {ctx, chartArea:{top, bottom}} = chart;
+      // Android Chrome / some WebView builds can call plugin hooks before
+      // chartArea and bar geometry are ready. Guard this path so Excel parsing
+      // still succeeds and the chart can render on the next draw.
+      if(!chart || !chart.chartArea) return;
+      const {ctx, chartArea} = chart;
+      const {top, bottom} = chartArea;
+      const meta = chart.getDatasetMeta(0);
+      if(!meta || !meta.data) return;
+
       d.labels.forEach((lbl, i) => {
         if(!niDropSet.has(lbl)) return;
-        const meta = chart.getDatasetMeta(0);
-        if(!meta.data[i]) return;
         const bar = meta.data[i];
-        const x = bar.x - bar.width/2 - 4;
-        const w = bar.width + 8;
+        if(!bar || typeof bar.x !== 'number') return;
+        const barWidth = Number(bar.width) || 0;
+        const x = bar.x - barWidth/2 - 4;
+        const w = barWidth + 8;
         ctx.save();
         const grad = ctx.createLinearGradient(0, top, 0, bottom);
         grad.addColorStop(0, 'rgba(248,113,113,0.16)');

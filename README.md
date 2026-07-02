@@ -1,19 +1,16 @@
-# HPAL Production Monitor Mobile PWA Fixed Update
+# HPAL Production Monitor Mobile PWA — ChartFix
 
-This package fixes the broken raw-JavaScript display issue.
-
-Root cause: the previous update injected the service-worker registration before the wrong `</body>` occurrence inside the bundled SheetJS JavaScript string. That prematurely closed the script block and caused the remaining JavaScript to render as page text.
-
-Upload these files to the repository root and replace existing files:
+Upload/replace only these files in the GitHub repo root:
 
 - `index.html`
 - `service-worker.js`
-- `.nojekyll`
 
-Commit message suggestion:
+Do not re-upload `.nojekyll`; it already exists in the repository.
 
-```text
-Fix mobile PWA HTML script injection
-```
+## Fix included
 
-After GitHub Pages deploys, clear site data or open in Incognito if the old broken page persists due to PWA cache.
+This update guards the Chart.js NI-drop highlight plugin against Android/Chrome cases where `chart.chartArea` or bar geometry is not ready during the first draw. Without the guard, Android can throw:
+
+`Cannot read properties of undefined (reading 'top')`
+
+That error happens after the Excel file has already been parsed, when the NI chart rendering starts.
