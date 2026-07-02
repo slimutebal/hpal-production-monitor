@@ -18,38 +18,44 @@ Fokus utama aplikasi:
 - Menampilkan resume perpindahan per kontraktor.
 - Menyediakan tampilan mobile-friendly untuk penggunaan di HP.
 - Mendukung PWA/offline cache via GitHub Pages.
+- Mendukung instalasi ke home screen Android dan iOS.
 
 ---
 
 ## Status terbaru
 
-**Current release:** `Dark / Light / Auto UI Update`
+**Current release:** `iOS PWA Tooltip Fix + Dark / Light / Auto UI`
 
 Update terbaru mencakup:
 
-1. **Theme UI baru**
+1. **Fix tooltip grafik di iOS PWA**
+   - Memperbaiki bug tooltip/popup pada grafik `Analisis NI per Jam` yang tidak bisa hilang ketika aplikasi dibuka dari **Add to Home Screen** di iOS.
+   - Menambahkan handler untuk tap/click di luar chart agar tooltip Chart.js dipaksa clear.
+   - Mendukung event `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
+
+2. **Theme UI baru**
    - Dark mode.
    - Light mode.
    - Auto mode mengikuti preferensi sistem/browser.
 
-2. **Data kontraktor permanen diperbarui**
+3. **Data kontraktor permanen diperbarui**
    - Embedded contractor database diperbarui menjadi **705 entri** dari `List_DT.xlsx` terbaru.
    - Data tertanam langsung di aplikasi, sehingga tetap tersedia tanpa upload ulang.
 
-3. **Sub-baris dome collapsible**
+4. **Sub-baris dome collapsible**
    - Baris `HGLO`, `MGLO`, dan `LGLO` sekarang bisa diklik.
    - Ada indikator panah `▸` dan jumlah dome di sampingnya.
    - Sub-baris default tersembunyi.
    - Toggle per class independen: membuka `HGLO` tidak memengaruhi `MGLO` atau `LGLO`.
 
-4. **Kolom ΔNI dirapikan**
+5. **Kolom ΔNI dirapikan**
    - Header dan isi cell kolom `ΔNI` dibuat rata tengah.
 
-5. **Urutan section diperbaiki**
+6. **Urutan section diperbaiki**
    - `📋 Resume Perpindahan per Kontraktor` tampil lebih dulu.
    - `🔁 Perpindahan DT` tampil setelahnya.
 
-6. **Perbaikan mobile/PWA sebelumnya tetap dipertahankan**
+7. **Perbaikan mobile/PWA sebelumnya tetap dipertahankan**
    - Guard untuk error Android Chrome/WebView pada Chart.js: `Cannot read properties of undefined (reading 'top')`.
    - Local storage compatibility untuk penyimpanan data lokal.
    - Service worker cache untuk penggunaan offline setelah site pertama kali dibuka.
@@ -110,6 +116,12 @@ Di Safari iOS/iPadOS:
 3. Pilih **Add to Home Screen**.
 4. Tap **Add**.
 
+Catatan iOS:
+
+- Jika aplikasi yang sudah dipasang masih menampilkan versi lama, hapus aplikasi dari home screen lalu tambahkan ulang.
+- iOS PWA dapat menahan cache lebih agresif dibanding browser biasa.
+- Update terbaru sudah memperbaiki tooltip grafik yang sebelumnya bisa tertahan/sticky saat app dijalankan dari home screen.
+
 ---
 
 ## Offline mode
@@ -131,6 +143,7 @@ Catatan:
 - Offline mode bergantung pada cache browser.
 - Jika browser menghapus site data/cache, aplikasi perlu dibuka online lagi.
 - Update aplikasi dari GitHub memerlukan koneksi internet.
+- Untuk update besar, terutama di iOS PWA, kadang perlu remove/add ulang dari home screen.
 
 ---
 
@@ -178,10 +191,19 @@ service-worker.js
 5. Commit ke branch `main`.
 6. Tunggu GitHub Pages deployment selesai.
 7. Jika perangkat masih menampilkan versi lama, hapus site data/cache untuk `slimutebal.github.io`.
+8. Untuk iOS Add to Home Screen, remove app dari home screen lalu add ulang jika cache masih tertahan.
 
 ---
 
 ## Changelog
+
+### iOS PWA Tooltip Fix
+
+- Fixed sticky Chart.js tooltip/popup on iOS when the app is launched from **Add to Home Screen**.
+- Added outside-tap handling to clear active chart elements.
+- Added support for `pointerdown`, `touchstart`, `click`, `scroll`, and `visibilitychange` events.
+- Preserved browser behavior where tooltip disappears when tapping outside the chart.
+- Bumped PWA cache version to force update delivery.
 
 ### Dark / Light / Auto UI Update
 
@@ -205,6 +227,14 @@ service-worker.js
 - Added PWA manifest.
 - Added service worker offline cache.
 - Added mobile install support via Chrome/Safari.
+
+---
+
+## Known notes
+
+- iOS PWA cache can be persistent. If a deployed update does not appear, remove the home-screen app and add it again.
+- Android/Chrome usually receives service worker updates faster, but site data/cache may still need to be cleared after major updates.
+- Tooltip behavior differs between normal browser tabs and standalone PWA mode, so both modes should be tested after chart-related changes.
 
 ---
 
