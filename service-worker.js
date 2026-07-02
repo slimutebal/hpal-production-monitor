@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.1.0-mobile';
+const CACHE_NAME = 'hpal-production-monitor-v1.1.1-mobile-fixed';
 const APP_SHELL = [
   './',
   './index.html',
@@ -35,7 +35,7 @@ self.addEventListener('fetch', (event) => {
 
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-cache' })
         .then((response) => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
