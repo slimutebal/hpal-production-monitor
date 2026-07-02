@@ -1388,6 +1388,72 @@ function renderNIChart(){
     plugins:[highlightPlugin]
   });
 
+  // iOS standalone/PWA tooltip dismiss fix:
+  // Chart.js menggambar tooltip di dalam canvas. Pada iOS PWA/Add to Home Screen,
+  // tap di luar canvas tidak selalu meng-clear active element Chart.js, sehingga
+  // tooltip dapat terlihat "menempel". Listener ini memaksa tooltip/hover state
+  // dibersihkan saat user tap/scroll di luar chart.
+  if(window._niChartTooltipCleanup){
+    try{ window._niChartTooltipCleanup(); }catch(e){}
+  }
+
+  function clearNIChartTooltip(){
+    const c = Chart.getChart(canvas);
+    if(!c) return;
+    try{
+      if(typeof c.setActiveElements === 'function') c.setActiveElements([]);
+      if(c.tooltip && typeof c.tooltip.setActiveElements === 'function'){
+        c.tooltip.setActiveElements([], {x:0, y:0});
+      }
+      c.update('none');
+    }catch(e){ /* non-fatal UI cleanup */ }
+  }
+
+  function isInsideNIChart(target){
+    return !!(target && (target === canvas || (wrap && wrap.contains(target))));
+  }
+
+  function handleOutsideNIChartTap(ev){
+    if(isInsideNIChart(ev.target)) return;
+    clearNIChartTooltip();
+  }
+
+  function handleNIChartCanvasTap(ev){
+    // Kalau user tap area kosong canvas, tooltip lama juga harus hilang.
+    // Delay singkat memberi Chart.js kesempatan memproses tap pada titik/bar valid.
+    setTimeout(() => {
+      const c = Chart.getChart(canvas);
+      if(!c) return;
+      try{
+        const hits = typeof c.getElementsAtEventForMode === 'function'
+          ? c.getElementsAtEventForMode(ev, 'nearest', {intersect:true}, false)
+          : [];
+        if(!hits || hits.length === 0) clearNIChartTooltip();
+      }catch(e){
+        // Pada sebagian TouchEvent iOS, helper hit-test bisa gagal. Fallback:
+        // biarkan tap di canvas diproses Chart.js; outside tap tetap ditangani global.
+      }
+    }, 0);
+  }
+
+  const niDismissEvents = ['pointerdown', 'touchstart', 'click'];
+  niDismissEvents.forEach(evt => document.addEventListener(evt, handleOutsideNIChartTap, true));
+  canvas.addEventListener('pointerdown', handleNIChartCanvasTap, true);
+  canvas.addEventListener('touchstart', handleNIChartCanvasTap, true);
+
+  const handleNIChartPassiveClear = () => clearNIChartTooltip();
+  window.addEventListener('scroll', handleNIChartPassiveClear, true);
+  document.addEventListener('visibilitychange', handleNIChartPassiveClear, true);
+
+  window._niChartTooltipCleanup = function(){
+    niDismissEvents.forEach(evt => document.removeEventListener(evt, handleOutsideNIChartTap, true));
+    canvas.removeEventListener('pointerdown', handleNIChartCanvasTap, true);
+    canvas.removeEventListener('touchstart', handleNIChartCanvasTap, true);
+    window.removeEventListener('scroll', handleNIChartPassiveClear, true);
+    document.removeEventListener('visibilitychange', handleNIChartPassiveClear, true);
+  };
+
+
   // Resize dinamis saat rotasi / perubahan ukuran layar (iOS Safari kadang tidak
   // memicu resize otomatis Chart.js setelah orientationchange)
   if(window._niChartResizeHandler){
