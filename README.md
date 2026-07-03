@@ -1,6 +1,6 @@
 # HPAL Production Monitor
 
-**HPAL Production Monitor** adalah aplikasi web/PWA ringan untuk membantu monitoring produksi HPAL berbasis file Excel timbangan. Aplikasi ini berjalan langsung di browser, mendukung mode offline setelah pertama kali dibuka, dan bisa dipasang ke home screen Android/iOS seperti aplikasi.
+**HPAL Production Monitor** adalah aplikasi web/PWA ringan untuk membantu monitoring hauling **Limonite** berbasis file Excel timbangan. Aplikasi berjalan langsung di browser, mendukung mode offline setelah pertama kali dibuka, dan bisa dipasang ke home screen Android/iOS seperti aplikasi.
 
 **Live app:** [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
 
@@ -8,14 +8,15 @@
 
 ## Ringkasan
 
-Aplikasi ini dibuat untuk membaca data timbangan dari file Excel, lalu menampilkan ringkasan produksi, ritase, tonase, ore class, kadar Ni, data dome, kontraktor, dan indikasi perpindahan DT.
+Aplikasi ini dibuat untuk membaca data timbangan dari file Excel, lalu menampilkan ringkasan produksi, ritase, tonase, ore class, kadar Ni, ID dome, kontraktor, serta indikasi perpindahan DT.
 
 Fokus utama aplikasi:
 
-- Monitoring produksi HPAL dari data Excel timbangan.
-- Membaca data ritase, tonase, ore class, dome, dan kadar Ni.
+- Monitoring hauling Limonite dari data Excel timbangan.
+- Membaca ritase, tonase, ore class, dome, dan kadar Ni.
 - Mendeteksi perpindahan DT antar kontraktor/dome/class.
 - Menampilkan resume perpindahan per kontraktor.
+- Menganalisis NI per jam dan indikasi penyumbang perubahan NI terhadap base.
 - Menyediakan tampilan mobile-friendly untuk penggunaan di HP.
 - Mendukung PWA/offline cache via GitHub Pages.
 - Mendukung instalasi ke home screen Android dan iOS.
@@ -24,41 +25,68 @@ Fokus utama aplikasi:
 
 ## Status terbaru
 
-**Current release:** `iOS PWA Tooltip Fix + Dark / Light / Auto UI`
+**Current release:** `NI Indikasi Fix + iOS PWA Tooltip Fix + Dark / Light / Auto UI`
 
 Update terbaru mencakup:
 
-1. **Fix tooltip grafik di iOS PWA**
-   - Memperbaiki bug tooltip/popup pada grafik `Analisis NI per Jam` yang tidak bisa hilang ketika aplikasi dibuka dari **Add to Home Screen** di iOS.
-   - Menambahkan handler untuk tap/click di luar chart agar tooltip Chart.js dipaksa clear.
-   - Mendukung event `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
+### 1. Logika INDIKASI NI per jam diperbaiki
 
-2. **Theme UI baru**
-   - Dark mode.
-   - Light mode.
-   - Auto mode mengikuti preferensi sistem/browser.
+Kolom **INDIKASI** pada tabel `Analisis NI per Jam` sekarang menggunakan kontribusi terhadap base NI, bukan sekadar perubahan mix antar jam.
 
-3. **Data kontraktor permanen diperbarui**
-   - Embedded contractor database diperbarui menjadi **705 entri** dari `List_DT.xlsx` terbaru.
-   - Data tertanam langsung di aplikasi, sehingga tetap tersedia tanpa upload ulang.
+Aturan label:
 
-4. **Sub-baris dome collapsible**
-   - Baris `HGLO`, `MGLO`, dan `LGLO` sekarang bisa diklik.
-   - Ada indikator panah `▸` dan jumlah dome di sampingnya.
-   - Sub-baris default tersembunyi.
-   - Toggle per class independen: membuka `HGLO` tidak memengaruhi `MGLO` atau `LGLO`.
+```text
+abs(ΔNI) < 0.009          → —
+0.009 <= abs(ΔNI) < 0.015 → Mix sedikit berubah
+abs(ΔNI) >= 0.015         → penyumbang utama + faktor penahan opsional
+```
 
-5. **Kolom ΔNI dirapikan**
-   - Header dan isi cell kolom `ΔNI` dibuat rata tengah.
+Contoh label:
 
-6. **Urutan section diperbaiki**
-   - `📋 Resume Perpindahan per Kontraktor` tampil lebih dulu.
-   - `🔁 Perpindahan DT` tampil setelahnya.
+```text
+↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
+```
 
-7. **Perbaikan mobile/PWA sebelumnya tetap dipertahankan**
-   - Guard untuk error Android Chrome/WebView pada Chart.js: `Cannot read properties of undefined (reading 'top')`.
-   - Local storage compatibility untuk penyimpanan data lokal.
-   - Service worker cache untuk penggunaan offline setelah site pertama kali dibuka.
+Makna label:
+
+- `↓ LGLO -0.030 DOME-12` = penyumbang utama yang menarik NI turun.
+- `↑ HGLO +0.008 DOME-03` = faktor penahan yang membantu menahan penurunan NI.
+
+### 2. Fix tooltip grafik di iOS PWA
+
+- Memperbaiki bug tooltip/popup pada grafik `Analisis NI per Jam` yang tidak bisa hilang ketika aplikasi dibuka dari **Add to Home Screen** di iOS.
+- Menambahkan handler tap/click di luar chart agar tooltip Chart.js dipaksa clear.
+- Mendukung event `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
+
+### 3. Theme UI baru
+
+- Dark mode.
+- Light mode.
+- Auto mode mengikuti preferensi sistem/browser.
+
+### 4. Data kontraktor permanen diperbarui
+
+- Embedded contractor database diperbarui menjadi **705 entri** dari `List_DT.xlsx` terbaru.
+- Data tertanam langsung di aplikasi, sehingga tetap tersedia tanpa upload ulang.
+
+### 5. Sub-baris dome collapsible
+
+- Baris `HGLO`, `MGLO`, dan `LGLO` sekarang bisa diklik.
+- Ada indikator panah `▸` dan jumlah dome di sampingnya.
+- Sub-baris default tersembunyi.
+- Toggle per class independen: membuka `HGLO` tidak memengaruhi `MGLO` atau `LGLO`.
+
+### 6. Penyempurnaan tampilan tabel
+
+- Header dan isi cell kolom `ΔNI` dibuat rata tengah.
+- `📋 Resume Perpindahan per Kontraktor` tampil lebih dulu.
+- `🔁 Perpindahan DT` tampil setelahnya.
+
+### 7. Perbaikan mobile/PWA sebelumnya tetap dipertahankan
+
+- Guard untuk error Android Chrome/WebView pada Chart.js: `Cannot read properties of undefined (reading 'top')`.
+- Local storage compatibility untuk penyimpanan data lokal.
+- Service worker cache untuk penggunaan offline setelah site pertama kali dibuka.
 
 ---
 
@@ -78,7 +106,7 @@ Format yang ditargetkan:
 
 - File Excel `.xlsx`.
 - Sheet utama: `过磅明细`.
-- Format data HYNC/SLNC atau format yang sudah didukung oleh parser aplikasi.
+- Format data FPP atau format lain yang sudah didukung oleh parser aplikasi.
 
 ### 3. Baca hasil monitoring
 
@@ -88,9 +116,25 @@ Setelah file terbaca, aplikasi akan menampilkan:
 - Tonase dan ritase.
 - Breakdown ore class.
 - Visualisasi kadar Ni.
+- Analisis NI per jam.
 - Resume perpindahan per kontraktor.
 - Perpindahan DT.
 - Sub-baris dome per ore class.
+
+---
+
+## Fitur utama
+
+| Fitur | Keterangan |
+|---|---|
+| Upload Excel | Membaca file `.xlsx` timbangan dari perangkat pengguna. |
+| Analisis NI per jam | Menampilkan tonase per ore class dan line kadar NI per jam. |
+| Indikasi ΔNI | Menjelaskan penyumbang utama naik/turun NI dari base. |
+| Resume kontraktor | Merangkum perpindahan DT per kontraktor. |
+| Perpindahan DT | Menampilkan indikasi perpindahan DT antar dome/class/kontraktor. |
+| Collapsible dome rows | Baris dome per `HGLO`, `MGLO`, dan `LGLO` dapat dibuka/tutup. |
+| Theme mode | Mendukung dark, light, dan auto mode. |
+| Offline/PWA | Bisa dipasang ke home screen dan digunakan kembali dari cache. |
 
 ---
 
@@ -127,8 +171,6 @@ Catatan iOS:
 ## Offline mode
 
 Aplikasi mendukung offline mode melalui service worker.
-
-Alur kerja:
 
 ```text
 Pertama kali:
@@ -174,13 +216,13 @@ hpal-production-monitor/
 
 ---
 
-## Cara update aplikasi
+## Catatan maintenance
 
 Untuk update manual via GitHub:
 
 1. Siapkan `index.html` versi terbaru.
 2. Jika cache PWA perlu dipaksa refresh, update juga `service-worker.js` dan naikkan nama cache.
-3. Upload/replace file di root repo:
+3. Upload/replace file berikut di root repo:
 
 ```text
 index.html
@@ -196,6 +238,22 @@ service-worker.js
 ---
 
 ## Changelog
+
+### NI Indikasi Fix
+
+- Improved `INDIKASI` logic in `Analisis NI per Jam`.
+- Replaced simple mix-change indication with contribution-based explanation against base NI.
+- Added threshold logic:
+  - `abs(ΔNI) < 0.009` → `—`
+  - `0.009 <= abs(ΔNI) < 0.015` → `Mix sedikit berubah`
+  - `abs(ΔNI) >= 0.015` → contributor analysis
+- Added compact contributor label format:
+
+```text
+↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
+```
+
+- Added optional holding-factor display when the counter-contribution is meaningful.
 
 ### iOS PWA Tooltip Fix
 
@@ -235,6 +293,7 @@ service-worker.js
 - iOS PWA cache can be persistent. If a deployed update does not appear, remove the home-screen app and add it again.
 - Android/Chrome usually receives service worker updates faster, but site data/cache may still need to be cleared after major updates.
 - Tooltip behavior differs between normal browser tabs and standalone PWA mode, so both modes should be tested after chart-related changes.
+- GitHub Pages deployment dapat sesekali stuck/queued. Jika live app masih berjalan, deployment terakhir yang sukses tetap aktif.
 
 ---
 
