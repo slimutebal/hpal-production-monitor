@@ -949,29 +949,84 @@ function processData(rows, buyer){
   function mixPct(cls, h){ return grandHourTonase[h] > 0 ? (classHourTonase(cls,h) / grandHourTonase[h] * 100) : 0; }
 
   // Dominant cause logic
+  // Indikasi sekarang dihitung terhadap NI base, bukan lagi dari perubahan mix antar jam.
+  // Kontribusi = share tonase * (NI aktual - NI base), sehingga penjelasan mengikuti arah ΔNI.
+  const INDICATION_IGNORE_ABS = 0.009;
+  const INDICATION_SMALL_ABS = 0.015;
+  const RESTRAINT_MIN_ABS = 0.005;
+
+  function fmtContribution(v){
+    return (v > 0 ? '+' : '') + v.toFixed(3);
+  }
+
+  function contributionArrow(v){
+    return v < 0 ? '↓' : '↑';
+  }
+
+  function dominantContributionDome(group, wantPositive){
+    const domes = Object.values(group.domes || {}).filter(d => d && Number.isFinite(d.contrib));
+    if(!domes.length) return '';
+    domes.sort((a,b) => wantPositive ? (b.contrib - a.contrib) : (a.contrib - b.contrib));
+    const top = domes[0];
+    return top && top.dome ? top.dome : '';
+  }
+
+  function formatContributionPart(group, wantPositive){
+    if(!group || !Number.isFinite(group.contrib)) return '';
+    const dome = dominantContributionDome(group, wantPositive);
+    return `${contributionArrow(group.contrib)} ${group.cls} ${fmtContribution(group.contrib)}${dome ? ' ' + escapeHtml(dome) : ''}`;
+  }
+
   function dominantCause(h){
     const delta = deltaNI[h];
-    if(delta === null || grandHourTonase[h] === 0) return '—';
-    const prevH = activeHours[activeHours.indexOf(h) - 1];
-    if(!prevH) return '—';
-    const diffs = oreClasses.map(cls => ({ cls, diff: mixPct(cls, h) - mixPct(cls, prevH) }));
-    if(delta < 0){
-      const lgloUp = diffs.find(d => d.cls === 'LGLO')?.diff ?? 0;
-      const mgloUp = diffs.find(d => d.cls === 'MGLO')?.diff ?? 0;
-      const hgloDown = -(diffs.find(d => d.cls === 'HGLO')?.diff ?? 0);
-      const reasons = [];
-      if(lgloUp > 5) reasons.push(`↑ LGLO +${lgloUp.toFixed(0)}%`);
-      if(mgloUp > 5) reasons.push(`↑ MGLO +${mgloUp.toFixed(0)}%`);
-      if(hgloDown > 5) reasons.push(`↓ HGLO -${hgloDown.toFixed(0)}%`);
-      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
-    } else {
-      const hgloUp = diffs.find(d => d.cls === 'HGLO')?.diff ?? 0;
-      const lgloDown = -(diffs.find(d => d.cls === 'LGLO')?.diff ?? 0);
-      const reasons = [];
-      if(hgloUp > 5) reasons.push(`↑ HGLO +${hgloUp.toFixed(0)}%`);
-      if(lgloDown > 5) reasons.push(`↓ LGLO -${lgloDown.toFixed(0)}%`);
-      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
+    const totalTonaseHour = grandHourTonase[h] || 0;
+    if(delta === null || totalTonaseHour === 0) return '—';
+
+    const absDelta = Math.abs(delta);
+    if(absDelta < INDICATION_IGNORE_ABS) return '—';
+    if(absDelta < INDICATION_SMALL_ABS) return 'Mix sedikit berubah';
+
+    const groups = {};
+    records.forEach(r => {
+      const d = r.waktuIsiDate;
+      if(!d || d.getHours() !== h || !r.netto) return;
+      const gradeValid = r.grade !== null && r.grade !== undefined && Number.isFinite(Number(r.grade));
+      const grade = gradeValid ? Number(r.grade) : 0;
+      const cls = gradeValid ? (classifyOre(grade) || 'UNCL') : 'NO_NI';
+      const dome = r.dome || '(Tanpa Dome)';
+      const contrib = ((grade - niBase) * r.netto) / totalTonaseHour;
+
+      if(!groups[cls]) groups[cls] = { cls, contrib: 0, domes: {} };
+      groups[cls].contrib += contrib;
+      if(!groups[cls].domes[dome]) groups[cls].domes[dome] = { dome, contrib: 0 };
+      groups[cls].domes[dome].contrib += contrib;
+    });
+
+    const groupList = Object.values(groups).filter(g => Number.isFinite(g.contrib) && Math.abs(g.contrib) > 0.0005);
+    if(!groupList.length) return 'Mix sedikit berubah';
+
+    const isDrop = delta < 0;
+    const sameDirection = groupList.filter(g => isDrop ? g.contrib < 0 : g.contrib > 0);
+    const oppositeDirection = groupList.filter(g => isDrop ? g.contrib > 0 : g.contrib < 0);
+
+    const main = sameDirection.length
+      ? sameDirection.sort((a,b) => isDrop ? (a.contrib - b.contrib) : (b.contrib - a.contrib))[0]
+      : groupList.slice().sort((a,b) => Math.abs(b.contrib) - Math.abs(a.contrib))[0];
+
+    const parts = [];
+    const mainPart = formatContributionPart(main, !isDrop);
+    if(mainPart) parts.push(mainPart);
+
+    const restraint = oppositeDirection
+      .filter(g => Math.abs(g.contrib) >= RESTRAINT_MIN_ABS)
+      .sort((a,b) => isDrop ? (b.contrib - a.contrib) : (a.contrib - b.contrib))[0];
+
+    if(restraint){
+      const restraintPart = formatContributionPart(restraint, isDrop);
+      if(restraintPart) parts.push(restraintPart);
     }
+
+    return parts.length ? parts.join('; ') : 'Mix sedikit berubah';
   }
 
   const chartLabels = activeHours.map(h => pad2(h)+':00');

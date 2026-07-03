@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.5.0-ios-tooltip-fix';
+const CACHE_NAME = 'hpal-production-monitor-v1.6.0-ni-indikasi-fix';
 const APP_SHELL = [
   './',
   './index.html',
