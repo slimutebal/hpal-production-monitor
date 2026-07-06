@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.6.0-ni-indikasi-fix';
+const CACHE_NAME = 'hpal-production-monitor-v1.6.0-contractor-sync';
 const APP_SHELL = [
   './',
   './index.html',
@@ -32,6 +32,16 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
 
   if (request.method !== 'GET') return;
+
+  // Request lintas-origin (mis. Google Apps Script untuk sync data kontraktor) TIDAK PERNAH
+  // di-cache dan selalu diteruskan langsung ke jaringan. Tanpa pengecualian ini, respons dari
+  // Sheet akan ke-cache selamanya dan user berikutnya selalu dapat data kontraktor basi,
+  // meski koneksi internet lancar.
+  const requestUrl = new URL(request.url);
+  if (requestUrl.origin !== self.location.origin) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(

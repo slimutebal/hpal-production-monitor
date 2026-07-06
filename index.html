@@ -249,6 +249,39 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     background:var(--accent-chip); color:var(--btn-text); font-size:0.7rem; font-weight:700;
     padding:4px 11px; border-radius:999px; letter-spacing:0.04em;
   }
+  .modal-overlay{
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(0,0,0,0.5);
+    align-items:flex-end; justify-content:center;
+    padding:0;
+  }
+  .modal-box{
+    background:var(--glass-strong);
+    -webkit-backdrop-filter:blur(24px) saturate(170%);
+    backdrop-filter:blur(24px) saturate(170%);
+    border:1px solid var(--glass-border);
+    border-bottom:none;
+    border-radius:20px 20px 0 0;
+    padding:18px 16px calc(20px + env(safe-area-inset-bottom));
+    width:100%; max-width:480px;
+    max-height:85vh; overflow-y:auto;
+    box-shadow:0 -8px 40px rgba(0,0,0,0.4);
+  }
+  @media(min-width:640px){
+    .modal-overlay{align-items:center;}
+    .modal-box{border-radius:20px; margin-bottom:0;}
+  }
+  .modal-field{margin-bottom:12px;}
+  .modal-field label{display:block; font-size:0.75rem; color:var(--muted); margin-bottom:5px; text-transform:uppercase; letter-spacing:0.04em;}
+  .modal-field input{
+    width:100%; background:rgba(255,255,255,0.06); border:1px solid var(--glass-border);
+    color:var(--text); padding:11px 12px; border-radius:10px; font-size:0.95rem;
+    min-height:44px;
+  }
+  html[data-theme="light"] .modal-field input{background:rgba(15,23,42,0.04);}
+  .modal-field input:focus{outline:2px solid var(--accent); outline-offset:1px;}
+  .modal-log-line{font-size:0.78rem; padding:5px 0; border-bottom:1px solid var(--glass-border-soft);}
+  .modal-log-line:last-child{border-bottom:none;}
   .section-title{font-size:0.95rem; font-weight:700; margin:20px 4px 8px; display:flex; align-items:center; gap:6px;
                  text-shadow:var(--section-shadow);}
   .error-box{
@@ -284,29 +317,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .upload-row .card{margin-bottom:0;}
   }
 </style>
-<link rel="manifest" href="./manifest.webmanifest">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="HPAL Monitor">
-<script id="pwa-local-storage-shim">
-(function(){
-  if (window.storage && typeof window.storage.get === 'function' && typeof window.storage.set === 'function') return;
-  window.storage = {
-    async get(key){
-      return { value: window.localStorage.getItem(key) };
-    },
-    async set(key, value){
-      window.localStorage.setItem(key, String(value));
-      return { ok: true };
-    },
-    async remove(key){
-      window.localStorage.removeItem(key);
-      return { ok: true };
-    }
-  };
-})();
-</script>
-
 </head>
 <body>
 
@@ -351,6 +361,31 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   <div id="fileStatus"></div>
 </div>
 </div><!-- /upload-row -->
+
+<!-- MODAL: Update Kontraktor Manual -->
+<div id="contractorModalOverlay" class="modal-overlay">
+  <div class="modal-box">
+    <div class="card-head">
+      <h2>➕ Update Kontraktor</h2>
+      <button class="btn ghost" id="btnCloseModal" type="button">✕</button>
+    </div>
+    <div class="modal-field">
+      <label for="modalDtInput">No DT</label>
+      <input type="text" id="modalDtInput" placeholder="Contoh: SCM-LIM 982" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label for="modalContractorInput">Nama Kontraktor</label>
+      <input type="text" id="modalContractorInput" placeholder="Contoh: MRP" autocomplete="off">
+    </div>
+    <div id="modalMsg"></div>
+    <div class="row" style="margin-top:10px;">
+      <button class="btn" id="btnSubmitContractor" type="button">💾 Simpan</button>
+      <button class="btn ghost" id="btnCloseModal2" type="button">Selesai</button>
+    </div>
+    <div class="info-text" style="margin-top:10px;">Data langsung berlaku di HP ini. Kalau ada koneksi internet, otomatis tersinkron ke server pusat dan berlaku untuk semua pengguna.</div>
+    <div id="modalSessionLog" style="margin-top:10px;"></div>
+  </div>
+</div>
 
 <div id="output"></div>
 
@@ -429,8 +464,15 @@ function initThemeToggle(){
 /* ---------------- CONTRACTOR SETUP ---------------- */
 
 const STORAGE_KEY = 'dt_contractor_map_v1';
-const EMBEDDED_CONTRACTOR_MAP = {"ADT 001": "ADT HJS", "ADT 002": "ADT HJS", "ADT 003": "ADT HJS", "ADT 004": "ADT HJS", "ADT 005": "ADT HJS", "ADT 006": "ADT HJS", "ADT 007": "ADT HJS", "ADT 008": "ADT HJS", "ADT 009": "ADT HJS", "ADT 010": "ADT HJS", "ADT 011": "ADT HJS", "ADT 012": "ADT HJS", "ADT 013": "ADT HJS", "ADT 014": "ADT HJS", "ADT 015": "ADT HJS", "ADT 016": "ADT HJS", "ADT 017": "ADT HJS", "ADT 018": "ADT HJS", "ADT 019": "ADT HJS", "ADT 020": "ADT HJS", "ADT 021": "ADT HJS", "ADT 022": "ADT HJS", "ADT 023": "ADT HJS", "ADT 024": "ADT HJS", "ADT 025": "ADT HJS", "ADT 026": "ADT HJS", "ADT 027": "ADT HJS", "ADT 028": "ADT HJS", "ADT 029": "ADT HJS", "ADT 030": "ADT HJS", "ADT 031": "ADT HJS", "ADT 032": "ADT HJS", "ADT 033": "ADT HJS", "ADT 034": "ADT HJS", "ADT 035": "ADT HJS", "ADT 036": "ADT HJS", "ADT 037": "ADT HJS", "ADT 038": "ADT HJS", "ADT 039": "ADT HJS", "ADT 040": "ADT HJS", "ADT 041": "ADT HJS", "ADT 042": "ADT HJS", "ADT 043": "ADT HJS", "ADT 044": "ADT HJS", "ADT 045": "ADT HJS", "ADT 046": "ADT HJS", "ADT 047": "ADT HJS", "ADT 048": "ADT HJS", "ADT 050": "ADT HJS", "ADT 051": "ADT HJS", "ADT-RL 001": "ADT REAL", "ADT-RL 007": "ADT REAL", "ADT-RL 012": "ADT REAL", "ADT-RL 013": "ADT REAL", "ADT-RL 014": "ADT REAL", "ADT-RL 015": "ADT REAL", "ADT-RL 016": "ADT REAL", "ADT-RL 017": "ADT REAL", "ADT-RL 018": "ADT REAL", "ADT-RL 019": "ADT REAL", "ADT-RL 020": "ADT REAL", "ADT-RL 021": "ADT REAL", "ADT-RL 022": "ADT REAL", "ADT-RL 023": "ADT REAL", "ADT-RL 024": "ADT REAL", "ADT-RL 025": "ADT REAL", "ADT-RL 047": "ADT REAL", "DT014KS": "HYNC", "DT022KS": "HYNC", "DT045KS": "HYNC", "DT3004PB": "HYNC", "DT3006PB": "HYNC", "DT3009PB": "HYNC", "DT3012PB": "HYNC", "DT3016PB": "HYNC", "DT3020PB": "HYNC", "DT3025PB": "HYNC", "DT3029PB": "HYNC", "DT3033PB": "HYNC", "DT-SCM-HLG 014": "MIM", "DT-SCM-HLG 036": "MIM", "DT-SCM-HLG 037": "MIM", "DT-SCM-HLG 038": "MIM", "DT-SCM-HLG 039": "MIM", "DT-SCM-HLG 040": "MIM", "DT-SCM-HLG 041": "MIM", "DT-SCM-HLG 042": "MIM", "DT-SCM-HLG 043": "MIM", "DT-SCM-HLG 044": "MIM", "DT-SCM-HLG 045": "MIM", "DT-SCM-HLG 046": "MIM", "DT-SCM-HLG 047": "MIM", "DT-SCM-HLG 048": "MIM", "DT-SCM-HLG 050": "MIM", "DT-SCM-HLG 182": "MIM", "DT-SCM-HLG 183": "MIM", "DT-SCM-HLG 184": "MIM", "DT-SCM-HLG 185": "MIM", "DT-SCM-HLG 186": "MIM", "DT-SCM-HLG 187": "MIM", "DT-SCM-HLG 188": "MIM", "DT-SCM-HLG 189": "MIM", "DT-SCM-HLG 191": "MIM", "DT-SCM-HLG 192": "MIM", "DT-SCM-HLG 193": "MIM", "DT-SCM-HLG 194": "MIM", "DT-SCM-HLG 392": "STM", "DT-SCM-HLG 393": "STM", "DT-SCM-HLG 394": "STM", "DT-SCM-HLG 395": "STM", "DT-SCM-HLG 396": "STM", "DT-SCM-HLG 397": "STM", "DT-SCM-HLG 398": "STM", "DT-SCM-HLG 399": "STM", "DT-SCM-HLG 400": "STM", "DT-SCM-HLG 401": "STM", "DT-SCM-HLG 402": "STM", "DT-SCM-HLG 403": "STM", "DT-SCM-HLG 404": "STM", "DT-SCM-HLG 405": "STM", "DT-SCM-HLG 406": "STM", "DT-SCM-HLG 407": "STM", "DT-SCM-HLG 408": "STM", "DT-SCM-HLG 409": "STM", "DT-SCM-HLG 410": "STM", "DT-SCM-HLG 412": "STM", "DT-SCM-HLG 413": "STM", "DT-SCM-HLG 414": "STM", "DT-SCM-HLG 415": "STM", "DT-SCM-HLG 416": "STM", "DT-SCM-HLG 417": "STM", "DT-SCM-HLG 418": "STM", "DT-SCM-HLG 419": "STM", "DT-SCM-HLG 420": "STM", "DT-SCM-HLG 422": "STM", "DT-SCM-HLG 424": "STM", "DT-SCM-HLG 425": "STM", "DT-SCM-HLG 426": "STM", "DT-SCM-HLG 427": "STM", "DT-SCM-HLG 428": "STM", "DT-SCM-HLG 429": "STM", "DT-SCM-HLG 430": "STM", "DT-SCM-HLG 431": "STM", "DT-SCM-HLG 432": "STM", "DT-SCM-HLG 433": "STM", "DT-SCM-HLG 434": "STM", "DT-SCM-HLG 435": "STM", "DT-SCM-HLG 436": "STM", "DT-SCM-HLG 437": "STM", "DT-SCM-HLG 438": "STM", "DT-SCM-HLG 439": "STM", "DT-SCM-HLG 440": "STM", "DT-SCM-HLG 441": "STM", "DT-SCM-HLG 442": "STM", "DT-SCM-HLG 443": "STM", "DT-SCM-HLG 444": "STM", "DT-SCM-HLG 445": "STM", "DT-SCM-HLG 446": "STM", "DT-SCM-HLG 447": "STM", "DT-SCM-HLG 448": "STM", "DT-SCM-HLG 449": "STM", "DT-SCM-HLG 450": "STM", "DT-SCM-HLG 451": "STM", "DT-SCM-HLG 453": "STM", "DT-SCM-HLG 454": "STM", "DT-SCM-HLG 455": "STM", "DT-SCM-HLG 458": "STM", "DT-SCM-HLG 459": "STM", "DT-SCM-HLG 460": "STM", "DT-SCM-HLG 462": "STM", "DT-SCM-HLG 463": "STM", "DT-SCM-HLG 464": "STM", "DT-SCM-HLG 465": "STM", "DT-SCM-HLG 466": "STM", "DT-SCM-HLG 467": "STM", "DT-SCM-HLG 468": "STM", "DT-SCM-HLG 469": "STM", "DT-SCM-HLG 470": "STM", "DT-SCM-HLG 471": "STM", "DT-SCM-HLG 473": "STM", "DT-SCM-HLG 474": "STM", "DT-SCM-HLG 475": "STM", "DT-SCM-HLG 476": "STM", "DT-SCM-HLG 480": "STM", "DT-SCM-HLG 481": "STM", "DT-SCM-HLG 482": "STM", "DT-SCM-HLG 485": "STM", "DT-SCM-HLG 486": "STM", "DT-SCM-HLG 488": "STM", "DT-SCM-HLG 490": "STM", "DT-SCM-HLG 491": "STM", "DT-SCM-HLG-014": "MIM", "DT-SCM-HLG-037": "MIM", "DT-SCM-HLG-038": "MIM", "DT-SCM-HLG-039": "MIM", "DT-SCM-HLG-040": "MIM", "DT-SCM-HLG-041": "MIM", "DT-SCM-HLG-042": "MIM", "DT-SCM-HLG-043": "MIM", "DT-SCM-HLG-044": "MIM", "DT-SCM-HLG-045": "MIM", "DT-SCM-HLG-046": "MIM", "DT-SCM-HLG-187": "MIM", "MIM 117": "MIM", "MIM 120": "MIM", "MIM 130": "MIM", "MIM -130": "MIM", "MIM 132": "MIM", "MIM 141": "MIM", "MIM 145": "MIM", "MIM 146": "MIM", "MIM 147": "MIM", "MIM 149": "MIM", "MIM 152": "MIM", "MIM 159": "MIM", "MIM 168": "MIM", "MIM 172": "MIM", "MIM-DT 113": "MIM", "MIM-DT 120": "MIM", "MIM-DT 130": "MIM", "MIM-DT 132": "MIM", "MIM-DT 141": "MIM", "MIM-DT 145": "MIM", "MIM-DT 146": "MIM", "MIM-DT 147": "MIM", "MIM-DT 148": "MIM", "MIM-DT 149": "MIM", "MIM-DT 172": "MIM", "SCM HLG 399": "STM", "SCM-HLG 357": "STM", "SCM-HLG 392": "STM", "SCM-HLG 393": "STM", "SCM-HLG 394": "STM", "SCM-HLG 395": "STM", "SCM-HLG 396": "STM", "SCM-HLG 397": "STM", "SCM-HLG 399": "STM", "SCM-HLG 400": "STM", "SCM-HLG 402": "STM", "SCM-HLG 408": "STM", "SCM-HLG 410": "STM", "SCM-HLG 415": "STM", "SCM-HLG 416": "STM", "SCM-HLG 419": "STM", "SCM-HLG 438": "STM", "SCM-HLG 441": "STM", "SCM-HLG 445": "STM", "SCM-HLG 447": "STM", "SCM-HLG 449": "STM", "SCM-HLG 450": "STM", "SCM-HLG 453": "STM", "SCM-HLG 455": "STM", "SCM-HLG 456": "STM", "SCM-HLG 458": "STM", "SCM-HLG 471": "STM", "SCM-HLG 472": "STM", "SCM-HLG 473": "STM", "SCM-HLG 474": "STM", "SCM-HLG 475": "STM", "SCM-HLG 483": "STM", "SCM-HLH 400": "STM", "SCM-LIM 200": "REAL", "SCM-LIM 201": "REAL", "SCM-LIM 202": "REAL", "SCM-LIM 203": "REAL", "SCM-LIM 204": "REAL", "SCM-LIM 205": "REAL", "SCM-LIM 206": "REAL", "SCM-LIM 207": "REAL", "SCM-LIM 208": "REAL", "SCM-LIM 209": "REAL", "SCM-LIM 211": "REAL", "SCM-LIM 212": "REAL", "SCM-LIM 213": "REAL", "SCM-LIM 214": "REAL", "SCM-LIM 215": "REAL", "SCM-LIM 216": "REAL", "SCM-LIM 217": "REAL", "SCM-LIM 219": "REAL", "SCM-LIM 220": "REAL", "SCM-LIM 221": "REAL", "SCM-LIM 301": "MRP", "SCM-LIM 302": "MRP", "SCM-LIM 303": "MRP", "SCM-LIM 304": "MRP", "SCM-LIM 305": "MRP", "SCM-LIM 306": "MRP", "SCM-LIM 307": "MRP", "SCM-LIM 308": "MRP", "SCM-LIM 309": "MRP", "SCM-LIM 310": "MRP", "SCM-LIM 311": "MRP", "SCM-LIM 312": "MRP", "SCM-LIM 313": "MRP", "SCM-LIM 314": "MRP", "SCM-LIM 315": "MRP", "SCM-LIM 316": "MRP", "SCM-LIM 317": "MRP", "SCM-LIM 318": "MRP", "SCM-LIM 319": "MRP", "SCM-LIM 320": "MRP", "SCM-LIM 321": "MRP", "SCM-LIM 322": "MRP", "SCM-LIM 323": "MRP", "SCM-LIM 324": "MRP", "SCM-LIM 325": "MRP", "SCM-LIM 326": "MRP", "SCM-LIM 327": "MRP", "SCM-LIM 328": "MRP", "SCM-LIM 329": "MRP", "SCM-LIM 330": "MRP", "SCM-LIM 331": "MRP", "SCM-LIM 332": "MRP", "SCM-LIM 333": "MRP", "SCM-LIM 334": "MRP", "SCM-LIM 335": "MRP", "SCM-LIM 336": "MRP", "SCM-LIM 337": "MRP", "SCM-LIM 338": "MRP", "SCM-LIM 339": "MRP", "SCM-LIM 340": "MRP", "SCM-LIM 341": "MRP", "SCM-LIM 342": "MRP", "SCM-LIM 343": "MRP", "SCM-LIM 344": "MRP", "SCM-LIM 345": "MRP", "SCM-LIM 346": "MRP", "SCM-LIM 347": "MRP", "SCM-LIM 348": "MRP", "SCM-LIM 349": "MRP", "SCM-LIM 350": "MRP", "SCM-LIM 351": "MRP", "SCM-LIM 352": "MRP", "SCM-LIM 353": "MRP", "SCM-LIM 354": "MRP", "SCM-LIM 355": "MRP", "SCM-LIM 356": "MRP", "SCM-LIM 357": "MRP", "SCM-LIM 358": "MRP", "SCM-LIM 359": "MRP", "SCM-LIM 360": "MRP", "SCM-LIM 361": "MRP", "SCM-LIM 362": "MRP", "SCM-LIM 363": "MRP", "SCM-LIM 364": "MRP", "SCM-LIM 365": "MRP", "SCM-LIM 366": "MRP", "SCM-LIM 367": "MRP", "SCM-LIM 368": "MRP", "SCM-LIM 369": "MRP", "SCM-LIM 370": "MRP", "SCM-LIM 371": "MRP", "SCM-LIM 372": "MRP", "SCM-LIM 373": "MRP", "SCM-LIM 374": "MRP", "SCM-LIM 375": "MRP", "SCM-LIM 376": "MRP", "SCM-LIM 377": "MRP", "SCM-LIM 378": "MRP", "SCM-LIM 379": "MRP", "SCM-LIM 380": "MRP", "SCM-LIM 381": "MRP", "SCM-LIM 382": "MRP", "SCM-LIM 383": "MRP", "SCM-LIM 384": "MRP", "SCM-LIM 385": "MRP", "SCM-LIM 386": "MRP", "SCM-LIM 387": "MRP", "SCM-LIM 388": "MRP", "SCM-LIM 389": "MRP", "SCM-LIM 390": "MRP", "SCM-LIM 391": "MRP", "SCM-LIM 392": "MRP", "SCM-LIM 393": "MRP", "SCM-LIM 394": "MRP", "SCM-LIM 395": "MRP", "SCM-LIM 396": "MRP", "SCM-LIM 397": "MRP", "SCM-LIM 398": "MRP", "SCM-LIM 399": "MRP", "SCM-LIM 400": "MRP", "SCM-LIM 401": "PMS", "SCM-LIM 402": "PMS", "SCM-LIM 403": "PMS", "SCM-LIM 404": "PMS", "SCM-LIM 405": "PMS", "SCM-LIM 406": "PMS", "SCM-LIM 407": "PMS", "SCM-LIM 408": "PMS", "SCM-LIM 409": "PMS", "SCM-LIM 410": "PMS", "SCM-LIM 411": "PMS", "SCM-LIM 412": "PMS", "SCM-LIM 413": "PMS", "SCM-LIM 414": "PMS", "SCM-LIM 415": "PMS", "SCM-LIM 416": "PMS", "SCM-LIM 417": "PMS", "SCM-LIM 418": "PMS", "SCM-LIM 501": "MIM", "SCM-LIM 502": "MIM", "SCM-LIM 503": "MIM", "SCM-LIM 504": "MIM", "SCM-LIM 505": "MIM", "SCM-LIM 506": "MIM", "SCM-LIM 507": "MIM", "SCM-LIM 508": "MIM", "SCM-LIM 509": "MIM", "SCM-LIM 510": "MIM", "SCM-LIM 511": "MIM", "SCM-LIM 512": "MIM", "SCM-LIM 513": "MIM", "SCM-LIM 514": "MIM", "SCM-LIM 515": "MIM", "SCM-LIM 516": "MIM", "SCM-LIM 517": "MIM", "SCM-LIM 518": "MIM", "SCM-LIM 519": "MIM", "SCM-LIM 520": "MIM", "SCM-LIM 521": "MIM", "SCM-LIM 522": "MIM", "SCM-LIM 523": "MIM", "SCM-LIM 524": "MIM", "SCM-LIM 525": "MIM", "SCM-LIM 526": "MIM", "SCM-LIM 527": "MIM", "SCM-LIM 528": "MIM", "SCM-LIM 529": "MIM", "SCM-LIM 530": "MIM", "SCM-LIM 531": "MIM", "SCM-LIM 532": "MIM", "SCM-LIM 533": "MIM", "SCM-LIM 534": "MIM", "SCM-LIM 535": "MIM", "SCM-LIM 536": "MIM", "SCM-LIM 537": "MIM", "SCM-LIM 538": "MIM", "SCM-LIM 539": "MIM", "SCM-LIM 540": "MIM", "SCM-LIM 541": "MIM", "SCM-LIM 542": "MIM", "SCM-LIM 543": "MIM", "SCM-LIM 544": "MIM", "SCM-LIM 545": "MIM", "SCM-LIM 546": "MIM", "SCM-LIM 547": "MIM", "SCM-LIM 548": "MIM", "SCM-LIM 549": "MIM", "SCM-LIM 550": "MIM", "SCM-LIM 551": "MIM", "SCM-LIM 552": "MIM", "SCM-LIM 553": "MIM", "SCM-LIM 554": "MIM", "SCM-LIM 555": "MIM", "SCM-LIM 556": "MIM", "SCM-LIM 557": "MIM", "SCM-LIM 558": "MIM", "SCM-LIM 559": "MIM", "SCM-LIM 560": "MIM", "SCM-LIM 561": "MIM", "SCM-LIM 562": "MIM", "SCM-LIM 563": "MIM", "SCM-LIM 564": "MIM", "SCM-LIM 565": "MIM", "SCM-LIM 566": "MIM", "SCM-LIM 567": "MIM", "SCM-LIM 568": "MIM", "SCM-LIM 569": "MIM", "SCM-LIM 570": "MIM", "SCM-LIM 571": "MIM", "SCM-LIM 572": "MIM", "SCM-LIM 573": "MIM", "SCM-LIM 574": "MIM", "SCM-LIM 575": "MIM", "SCM-LIM 576": "MIM", "SCM-LIM 577": "MIM", "SCM-LIM 578": "MIM", "SCM-LIM 579": "MIM", "SCM-LIM 580": "MIM", "SCM-LIM 581": "MIM", "SCM-LIM 582": "MIM", "SCM-LIM 583": "MIM", "SCM-LIM 584": "MIM", "SCM-LIM 585": "MIM", "SCM-LIM 586": "MIM", "SCM-LIM 587": "MIM", "SCM-LIM 588": "MIM", "SCM-LIM 589": "MIM", "SCM-LIM 590": "MIM", "SCM-LIM 591": "MIM", "SCM-LIM 592": "MIM", "SCM-LIM 593": "MIM", "SCM-LIM 594": "MIM", "SCM-LIM 595": "MIM", "SCM-LIM 596": "MIM", "SCM-LIM 597": "MIM", "SCM-LIM 598": "MIM", "SCM-LIM 601": "HYNC", "SCM-LIM 602": "HYNC", "SCM-LIM 603": "HYNC", "SCM-LIM 604": "HYNC", "SCM-LIM 605": "HYNC", "SCM-LIM 606": "HYNC", "SCM-LIM 607": "HYNC", "SCM-LIM 608": "HYNC", "SCM-LIM 609": "HYNC", "SCM-LIM 610": "HYNC", "SCM-LIM 611": "HYNC", "SCM-LIM 612": "HYNC", "SCM-LIM 613": "HYNC", "SCM-LIM 614": "HYNC", "SCM-LIM 615": "HYNC", "SCM-LIM 616": "HYNC", "SCM-LIM 617": "HYNC", "SCM-LIM 618": "HYNC", "SCM-LIM 619": "HYNC", "SCM-LIM 620": "HYNC", "SCM-LIM 621": "HYNC", "SCM-LIM 622": "HYNC", "SCM-LIM 623": "HYNC", "SCM-LIM 719": "PMS", "SCM-LIM 720": "PMS", "SCM-LIM 721": "PMS", "SCM-LIM 722": "PMS", "SCM-LIM 723": "PMS", "SCM-LIM 724": "PMS", "SCM-LIM 725": "PMS", "SCM-LIM 726": "PMS", "SCM-LIM 727": "PMS", "SCM-LIM 728": "PMS", "SCM-LIM 729": "PMS", "SCM-LIM 730": "PMS", "SCM-LIM 731": "PMS", "SCM-LIM 732": "PMS", "SCM-LIM 733": "PMS", "SCM-LIM 734": "PMS", "SCM-LIM 735": "PMS", "SCM-LIM 736": "PMS", "SCM-LIM 737": "PMS", "SCM-LIM 738": "PMS", "SCM-LIM 739": "PMS", "SCM-LIM 740": "PMS", "SCM-LIM 741": "PMS", "SCM-LIM 742": "PMS", "SCM-LIM 743": "PMS", "SCM-LIM 744": "PMS", "SCM-LIM 745": "PMS", "SCM-LIM 746": "PMS", "SCM-LIM 747": "PMS", "SCM-LIM 748": "PMS", "SCM-LIM 749": "PMS", "SCM-LIM 751": "PMS", "SCM-LIM 755": "PMS", "SCM-LIM 756": "PMS", "SCM-LIM 757": "PMS", "SCM-LIM 758": "PMS", "SCM-LIM 801": "JAM", "SCM-LIM 802": "JAM", "SCM-LIM 803": "JAM", "SCM-LIM 804": "JAM", "SCM-LIM 805": "JAM", "SCM-LIM 806": "JAM", "SCM-LIM 807": "JAM", "SCM-LIM 808": "JAM", "SCM-LIM 809": "JAM", "SCM-LIM 810": "JAM", "SCM-LIM 811": "JAM", "SCM-LIM 812": "JAM", "SCM-LIM 813": "JAM", "SCM-LIM 814": "JAM", "SCM-LIM 815": "JAM", "SCM-LIM 816": "JAM", "SCM-LIM 817": "JAM", "SCM-LIM 818": "JAM", "SCM-LIM 819": "JAM", "SCM-LIM 820": "JAM", "SCM-LIM 821": "JAM", "SCM-LIM 822": "JAM", "SCM-LIM 823": "JAM", "SCM-LIM 824": "JAM", "SCM-LIM 825": "JAM", "SCM-LIM 826": "JAM", "SCM-LIM 827": "JAM", "SCM-LIM 828": "JAM", "SCM-LIM 829": "JAM", "SCM-LIM 830": "JAM", "SCM-LIM 831": "JAM", "SCM-LIM 832": "JAM", "SCM-LIM 833": "JAM", "SCM-LIM 834": "JAM", "SCM-LIM 835": "JAM", "SCM-LIM 836": "JAM", "SCM-LIM 837": "JAM", "SCM-LIM 838": "JAM", "SCM-LIM 839": "JAM", "SCM-LIM 840": "JAM", "SCM-LIM 841": "JAM", "SCM-LIM 842": "JAM", "SCM-LIM 843": "JAM", "SCM-LIM 844": "JAM", "SCM-LIM 845": "JAM", "SCM-LIM 846": "JAM", "SCM-LIM 900": "TII", "SCM-LIM 901": "TII", "SCM-LIM 902": "TII", "SCM-LIM 903": "TII", "SCM-LIM 904": "TII", "SCM-LIM 905": "TII", "SCM-LIM 906": "TII", "SCM-LIM 907": "TII", "SCM-LIM 908": "TII", "SCM-LIM 909": "TII", "SCM-LIM 910": "TII", "SCM-LIM 911": "TII", "SCM-LIM 912": "TII", "SCM-LIM 913": "TII", "SCM-LIM 914": "TII", "SCM-LIM 915": "TII", "SCM-LIM 916": "TII", "SCM-LIM 917": "TII", "SCM-LIM 918": "TII", "SCM-LIM 919": "TII", "SCM-LIM 920": "TII", "SCM-LIM 921": "TII", "SCM-LIM 922": "TII", "SCM-LIM 923": "TII", "SCM-LIM 924": "TII", "SCM-LIM 925": "TII", "SCM-LIM 926": "TII", "SCM-LIM 927": "TII", "SCM-LIM 928": "TII", "SCM-LIM 929": "TII", "SCM-LIM 930": "TII", "SCM-LIM 931": "TII", "SCM-LIM 932": "TII", "SCM-LIM 933": "TII", "SCM-LIM 934": "TII", "SCM-LIM 935": "TII", "SCM-LIM 936": "TII", "SCM-LIM 937": "TII", "SCM-LIM 938": "TII", "SCM-LIM 939": "TII", "SCM-LIM 940": "TII", "SCM-LIM 941": "TII", "SCM-LIM 942": "TII", "SCM-LIM 943": "TII", "SCM-LIM 944": "TII", "SCM-LIM 945": "TII", "SCM-LIM 946": "TII", "SCM-LIM 947": "TII", "SCM-LIM 948": "TII", "SCM-LIM 949": "TII", "SCM-LIM 950": "TII", "SCM-LIM 951": "TII", "SCM-LIM 952": "TII", "SCM-LIM 953": "TII", "SCM-LIM 954": "TII", "SCM-LIM 955": "TII", "SCM-LIM 956": "TII", "SCM-LIM 957": "TII", "SCM-LIM 958": "TII", "SCM-LIM 959": "TII", "SCM-LIM 960": "TII", "SCM-LIM 961": "TII", "SCM-LIM 962": "TII", "SCM-LIM 963": "TII", "SCM-LIM 964": "TII", "SMA 4173 ADT": "ADT SMA", "SMA 4176 ADT": "ADT SMA", "SMA 4177 ADT": "ADT SMA", "SMA 4178 ADT": "ADT SMA", "SMA 4179 ADT": "ADT SMA", "SCM-LIM 965": "TII", "SCM-LIM 966": "TII", "SCM-LIM 967": "TII", "SCM-LIM 968": "TII", "SCM-LIM 969": "TII", "SCM-LIM 970": "TII", "SCM-LIM 971": "TII", "SCM-LIM 972": "TII", "SCM-LIM 973": "TII", "SCM-LIM 974": "TII", "SCM-LIM 975": "TII", "SCM-LIM 976": "TII", "SCM-LIM 977": "TII", "SCM-LIM 978": "TII", "SCM-LIM 979": "TII", "SCM-LIM 980": "TII", "SCM-LIM 981": "TII", "SCM-LIM 982": "TII", "SCM-LIM 983": "TII", "SCM-LIM 984": "TII", "SCM-LIM 985": "TII", "SCM-LIM 986": "TII", "SCM-LIM 987": "TII", "SCM-LIM 988": "TII", "SCM-LIM 989": "TII", "SCM-LIM 991": "TII", "SCM-LIM 994": "TII", "SCM-LIM 218": "REAL", "SCM-LIM 210": "REAL", "SCM-LIM 225": "REAL", "SCM-LIM 223": "REAL", "SCM-LIM 228": "REAL", "SCM-LIM 226": "REAL"};
-let contractorData = null; // { map: {dtId: contractor}, filename, uploadedAt, count, isDefault }
+const EMBEDDED_CONTRACTOR_MAP = {"ADT 001": "ADT HJS", "ADT 002": "ADT HJS", "ADT 003": "ADT HJS", "ADT 004": "ADT HJS", "ADT 005": "ADT HJS", "ADT 006": "ADT HJS", "ADT 007": "ADT HJS", "ADT 008": "ADT HJS", "ADT 009": "ADT HJS", "ADT 010": "ADT HJS", "ADT 011": "ADT HJS", "ADT 012": "ADT HJS", "ADT 013": "ADT HJS", "ADT 014": "ADT HJS", "ADT 015": "ADT HJS", "ADT 016": "ADT HJS", "ADT 017": "ADT HJS", "ADT 018": "ADT HJS", "ADT 019": "ADT HJS", "ADT 020": "ADT HJS", "ADT 021": "ADT HJS", "ADT 022": "ADT HJS", "ADT 023": "ADT HJS", "ADT 024": "ADT HJS", "ADT 025": "ADT HJS", "ADT 026": "ADT HJS", "ADT 027": "ADT HJS", "ADT 028": "ADT HJS", "ADT 029": "ADT HJS", "ADT 030": "ADT HJS", "ADT 031": "ADT HJS", "ADT 032": "ADT HJS", "ADT 033": "ADT HJS", "ADT 034": "ADT HJS", "ADT 035": "ADT HJS", "ADT 036": "ADT HJS", "ADT 037": "ADT HJS", "ADT 038": "ADT HJS", "ADT 039": "ADT HJS", "ADT 040": "ADT HJS", "ADT 041": "ADT HJS", "ADT 042": "ADT HJS", "ADT 043": "ADT HJS", "ADT 044": "ADT HJS", "ADT 045": "ADT HJS", "ADT 046": "ADT HJS", "ADT 047": "ADT HJS", "ADT 048": "ADT HJS", "ADT 050": "ADT HJS", "ADT 051": "ADT HJS", "ADT-RL 001": "ADT REAL", "ADT-RL 007": "ADT REAL", "ADT-RL 012": "ADT REAL", "ADT-RL 013": "ADT REAL", "ADT-RL 014": "ADT REAL", "ADT-RL 015": "ADT REAL", "ADT-RL 016": "ADT REAL", "ADT-RL 017": "ADT REAL", "ADT-RL 018": "ADT REAL", "ADT-RL 019": "ADT REAL", "ADT-RL 020": "ADT REAL", "ADT-RL 021": "ADT REAL", "ADT-RL 022": "ADT REAL", "ADT-RL 023": "ADT REAL", "ADT-RL 024": "ADT REAL", "ADT-RL 025": "ADT REAL", "ADT-RL 047": "ADT REAL", "DT014KS": "HYNC", "DT022KS": "HYNC", "DT045KS": "HYNC", "DT3004PB": "HYNC", "DT3006PB": "HYNC", "DT3009PB": "HYNC", "DT3012PB": "HYNC", "DT3016PB": "HYNC", "DT3020PB": "HYNC", "DT3025PB": "HYNC", "DT3029PB": "HYNC", "DT3033PB": "HYNC", "DT-SCM-HLG 014": "MIM", "DT-SCM-HLG 036": "MIM", "DT-SCM-HLG 037": "MIM", "DT-SCM-HLG 038": "MIM", "DT-SCM-HLG 039": "MIM", "DT-SCM-HLG 040": "MIM", "DT-SCM-HLG 041": "MIM", "DT-SCM-HLG 042": "MIM", "DT-SCM-HLG 043": "MIM", "DT-SCM-HLG 044": "MIM", "DT-SCM-HLG 045": "MIM", "DT-SCM-HLG 046": "MIM", "DT-SCM-HLG 047": "MIM", "DT-SCM-HLG 048": "MIM", "DT-SCM-HLG 050": "MIM", "DT-SCM-HLG 182": "MIM", "DT-SCM-HLG 183": "MIM", "DT-SCM-HLG 184": "MIM", "DT-SCM-HLG 185": "MIM", "DT-SCM-HLG 186": "MIM", "DT-SCM-HLG 187": "MIM", "DT-SCM-HLG 188": "MIM", "DT-SCM-HLG 189": "MIM", "DT-SCM-HLG 191": "MIM", "DT-SCM-HLG 192": "MIM", "DT-SCM-HLG 193": "MIM", "DT-SCM-HLG 194": "MIM", "DT-SCM-HLG 392": "STM", "DT-SCM-HLG 393": "STM", "DT-SCM-HLG 394": "STM", "DT-SCM-HLG 395": "STM", "DT-SCM-HLG 396": "STM", "DT-SCM-HLG 397": "STM", "DT-SCM-HLG 398": "STM", "DT-SCM-HLG 399": "STM", "DT-SCM-HLG 400": "STM", "DT-SCM-HLG 401": "STM", "DT-SCM-HLG 402": "STM", "DT-SCM-HLG 403": "STM", "DT-SCM-HLG 404": "STM", "DT-SCM-HLG 405": "STM", "DT-SCM-HLG 406": "STM", "DT-SCM-HLG 407": "STM", "DT-SCM-HLG 408": "STM", "DT-SCM-HLG 409": "STM", "DT-SCM-HLG 410": "STM", "DT-SCM-HLG 412": "STM", "DT-SCM-HLG 413": "STM", "DT-SCM-HLG 414": "STM", "DT-SCM-HLG 415": "STM", "DT-SCM-HLG 416": "STM", "DT-SCM-HLG 417": "STM", "DT-SCM-HLG 418": "STM", "DT-SCM-HLG 419": "STM", "DT-SCM-HLG 420": "STM", "DT-SCM-HLG 422": "STM", "DT-SCM-HLG 424": "STM", "DT-SCM-HLG 425": "STM", "DT-SCM-HLG 426": "STM", "DT-SCM-HLG 427": "STM", "DT-SCM-HLG 428": "STM", "DT-SCM-HLG 429": "STM", "DT-SCM-HLG 430": "STM", "DT-SCM-HLG 431": "STM", "DT-SCM-HLG 432": "STM", "DT-SCM-HLG 433": "STM", "DT-SCM-HLG 434": "STM", "DT-SCM-HLG 435": "STM", "DT-SCM-HLG 436": "STM", "DT-SCM-HLG 437": "STM", "DT-SCM-HLG 438": "STM", "DT-SCM-HLG 439": "STM", "DT-SCM-HLG 440": "STM", "DT-SCM-HLG 441": "STM", "DT-SCM-HLG 442": "STM", "DT-SCM-HLG 443": "STM", "DT-SCM-HLG 444": "STM", "DT-SCM-HLG 445": "STM", "DT-SCM-HLG 446": "STM", "DT-SCM-HLG 447": "STM", "DT-SCM-HLG 448": "STM", "DT-SCM-HLG 449": "STM", "DT-SCM-HLG 450": "STM", "DT-SCM-HLG 451": "STM", "DT-SCM-HLG 453": "STM", "DT-SCM-HLG 454": "STM", "DT-SCM-HLG 455": "STM", "DT-SCM-HLG 458": "STM", "DT-SCM-HLG 459": "STM", "DT-SCM-HLG 460": "STM", "DT-SCM-HLG 462": "STM", "DT-SCM-HLG 463": "STM", "DT-SCM-HLG 464": "STM", "DT-SCM-HLG 465": "STM", "DT-SCM-HLG 466": "STM", "DT-SCM-HLG 467": "STM", "DT-SCM-HLG 468": "STM", "DT-SCM-HLG 469": "STM", "DT-SCM-HLG 470": "STM", "DT-SCM-HLG 471": "STM", "DT-SCM-HLG 473": "STM", "DT-SCM-HLG 474": "STM", "DT-SCM-HLG 475": "STM", "DT-SCM-HLG 476": "STM", "DT-SCM-HLG 480": "STM", "DT-SCM-HLG 481": "STM", "DT-SCM-HLG 482": "STM", "DT-SCM-HLG 485": "STM", "DT-SCM-HLG 486": "STM", "DT-SCM-HLG 488": "STM", "DT-SCM-HLG 490": "STM", "DT-SCM-HLG 491": "STM", "DT-SCM-HLG-014": "MIM", "DT-SCM-HLG-037": "MIM", "DT-SCM-HLG-038": "MIM", "DT-SCM-HLG-039": "MIM", "DT-SCM-HLG-040": "MIM", "DT-SCM-HLG-041": "MIM", "DT-SCM-HLG-042": "MIM", "DT-SCM-HLG-043": "MIM", "DT-SCM-HLG-044": "MIM", "DT-SCM-HLG-045": "MIM", "DT-SCM-HLG-046": "MIM", "DT-SCM-HLG-187": "MIM", "MIM 117": "MIM", "MIM 120": "MIM", "MIM 130": "MIM", "MIM -130": "MIM", "MIM 132": "MIM", "MIM 141": "MIM", "MIM 145": "MIM", "MIM 146": "MIM", "MIM 147": "MIM", "MIM 149": "MIM", "MIM 152": "MIM", "MIM 159": "MIM", "MIM 168": "MIM", "MIM 172": "MIM", "MIM-DT 113": "MIM", "MIM-DT 120": "MIM", "MIM-DT 130": "MIM", "MIM-DT 132": "MIM", "MIM-DT 141": "MIM", "MIM-DT 145": "MIM", "MIM-DT 146": "MIM", "MIM-DT 147": "MIM", "MIM-DT 148": "MIM", "MIM-DT 149": "MIM", "MIM-DT 172": "MIM", "SCM HLG 399": "STM", "SCM-HLG 357": "STM", "SCM-HLG 392": "STM", "SCM-HLG 393": "STM", "SCM-HLG 394": "STM", "SCM-HLG 395": "STM", "SCM-HLG 396": "STM", "SCM-HLG 397": "STM", "SCM-HLG 399": "STM", "SCM-HLG 400": "STM", "SCM-HLG 402": "STM", "SCM-HLG 408": "STM", "SCM-HLG 410": "STM", "SCM-HLG 415": "STM", "SCM-HLG 416": "STM", "SCM-HLG 419": "STM", "SCM-HLG 438": "STM", "SCM-HLG 441": "STM", "SCM-HLG 445": "STM", "SCM-HLG 447": "STM", "SCM-HLG 449": "STM", "SCM-HLG 450": "STM", "SCM-HLG 453": "STM", "SCM-HLG 455": "STM", "SCM-HLG 456": "STM", "SCM-HLG 458": "STM", "SCM-HLG 471": "STM", "SCM-HLG 472": "STM", "SCM-HLG 473": "STM", "SCM-HLG 474": "STM", "SCM-HLG 475": "STM", "SCM-HLG 483": "STM", "SCM-HLH 400": "STM", "SCM-LIM 200": "REAL", "SCM-LIM 201": "REAL", "SCM-LIM 202": "REAL", "SCM-LIM 203": "REAL", "SCM-LIM 204": "REAL", "SCM-LIM 205": "REAL", "SCM-LIM 206": "REAL", "SCM-LIM 207": "REAL", "SCM-LIM 208": "REAL", "SCM-LIM 209": "REAL", "SCM-LIM 211": "REAL", "SCM-LIM 212": "REAL", "SCM-LIM 213": "REAL", "SCM-LIM 214": "REAL", "SCM-LIM 215": "REAL", "SCM-LIM 216": "REAL", "SCM-LIM 217": "REAL", "SCM-LIM 219": "REAL", "SCM-LIM 220": "REAL", "SCM-LIM 221": "REAL", "SCM-LIM 301": "MRP", "SCM-LIM 302": "MRP", "SCM-LIM 303": "MRP", "SCM-LIM 304": "MRP", "SCM-LIM 305": "MRP", "SCM-LIM 306": "MRP", "SCM-LIM 307": "MRP", "SCM-LIM 308": "MRP", "SCM-LIM 309": "MRP", "SCM-LIM 310": "MRP", "SCM-LIM 311": "MRP", "SCM-LIM 312": "MRP", "SCM-LIM 313": "MRP", "SCM-LIM 314": "MRP", "SCM-LIM 315": "MRP", "SCM-LIM 316": "MRP", "SCM-LIM 317": "MRP", "SCM-LIM 318": "MRP", "SCM-LIM 319": "MRP", "SCM-LIM 320": "MRP", "SCM-LIM 321": "MRP", "SCM-LIM 322": "MRP", "SCM-LIM 323": "MRP", "SCM-LIM 324": "MRP", "SCM-LIM 325": "MRP", "SCM-LIM 326": "MRP", "SCM-LIM 327": "MRP", "SCM-LIM 328": "MRP", "SCM-LIM 329": "MRP", "SCM-LIM 330": "MRP", "SCM-LIM 331": "MRP", "SCM-LIM 332": "MRP", "SCM-LIM 333": "MRP", "SCM-LIM 334": "MRP", "SCM-LIM 335": "MRP", "SCM-LIM 336": "MRP", "SCM-LIM 337": "MRP", "SCM-LIM 338": "MRP", "SCM-LIM 339": "MRP", "SCM-LIM 340": "MRP", "SCM-LIM 341": "MRP", "SCM-LIM 342": "MRP", "SCM-LIM 343": "MRP", "SCM-LIM 344": "MRP", "SCM-LIM 345": "MRP", "SCM-LIM 346": "MRP", "SCM-LIM 347": "MRP", "SCM-LIM 348": "MRP", "SCM-LIM 349": "MRP", "SCM-LIM 350": "MRP", "SCM-LIM 351": "MRP", "SCM-LIM 352": "MRP", "SCM-LIM 353": "MRP", "SCM-LIM 354": "MRP", "SCM-LIM 355": "MRP", "SCM-LIM 356": "MRP", "SCM-LIM 357": "MRP", "SCM-LIM 358": "MRP", "SCM-LIM 359": "MRP", "SCM-LIM 360": "MRP", "SCM-LIM 361": "MRP", "SCM-LIM 362": "MRP", "SCM-LIM 363": "MRP", "SCM-LIM 364": "MRP", "SCM-LIM 365": "MRP", "SCM-LIM 366": "MRP", "SCM-LIM 367": "MRP", "SCM-LIM 368": "MRP", "SCM-LIM 369": "MRP", "SCM-LIM 370": "MRP", "SCM-LIM 371": "MRP", "SCM-LIM 372": "MRP", "SCM-LIM 373": "MRP", "SCM-LIM 374": "MRP", "SCM-LIM 375": "MRP", "SCM-LIM 376": "MRP", "SCM-LIM 377": "MRP", "SCM-LIM 378": "MRP", "SCM-LIM 379": "MRP", "SCM-LIM 380": "MRP", "SCM-LIM 381": "MRP", "SCM-LIM 382": "MRP", "SCM-LIM 383": "MRP", "SCM-LIM 384": "MRP", "SCM-LIM 385": "MRP", "SCM-LIM 386": "MRP", "SCM-LIM 387": "MRP", "SCM-LIM 388": "MRP", "SCM-LIM 389": "MRP", "SCM-LIM 390": "MRP", "SCM-LIM 391": "MRP", "SCM-LIM 392": "MRP", "SCM-LIM 393": "MRP", "SCM-LIM 394": "MRP", "SCM-LIM 395": "MRP", "SCM-LIM 396": "MRP", "SCM-LIM 397": "MRP", "SCM-LIM 398": "MRP", "SCM-LIM 399": "MRP", "SCM-LIM 400": "MRP", "SCM-LIM 401": "PMS", "SCM-LIM 402": "PMS", "SCM-LIM 403": "PMS", "SCM-LIM 404": "PMS", "SCM-LIM 405": "PMS", "SCM-LIM 406": "PMS", "SCM-LIM 407": "PMS", "SCM-LIM 408": "PMS", "SCM-LIM 409": "PMS", "SCM-LIM 410": "PMS", "SCM-LIM 411": "PMS", "SCM-LIM 412": "PMS", "SCM-LIM 413": "PMS", "SCM-LIM 414": "PMS", "SCM-LIM 415": "PMS", "SCM-LIM 416": "PMS", "SCM-LIM 417": "PMS", "SCM-LIM 418": "PMS", "SCM-LIM 501": "MIM", "SCM-LIM 502": "MIM", "SCM-LIM 503": "MIM", "SCM-LIM 504": "MIM", "SCM-LIM 505": "MIM", "SCM-LIM 506": "MIM", "SCM-LIM 507": "MIM", "SCM-LIM 508": "MIM", "SCM-LIM 509": "MIM", "SCM-LIM 510": "MIM", "SCM-LIM 511": "MIM", "SCM-LIM 512": "MIM", "SCM-LIM 513": "MIM", "SCM-LIM 514": "MIM", "SCM-LIM 515": "MIM", "SCM-LIM 516": "MIM", "SCM-LIM 517": "MIM", "SCM-LIM 518": "MIM", "SCM-LIM 519": "MIM", "SCM-LIM 520": "MIM", "SCM-LIM 521": "MIM", "SCM-LIM 522": "MIM", "SCM-LIM 523": "MIM", "SCM-LIM 524": "MIM", "SCM-LIM 525": "MIM", "SCM-LIM 526": "MIM", "SCM-LIM 527": "MIM", "SCM-LIM 528": "MIM", "SCM-LIM 529": "MIM", "SCM-LIM 530": "MIM", "SCM-LIM 531": "MIM", "SCM-LIM 532": "MIM", "SCM-LIM 533": "MIM", "SCM-LIM 534": "MIM", "SCM-LIM 535": "MIM", "SCM-LIM 536": "MIM", "SCM-LIM 537": "MIM", "SCM-LIM 538": "MIM", "SCM-LIM 539": "MIM", "SCM-LIM 540": "MIM", "SCM-LIM 541": "MIM", "SCM-LIM 542": "MIM", "SCM-LIM 543": "MIM", "SCM-LIM 544": "MIM", "SCM-LIM 545": "MIM", "SCM-LIM 546": "MIM", "SCM-LIM 547": "MIM", "SCM-LIM 548": "MIM", "SCM-LIM 549": "MIM", "SCM-LIM 550": "MIM", "SCM-LIM 551": "MIM", "SCM-LIM 552": "MIM", "SCM-LIM 553": "MIM", "SCM-LIM 554": "MIM", "SCM-LIM 555": "MIM", "SCM-LIM 556": "MIM", "SCM-LIM 557": "MIM", "SCM-LIM 558": "MIM", "SCM-LIM 559": "MIM", "SCM-LIM 560": "MIM", "SCM-LIM 561": "MIM", "SCM-LIM 562": "MIM", "SCM-LIM 563": "MIM", "SCM-LIM 564": "MIM", "SCM-LIM 565": "MIM", "SCM-LIM 566": "MIM", "SCM-LIM 567": "MIM", "SCM-LIM 568": "MIM", "SCM-LIM 569": "MIM", "SCM-LIM 570": "MIM", "SCM-LIM 571": "MIM", "SCM-LIM 572": "MIM", "SCM-LIM 573": "MIM", "SCM-LIM 574": "MIM", "SCM-LIM 575": "MIM", "SCM-LIM 576": "MIM", "SCM-LIM 577": "MIM", "SCM-LIM 578": "MIM", "SCM-LIM 579": "MIM", "SCM-LIM 580": "MIM", "SCM-LIM 581": "MIM", "SCM-LIM 582": "MIM", "SCM-LIM 583": "MIM", "SCM-LIM 584": "MIM", "SCM-LIM 585": "MIM", "SCM-LIM 586": "MIM", "SCM-LIM 587": "MIM", "SCM-LIM 588": "MIM", "SCM-LIM 589": "MIM", "SCM-LIM 590": "MIM", "SCM-LIM 591": "MIM", "SCM-LIM 592": "MIM", "SCM-LIM 593": "MIM", "SCM-LIM 594": "MIM", "SCM-LIM 595": "MIM", "SCM-LIM 596": "MIM", "SCM-LIM 597": "MIM", "SCM-LIM 598": "MIM", "SCM-LIM 601": "HYNC", "SCM-LIM 602": "HYNC", "SCM-LIM 603": "HYNC", "SCM-LIM 604": "HYNC", "SCM-LIM 605": "HYNC", "SCM-LIM 606": "HYNC", "SCM-LIM 607": "HYNC", "SCM-LIM 608": "HYNC", "SCM-LIM 609": "HYNC", "SCM-LIM 610": "HYNC", "SCM-LIM 611": "HYNC", "SCM-LIM 612": "HYNC", "SCM-LIM 613": "HYNC", "SCM-LIM 614": "HYNC", "SCM-LIM 615": "HYNC", "SCM-LIM 616": "HYNC", "SCM-LIM 617": "HYNC", "SCM-LIM 618": "HYNC", "SCM-LIM 619": "HYNC", "SCM-LIM 620": "HYNC", "SCM-LIM 621": "HYNC", "SCM-LIM 622": "HYNC", "SCM-LIM 623": "HYNC", "SCM-LIM 719": "PMS", "SCM-LIM 720": "PMS", "SCM-LIM 721": "PMS", "SCM-LIM 722": "PMS", "SCM-LIM 723": "PMS", "SCM-LIM 724": "PMS", "SCM-LIM 725": "PMS", "SCM-LIM 726": "PMS", "SCM-LIM 727": "PMS", "SCM-LIM 728": "PMS", "SCM-LIM 729": "PMS", "SCM-LIM 730": "PMS", "SCM-LIM 731": "PMS", "SCM-LIM 732": "PMS", "SCM-LIM 733": "PMS", "SCM-LIM 734": "PMS", "SCM-LIM 735": "PMS", "SCM-LIM 736": "PMS", "SCM-LIM 737": "PMS", "SCM-LIM 738": "PMS", "SCM-LIM 739": "PMS", "SCM-LIM 740": "PMS", "SCM-LIM 741": "PMS", "SCM-LIM 742": "PMS", "SCM-LIM 743": "PMS", "SCM-LIM 744": "PMS", "SCM-LIM 745": "PMS", "SCM-LIM 746": "PMS", "SCM-LIM 747": "PMS", "SCM-LIM 748": "PMS", "SCM-LIM 749": "PMS", "SCM-LIM 751": "PMS", "SCM-LIM 755": "PMS", "SCM-LIM 756": "PMS", "SCM-LIM 757": "PMS", "SCM-LIM 758": "PMS", "SCM-LIM 801": "JAM", "SCM-LIM 802": "JAM", "SCM-LIM 803": "JAM", "SCM-LIM 804": "JAM", "SCM-LIM 805": "JAM", "SCM-LIM 806": "JAM", "SCM-LIM 807": "JAM", "SCM-LIM 808": "JAM", "SCM-LIM 809": "JAM", "SCM-LIM 810": "JAM", "SCM-LIM 811": "JAM", "SCM-LIM 812": "JAM", "SCM-LIM 813": "JAM", "SCM-LIM 814": "JAM", "SCM-LIM 815": "JAM", "SCM-LIM 816": "JAM", "SCM-LIM 817": "JAM", "SCM-LIM 818": "JAM", "SCM-LIM 819": "JAM", "SCM-LIM 820": "JAM", "SCM-LIM 821": "JAM", "SCM-LIM 822": "JAM", "SCM-LIM 823": "JAM", "SCM-LIM 824": "JAM", "SCM-LIM 825": "JAM", "SCM-LIM 826": "JAM", "SCM-LIM 827": "JAM", "SCM-LIM 828": "JAM", "SCM-LIM 829": "JAM", "SCM-LIM 830": "JAM", "SCM-LIM 831": "JAM", "SCM-LIM 832": "JAM", "SCM-LIM 833": "JAM", "SCM-LIM 834": "JAM", "SCM-LIM 835": "JAM", "SCM-LIM 836": "JAM", "SCM-LIM 837": "JAM", "SCM-LIM 838": "JAM", "SCM-LIM 839": "JAM", "SCM-LIM 840": "JAM", "SCM-LIM 841": "JAM", "SCM-LIM 842": "JAM", "SCM-LIM 843": "JAM", "SCM-LIM 844": "JAM", "SCM-LIM 845": "JAM", "SCM-LIM 846": "JAM", "SCM-LIM 900": "TII", "SCM-LIM 901": "TII", "SCM-LIM 902": "TII", "SCM-LIM 903": "TII", "SCM-LIM 904": "TII", "SCM-LIM 905": "TII", "SCM-LIM 906": "TII", "SCM-LIM 907": "TII", "SCM-LIM 908": "TII", "SCM-LIM 909": "TII", "SCM-LIM 910": "TII", "SCM-LIM 911": "TII", "SCM-LIM 912": "TII", "SCM-LIM 913": "TII", "SCM-LIM 914": "TII", "SCM-LIM 915": "TII", "SCM-LIM 916": "TII", "SCM-LIM 917": "TII", "SCM-LIM 918": "TII", "SCM-LIM 919": "TII", "SCM-LIM 920": "TII", "SCM-LIM 921": "TII", "SCM-LIM 922": "TII", "SCM-LIM 923": "TII", "SCM-LIM 924": "TII", "SCM-LIM 925": "TII", "SCM-LIM 926": "TII", "SCM-LIM 927": "TII", "SCM-LIM 928": "TII", "SCM-LIM 929": "TII", "SCM-LIM 930": "TII", "SCM-LIM 931": "TII", "SCM-LIM 932": "TII", "SCM-LIM 933": "TII", "SCM-LIM 934": "TII", "SCM-LIM 935": "TII", "SCM-LIM 936": "TII", "SCM-LIM 937": "TII", "SCM-LIM 938": "TII", "SCM-LIM 939": "TII", "SCM-LIM 940": "TII", "SCM-LIM 941": "TII", "SCM-LIM 942": "TII", "SCM-LIM 943": "TII", "SCM-LIM 944": "TII", "SCM-LIM 945": "TII", "SCM-LIM 946": "TII", "SCM-LIM 947": "TII", "SCM-LIM 948": "TII", "SCM-LIM 949": "TII", "SCM-LIM 950": "TII", "SCM-LIM 951": "TII", "SCM-LIM 952": "TII", "SCM-LIM 953": "TII", "SCM-LIM 954": "TII", "SCM-LIM 955": "TII", "SCM-LIM 956": "TII", "SCM-LIM 957": "TII", "SCM-LIM 958": "TII", "SCM-LIM 959": "TII", "SCM-LIM 960": "TII", "SCM-LIM 961": "TII", "SCM-LIM 962": "TII", "SCM-LIM 963": "TII", "SCM-LIM 964": "TII", "SMA 4173 ADT": "ADT SMA", "SMA 4176 ADT": "ADT SMA", "SMA 4177 ADT": "ADT SMA", "SMA 4178 ADT": "ADT SMA", "SMA 4179 ADT": "ADT SMA", "SCM-LIM 965": "TII", "SCM-LIM 966": "TII", "SCM-LIM 967": "TII", "SCM-LIM 968": "TII", "SCM-LIM 969": "TII", "SCM-LIM 970": "TII", "SCM-LIM 971": "TII", "SCM-LIM 972": "TII", "SCM-LIM 973": "TII", "SCM-LIM 974": "TII", "SCM-LIM 975": "TII", "SCM-LIM 976": "TII", "SCM-LIM 977": "TII", "SCM-LIM 978": "TII", "SCM-LIM 979": "TII", "SCM-LIM 980": "TII", "SCM-LIM 981": "TII", "SCM-LIM 982": "TII", "SCM-LIM 983": "TII", "SCM-LIM 984": "TII", "SCM-LIM 985": "TII", "SCM-LIM 986": "TII", "SCM-LIM 987": "TII", "SCM-LIM 988": "TII", "SCM-LIM 989": "TII", "SCM-LIM 991": "TII", "SCM-LIM 994": "TII", "SCM-LIM 218": "REAL", "SCM-LIM 210": "REAL", "SCM-LIM 225": "REAL", "SCM-LIM 223": "REAL", "SCM-LIM 228": "REAL", "SCM-LIM 226": "REAL", "SCM-HLG 943": "SMA", "SCM-HLG 946": "SMA", "SCM-HLG 956": "SMA", "SCM-HLG 951": "SMA", "SCM-HLG 944": "SMA", "SCM-HLG 955": "SMA", "SCM-HLG 952": "SMA", "SCM-HLG 960": "SMA", "SCM-HLG 948": "SMA", "SCM-HLG 949": "SMA", "SCM-HLG 950": "SMA", "SCM-LIM 229": "REAL"};
+const GOOGLE_SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbwoakor1_LBN52GYBACijgorUEE5cPqjrnR_ncmCBzJH2YKf6Yl42Ys2m3VpSVoSuFs/exec';
+const PENDING_QUEUE_KEY = 'dt_contractor_pending_queue_v1';
+
+let contractorData = null;        // { map, filename, uploadedAt, count, isDefault } — override manual via upload file Excel (device ini saja)
+let liveContractorMap = {};       // Data dari Google Sheet (sumber bersama, berlaku untuk semua user)
+let liveMapStatus = { loaded:false, count:0, lastSync:null, error:null };
+let pendingQueue = [];            // Antrian entri yang belum berhasil dikirim ke Sheet (device ini saja)
+let pendingQueueMemory = null;    // fallback in-memory kalau window.storage tidak tersedia
 
 const contractorStatus = document.getElementById('contractorStatus');
 const contractorUploadZone = document.getElementById('contractorUploadZone');
@@ -485,33 +527,58 @@ async function loadContractorData(){
     if(res && res.value){
       contractorData = JSON.parse(res.value);
     } else {
-      contractorData = { map: EMBEDDED_CONTRACTOR_MAP, filename: 'Data bawaan (default)', uploadedAt: null, count: Object.keys(EMBEDDED_CONTRACTOR_MAP).length, isDefault: true };
+      contractorData = { map: {}, filename: null, uploadedAt: null, count: 0, isDefault: true };
     }
   }catch(e){
-    contractorData = { map: EMBEDDED_CONTRACTOR_MAP, filename: 'Data bawaan (default)', uploadedAt: null, count: Object.keys(EMBEDDED_CONTRACTOR_MAP).length, isDefault: true };
+    contractorData = { map: {}, filename: null, uploadedAt: null, count: 0, isDefault: true };
   }
+  await loadPendingQueue();
   renderContractorStatus();
+  await fetchSheetContractors(); // coba sinkron ke Google Sheet begitu app dibuka
+}
+
+// Precedence data kontraktor: upload manual (device ini) > Google Sheet (bersama) > data bawaan (fallback offline pertama kali)
+function getEffectiveContractorMap(){
+  const personalOverride = (contractorData && !contractorData.isDefault) ? contractorData.map : {};
+  return { ...EMBEDDED_CONTRACTOR_MAP, ...liveContractorMap, ...personalOverride };
 }
 
 function renderContractorStatus(){
-  if(contractorData && contractorData.map){
-    const count = Object.keys(contractorData.map).length;
-    const badge = contractorData.isDefault
-      ? `<span class="pill good">✅ ${count} unit DT (data bawaan)</span>`
-      : `<span class="pill good">✅ ${count} unit DT termuat</span><span class="pill">${escapeHtml(contractorData.filename || '')}</span>`;
-    contractorStatus.innerHTML = `
-      <div class="row">${badge}</div>
-      <div class="row" style="margin-top:8px;">
-        <button class="btn ghost" id="btnUpdateContractor">🔄 Update Data Kontraktor</button>
-      </div>`;
-    contractorUploadZone.style.display = 'none';
-    document.getElementById('btnUpdateContractor').onclick = () => {
-      contractorUploadZone.style.display = 'block';
-    };
+  const effectiveMap = getEffectiveContractorMap();
+  const totalCount = Object.keys(effectiveMap).length;
+  const personalActive = contractorData && !contractorData.isDefault;
+
+  let sourceBadge;
+  if(liveMapStatus.loaded){
+    sourceBadge = `<span class="pill good">✅ ${totalCount} unit DT (tersambung ke server pusat)</span>`;
+  } else if(liveMapStatus.error){
+    sourceBadge = `<span class="pill warn">⚠ ${totalCount} unit DT (offline — pakai data tersimpan)</span>`;
   } else {
-    contractorStatus.innerHTML = `<div class="row"><span class="pill warn">⚠ Belum ada data kontraktor — upload dulu di bawah</span></div>`;
-    contractorUploadZone.style.display = 'block';
+    sourceBadge = `<span class="pill">${totalCount} unit DT (menyinkron...)</span>`;
   }
+
+  const personalBadge = personalActive
+    ? `<span class="pill">📄 override lokal: ${escapeHtml(contractorData.filename || '')}</span>`
+    : '';
+
+  const pendingBadge = pendingQueue.length > 0
+    ? `<span class="pill warn">⏳ ${pendingQueue.length} entri belum sinkron</span>`
+    : '';
+
+  contractorStatus.innerHTML = `
+    <div class="row">${sourceBadge}${personalBadge}${pendingBadge}</div>
+    <div class="row" style="margin-top:8px;">
+      <button class="btn" id="btnAddContractor">➕ Update Kontraktor</button>
+      <button class="btn ghost" id="btnSyncNow">🔄 Sinkron Sekarang</button>
+      <button class="btn ghost" id="btnUpdateContractorFile">📄 Update via File Excel</button>
+    </div>`;
+
+  contractorUploadZone.style.display = 'none';
+  document.getElementById('btnUpdateContractorFile').onclick = () => {
+    contractorUploadZone.style.display = 'block';
+  };
+  document.getElementById('btnSyncNow').onclick = () => fetchSheetContractors(true);
+  document.getElementById('btnAddContractor').onclick = () => openContractorModal();
 }
 
 contractorFileInput.addEventListener('change', e => {
@@ -562,11 +629,140 @@ function normalizeDT(dt){
 }
 
 function getContractor(dt){
-  if(!contractorData || !contractorData.map) return 'Belum ada data';
+  const map = getEffectiveContractorMap();
   const raw = String(dt).trim();
-  return contractorData.map[raw]
-      || contractorData.map[normalizeDT(raw)]
-      || 'Tidak terdaftar';
+  return map[raw] || map[normalizeDT(raw)] || 'Tidak terdaftar';
+}
+
+/* ---------------- SINKRONISASI GOOGLE SHEET (data kontraktor bersama) ---------------- */
+
+async function fetchSheetContractors(isManualTrigger){
+  try{
+    const res = await fetch(GOOGLE_SHEET_API_URL, { method:'GET' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    const map = {};
+    rows.forEach(r => {
+      const id = String(r.dtId || '').trim();
+      const contractor = String(r.contractor || '').trim();
+      if(id) map[id] = contractor;
+    });
+    liveContractorMap = map;
+    liveMapStatus = { loaded:true, count: Object.keys(map).length, lastSync: new Date().toISOString(), error:null };
+    renderContractorStatus();
+    await flushPendingQueue(); // sekalian coba kirim antrian offline begitu berhasil connect
+  }catch(err){
+    liveMapStatus = { loaded:false, count: Object.keys(liveContractorMap).length, lastSync: liveMapStatus.lastSync, error: err.message };
+    renderContractorStatus();
+    if(isManualTrigger){
+      contractorStatus.insertAdjacentHTML('beforeend',
+        `<div class="error-box" style="margin-top:8px;">Gagal sinkron ke server: ${escapeHtml(err.message)}. Memakai data tersimpan.</div>`);
+    }
+  }
+}
+
+async function postContractorUpdate(dtId, contractor){
+  // Content-Type text/plain menghindari CORS preflight yang sering gagal di Apps Script Web App.
+  // Apps Script tetap membaca body sebagai teks mentah lalu di-parse JSON di sisi server (doPost).
+  const res = await fetch(GOOGLE_SHEET_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ dtId, contractor })
+  });
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const result = await res.json();
+  if(!result.ok) throw new Error(result.error || 'Server menolak data');
+  return result;
+}
+
+async function loadPendingQueue(){
+  try{
+    const res = await window.storage.get(PENDING_QUEUE_KEY, false);
+    pendingQueue = (res && res.value) ? JSON.parse(res.value) : [];
+  }catch(e){
+    pendingQueue = pendingQueueMemory || [];
+  }
+}
+
+async function savePendingQueue(){
+  try{
+    if(window.storage && window.storage.set){
+      await window.storage.set(PENDING_QUEUE_KEY, JSON.stringify(pendingQueue), false);
+      return;
+    }
+  }catch(e){ /* fall through */ }
+  pendingQueueMemory = pendingQueue;
+}
+
+async function flushPendingQueue(){
+  if(pendingQueue.length === 0) return;
+  const stillPending = [];
+  for(const entry of pendingQueue){
+    try{
+      await postContractorUpdate(entry.dtId, entry.contractor);
+      liveContractorMap[entry.dtId] = entry.contractor; // pastikan tetap ter-apply di live map
+    }catch(err){
+      stillPending.push(entry); // gagal lagi, simpan untuk dicoba nanti
+    }
+  }
+  pendingQueue = stillPending;
+  await savePendingQueue();
+  renderContractorStatus();
+}
+
+// Coba sinkron ulang otomatis begitu koneksi internet kembali
+window.addEventListener('online', () => fetchSheetContractors());
+
+/* ---------------- POPUP UPDATE KONTRAKTOR MANUAL ---------------- */
+
+function openContractorModal(){
+  const overlay = document.getElementById('contractorModalOverlay');
+  overlay.style.display = 'flex';
+  document.getElementById('modalDtInput').value = '';
+  document.getElementById('modalContractorInput').value = '';
+  document.getElementById('modalSessionLog').innerHTML = '';
+  document.getElementById('modalMsg').innerHTML = '';
+  setTimeout(() => document.getElementById('modalDtInput').focus(), 50);
+}
+
+function closeContractorModal(){
+  document.getElementById('contractorModalOverlay').style.display = 'none';
+}
+
+async function submitContractorEntry(){
+  const dtInput = document.getElementById('modalDtInput');
+  const contractorInput = document.getElementById('modalContractorInput');
+  const msgEl = document.getElementById('modalMsg');
+  const logEl = document.getElementById('modalSessionLog');
+
+  const dtId = dtInput.value.trim();
+  const contractor = contractorInput.value.trim();
+
+  if(!dtId || !contractor){
+    msgEl.innerHTML = `<div class="error-box">No DT dan Nama Kontraktor wajib diisi.</div>`;
+    return;
+  }
+
+  // Terapkan langsung secara lokal (optimistic) supaya user bisa lanjut kerja walau belum sinkron
+  liveContractorMap[dtId] = contractor;
+  renderContractorStatus();
+
+  let statusIcon = '⏳', statusText = 'menunggu koneksi';
+  try{
+    await postContractorUpdate(dtId, contractor);
+    statusIcon = '✅'; statusText = 'tersinkron ke server';
+  }catch(err){
+    pendingQueue.push({ dtId, contractor, queuedAt: new Date().toISOString() });
+    await savePendingQueue();
+    renderContractorStatus();
+  }
+
+  logEl.insertAdjacentHTML('afterbegin',
+    `<div class="modal-log-line">${statusIcon} <strong>${escapeHtml(dtId)}</strong> → ${escapeHtml(contractor)} <span style="color:var(--muted);">(${statusText})</span></div>`);
+  msgEl.innerHTML = '';
+  dtInput.value = '';
+  contractorInput.value = '';
+  dtInput.focus();
 }
 
 /* ---------------- WEIGHBRIDGE UPLOAD ---------------- */
@@ -949,84 +1145,29 @@ function processData(rows, buyer){
   function mixPct(cls, h){ return grandHourTonase[h] > 0 ? (classHourTonase(cls,h) / grandHourTonase[h] * 100) : 0; }
 
   // Dominant cause logic
-  // Indikasi sekarang dihitung terhadap NI base, bukan lagi dari perubahan mix antar jam.
-  // Kontribusi = share tonase * (NI aktual - NI base), sehingga penjelasan mengikuti arah ΔNI.
-  const INDICATION_IGNORE_ABS = 0.009;
-  const INDICATION_SMALL_ABS = 0.015;
-  const RESTRAINT_MIN_ABS = 0.005;
-
-  function fmtContribution(v){
-    return (v > 0 ? '+' : '') + v.toFixed(3);
-  }
-
-  function contributionArrow(v){
-    return v < 0 ? '↓' : '↑';
-  }
-
-  function dominantContributionDome(group, wantPositive){
-    const domes = Object.values(group.domes || {}).filter(d => d && Number.isFinite(d.contrib));
-    if(!domes.length) return '';
-    domes.sort((a,b) => wantPositive ? (b.contrib - a.contrib) : (a.contrib - b.contrib));
-    const top = domes[0];
-    return top && top.dome ? top.dome : '';
-  }
-
-  function formatContributionPart(group, wantPositive){
-    if(!group || !Number.isFinite(group.contrib)) return '';
-    const dome = dominantContributionDome(group, wantPositive);
-    return `${contributionArrow(group.contrib)} ${group.cls} ${fmtContribution(group.contrib)}${dome ? ' ' + escapeHtml(dome) : ''}`;
-  }
-
   function dominantCause(h){
     const delta = deltaNI[h];
-    const totalTonaseHour = grandHourTonase[h] || 0;
-    if(delta === null || totalTonaseHour === 0) return '—';
-
-    const absDelta = Math.abs(delta);
-    if(absDelta < INDICATION_IGNORE_ABS) return '—';
-    if(absDelta < INDICATION_SMALL_ABS) return 'Mix sedikit berubah';
-
-    const groups = {};
-    records.forEach(r => {
-      const d = r.waktuIsiDate;
-      if(!d || d.getHours() !== h || !r.netto) return;
-      const gradeValid = r.grade !== null && r.grade !== undefined && Number.isFinite(Number(r.grade));
-      const grade = gradeValid ? Number(r.grade) : 0;
-      const cls = gradeValid ? (classifyOre(grade) || 'UNCL') : 'NO_NI';
-      const dome = r.dome || '(Tanpa Dome)';
-      const contrib = ((grade - niBase) * r.netto) / totalTonaseHour;
-
-      if(!groups[cls]) groups[cls] = { cls, contrib: 0, domes: {} };
-      groups[cls].contrib += contrib;
-      if(!groups[cls].domes[dome]) groups[cls].domes[dome] = { dome, contrib: 0 };
-      groups[cls].domes[dome].contrib += contrib;
-    });
-
-    const groupList = Object.values(groups).filter(g => Number.isFinite(g.contrib) && Math.abs(g.contrib) > 0.0005);
-    if(!groupList.length) return 'Mix sedikit berubah';
-
-    const isDrop = delta < 0;
-    const sameDirection = groupList.filter(g => isDrop ? g.contrib < 0 : g.contrib > 0);
-    const oppositeDirection = groupList.filter(g => isDrop ? g.contrib > 0 : g.contrib < 0);
-
-    const main = sameDirection.length
-      ? sameDirection.sort((a,b) => isDrop ? (a.contrib - b.contrib) : (b.contrib - a.contrib))[0]
-      : groupList.slice().sort((a,b) => Math.abs(b.contrib) - Math.abs(a.contrib))[0];
-
-    const parts = [];
-    const mainPart = formatContributionPart(main, !isDrop);
-    if(mainPart) parts.push(mainPart);
-
-    const restraint = oppositeDirection
-      .filter(g => Math.abs(g.contrib) >= RESTRAINT_MIN_ABS)
-      .sort((a,b) => isDrop ? (b.contrib - a.contrib) : (a.contrib - b.contrib))[0];
-
-    if(restraint){
-      const restraintPart = formatContributionPart(restraint, isDrop);
-      if(restraintPart) parts.push(restraintPart);
+    if(delta === null || grandHourTonase[h] === 0) return '—';
+    const prevH = activeHours[activeHours.indexOf(h) - 1];
+    if(!prevH) return '—';
+    const diffs = oreClasses.map(cls => ({ cls, diff: mixPct(cls, h) - mixPct(cls, prevH) }));
+    if(delta < 0){
+      const lgloUp = diffs.find(d => d.cls === 'LGLO')?.diff ?? 0;
+      const mgloUp = diffs.find(d => d.cls === 'MGLO')?.diff ?? 0;
+      const hgloDown = -(diffs.find(d => d.cls === 'HGLO')?.diff ?? 0);
+      const reasons = [];
+      if(lgloUp > 5) reasons.push(`↑ LGLO +${lgloUp.toFixed(0)}%`);
+      if(mgloUp > 5) reasons.push(`↑ MGLO +${mgloUp.toFixed(0)}%`);
+      if(hgloDown > 5) reasons.push(`↓ HGLO -${hgloDown.toFixed(0)}%`);
+      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
+    } else {
+      const hgloUp = diffs.find(d => d.cls === 'HGLO')?.diff ?? 0;
+      const lgloDown = -(diffs.find(d => d.cls === 'LGLO')?.diff ?? 0);
+      const reasons = [];
+      if(hgloUp > 5) reasons.push(`↑ HGLO +${hgloUp.toFixed(0)}%`);
+      if(lgloDown > 5) reasons.push(`↓ LGLO -${lgloDown.toFixed(0)}%`);
+      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
     }
-
-    return parts.length ? parts.join('; ') : 'Mix sedikit berubah';
   }
 
   const chartLabels = activeHours.map(h => pad2(h)+':00');
@@ -1443,72 +1584,6 @@ function renderNIChart(){
     plugins:[highlightPlugin]
   });
 
-  // iOS standalone/PWA tooltip dismiss fix:
-  // Chart.js menggambar tooltip di dalam canvas. Pada iOS PWA/Add to Home Screen,
-  // tap di luar canvas tidak selalu meng-clear active element Chart.js, sehingga
-  // tooltip dapat terlihat "menempel". Listener ini memaksa tooltip/hover state
-  // dibersihkan saat user tap/scroll di luar chart.
-  if(window._niChartTooltipCleanup){
-    try{ window._niChartTooltipCleanup(); }catch(e){}
-  }
-
-  function clearNIChartTooltip(){
-    const c = Chart.getChart(canvas);
-    if(!c) return;
-    try{
-      if(typeof c.setActiveElements === 'function') c.setActiveElements([]);
-      if(c.tooltip && typeof c.tooltip.setActiveElements === 'function'){
-        c.tooltip.setActiveElements([], {x:0, y:0});
-      }
-      c.update('none');
-    }catch(e){ /* non-fatal UI cleanup */ }
-  }
-
-  function isInsideNIChart(target){
-    return !!(target && (target === canvas || (wrap && wrap.contains(target))));
-  }
-
-  function handleOutsideNIChartTap(ev){
-    if(isInsideNIChart(ev.target)) return;
-    clearNIChartTooltip();
-  }
-
-  function handleNIChartCanvasTap(ev){
-    // Kalau user tap area kosong canvas, tooltip lama juga harus hilang.
-    // Delay singkat memberi Chart.js kesempatan memproses tap pada titik/bar valid.
-    setTimeout(() => {
-      const c = Chart.getChart(canvas);
-      if(!c) return;
-      try{
-        const hits = typeof c.getElementsAtEventForMode === 'function'
-          ? c.getElementsAtEventForMode(ev, 'nearest', {intersect:true}, false)
-          : [];
-        if(!hits || hits.length === 0) clearNIChartTooltip();
-      }catch(e){
-        // Pada sebagian TouchEvent iOS, helper hit-test bisa gagal. Fallback:
-        // biarkan tap di canvas diproses Chart.js; outside tap tetap ditangani global.
-      }
-    }, 0);
-  }
-
-  const niDismissEvents = ['pointerdown', 'touchstart', 'click'];
-  niDismissEvents.forEach(evt => document.addEventListener(evt, handleOutsideNIChartTap, true));
-  canvas.addEventListener('pointerdown', handleNIChartCanvasTap, true);
-  canvas.addEventListener('touchstart', handleNIChartCanvasTap, true);
-
-  const handleNIChartPassiveClear = () => clearNIChartTooltip();
-  window.addEventListener('scroll', handleNIChartPassiveClear, true);
-  document.addEventListener('visibilitychange', handleNIChartPassiveClear, true);
-
-  window._niChartTooltipCleanup = function(){
-    niDismissEvents.forEach(evt => document.removeEventListener(evt, handleOutsideNIChartTap, true));
-    canvas.removeEventListener('pointerdown', handleNIChartCanvasTap, true);
-    canvas.removeEventListener('touchstart', handleNIChartCanvasTap, true);
-    window.removeEventListener('scroll', handleNIChartPassiveClear, true);
-    document.removeEventListener('visibilitychange', handleNIChartPassiveClear, true);
-  };
-
-
   // Resize dinamis saat rotasi / perubahan ukuran layar (iOS Safari kadang tidak
   // memicu resize otomatis Chart.js setelah orientationchange)
   if(window._niChartResizeHandler){
@@ -1527,21 +1602,43 @@ function renderNIChart(){
   };
   window.addEventListener('resize', window._niChartResizeHandler);
   window.addEventListener('orientationchange', window._niChartResizeHandler);
+
+  // Fix tooltip Chart.js yang "nyangkut" di iOS PWA standalone mode: di mode standalone,
+  // tap di luar area chart tidak selalu memicu event yang membuat Chart.js menyembunyikan
+  // tooltip aktif. Kita paksa clear manual saat ada interaksi di luar chart.
+  if(window._niChartDismissHandler){
+    document.removeEventListener('pointerdown', window._niChartDismissHandler, true);
+    document.removeEventListener('touchstart', window._niChartDismissHandler, true);
+    document.removeEventListener('click', window._niChartDismissHandler, true);
+    window.removeEventListener('scroll', window._niChartDismissHandler, true);
+    document.removeEventListener('visibilitychange', window._niChartDismissHandler);
+  }
+  window._niChartDismissHandler = function(e){
+    const c = Chart.getChart(canvas);
+    if(!c) return;
+    if(e && e.target && canvas.contains(e.target)) return; // tap di dalam chart: biarkan Chart.js yang urus
+    c.setActiveElements([]);
+    if(c.tooltip) c.tooltip.setActiveElements([], {x:0, y:0});
+    c.update();
+  };
+  document.addEventListener('pointerdown', window._niChartDismissHandler, true);
+  document.addEventListener('touchstart', window._niChartDismissHandler, true);
+  document.addEventListener('click', window._niChartDismissHandler, true);
+  window.addEventListener('scroll', window._niChartDismissHandler, true);
+  document.addEventListener('visibilitychange', window._niChartDismissHandler);
 }
+
+document.getElementById('btnCloseModal').addEventListener('click', closeContractorModal);
+document.getElementById('btnCloseModal2').addEventListener('click', closeContractorModal);
+document.getElementById('btnSubmitContractor').addEventListener('click', submitContractorEntry);
+document.getElementById('contractorModalOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'contractorModalOverlay') closeContractorModal(); // tap area luar box = tutup
+});
+document.getElementById('modalContractorInput').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter') submitContractorEntry();
+});
 
 loadContractorData();
 </script>
-
-<script id="pwa-service-worker-registration">
-(function(){
-  if (!('serviceWorker' in navigator)) return;
-  window.addEventListener('load', function(){
-    navigator.serviceWorker.register('./service-worker.js').catch(function(err){
-      console.warn('Service worker registration failed:', err);
-    });
-  });
-})();
-</script>
-
 </body>
 </html>
