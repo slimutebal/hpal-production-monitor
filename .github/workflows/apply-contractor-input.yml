@@ -1,11 +1,9 @@
 name: Apply contractor input integration
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/apply-contractor-input.yml
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: write
