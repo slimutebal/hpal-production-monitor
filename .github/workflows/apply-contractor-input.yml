@@ -1,0 +1,111 @@
+name: Apply contractor input integration
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-contractor-input.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Integrate contractor assignment safely
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index_path = Path("index.html")
+          sw_path = Path("service-worker.js")
+          workflow_path = Path(".github/workflows/apply-contractor-input.yml")
+
+          script_tag = '<script src="./contractor-assignment.js" defer></script>'
+          index_text = index_path.read_text(encoding="utf-8")
+
+          if script_tag not in index_text:
+              lower = index_text.lower()
+              body_pos = lower.rfind("</body>")
+              html_pos = lower.rfind("</html>")
+              if body_pos < 0 or html_pos < 0 or body_pos > html_pos:
+                  raise RuntimeError("Could not locate the final document closing tags safely")
+
+              between = index_text[body_pos + len("</body>"):html_pos]
+              if between.strip():
+                  raise RuntimeError("Unexpected content between final </body> and </html>")
+
+              index_text = (
+                  index_text[:body_pos]
+                  + "  " + script_tag + "\n"
+                  + index_text[body_pos:]
+              )
+              index_path.write_text(index_text, encoding="utf-8")
+
+          final_index = index_path.read_text(encoding="utf-8")
+          if final_index.count(script_tag) != 1:
+              raise RuntimeError("Expected exactly one contractor assignment script tag")
+          if final_index.rfind(script_tag) > final_index.lower().rfind("</body>"):
+              raise RuntimeError("Contractor assignment script tag is outside the body")
+
+          sw_text = sw_path.read_text(encoding="utf-8")
+          old_cache_line = "const CACHE_NAME = 'hpal-production-monitor-v1.7.1-emergency-rollback';"
+          new_cache_line = "const CACHE_NAME = 'hpal-production-monitor-v1.7.2-direct-index-integration';"
+          if old_cache_line in sw_text:
+              sw_text = sw_text.replace(old_cache_line, new_cache_line, 1)
+          elif new_cache_line not in sw_text:
+              raise RuntimeError("Unexpected service-worker cache version")
+
+          enhancement_entry = "  './contractor-assignment.js',\n"
+          if enhancement_entry not in sw_text:
+              manifest_entry = "  './manifest.webmanifest',\n"
+              if manifest_entry not in sw_text:
+                  raise RuntimeError("Could not locate manifest entry in APP_SHELL")
+              sw_text = sw_text.replace(
+                  manifest_entry,
+                  manifest_entry + enhancement_entry,
+                  1,
+              )
+
+          if "injectContractorEnhancement" in sw_text:
+              raise RuntimeError("Unsafe HTML transformation code is still present")
+
+          sw_path.write_text(sw_text, encoding="utf-8")
+          workflow_path.unlink()
+          PY
+
+      - name: Validate JavaScript and integration
+        shell: bash
+        run: |
+          node --check contractor-assignment.js
+          node --check service-worker.js
+          python3 - <<'PY'
+          from pathlib import Path
+
+          html = Path("index.html").read_text(encoding="utf-8")
+          tag = '<script src="./contractor-assignment.js" defer></script>'
+          assert html.count(tag) == 1
+          assert html.rfind(tag) < html.lower().rfind("</body>") < html.lower().rfind("</html>")
+
+          sw = Path("service-worker.js").read_text(encoding="utf-8")
+          assert "hpal-production-monitor-v1.7.2-direct-index-integration" in sw
+          assert "'./contractor-assignment.js'" in sw
+          assert "injectContractorEnhancement" not in sw
+          PY
+
+      - name: Commit integrated application
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html service-worker.js .github/workflows/apply-contractor-input.yml
+          git commit -m "Integrate unmatched contractor input safely in index"
+          git push origin main
