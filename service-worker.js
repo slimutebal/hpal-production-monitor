@@ -46,6 +46,9 @@ async function injectContractorEnhancement(response) {
 
   const headers = new Headers(response.headers);
   headers.delete('content-length');
+  headers.delete('content-encoding');
+  headers.delete('transfer-encoding');
+  headers.delete('etag');
 
   return new Response(html, {
     status: response.status,
