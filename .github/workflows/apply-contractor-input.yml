@@ -2,20 +2,22 @@ name: Apply contractor input integration
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/5 * * * *'
+  issues:
+    types: [opened]
 
 permissions:
   contents: write
 
 jobs:
   patch-index:
+    if: github.event_name != 'issues' || github.event.issue.title == 'RUN SAFE CONTRACTOR INDEX INTEGRATION'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
 
       - name: Integrate contractor assignment safely
         shell: bash
@@ -41,11 +43,7 @@ jobs:
               if between.strip():
                   raise RuntimeError("Unexpected content between final </body> and </html>")
 
-              index_text = (
-                  index_text[:body_pos]
-                  + "  " + script_tag + "\n"
-                  + index_text[body_pos:]
-              )
+              index_text = index_text[:body_pos] + "  " + script_tag + "\n" + index_text[body_pos:]
               index_path.write_text(index_text, encoding="utf-8")
 
           final_index = index_path.read_text(encoding="utf-8")
@@ -67,11 +65,7 @@ jobs:
               manifest_entry = "  './manifest.webmanifest',\n"
               if manifest_entry not in sw_text:
                   raise RuntimeError("Could not locate manifest entry in APP_SHELL")
-              sw_text = sw_text.replace(
-                  manifest_entry,
-                  manifest_entry + enhancement_entry,
-                  1,
-              )
+              sw_text = sw_text.replace(manifest_entry, manifest_entry + enhancement_entry, 1)
 
           if "injectContractorEnhancement" in sw_text:
               raise RuntimeError("Unsafe HTML transformation code is still present")
