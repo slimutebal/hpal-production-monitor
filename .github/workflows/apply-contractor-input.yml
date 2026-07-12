@@ -1,16 +1,17 @@
 name: Apply contractor input integration
 
 on:
-  workflow_dispatch:
-  issues:
-    types: [opened]
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-contractor-input.yml
 
 permissions:
   contents: write
 
 jobs:
   patch-index:
-    if: github.event_name != 'issues' || github.event.issue.title == 'RUN SAFE CONTRACTOR INDEX INTEGRATION'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -30,23 +31,30 @@ jobs:
           workflow_path = Path(".github/workflows/apply-contractor-input.yml")
 
           script_tag = '<script src="./contractor-assignment.js" defer></script>'
+          head_anchor = '<meta name="msapplication-TileColor" content="#0a0e1a">'
+          sheetjs_anchor = '<script>/*! xlsx.js'
+
           index_text = index_path.read_text(encoding="utf-8")
 
           if script_tag not in index_text:
-              lower = index_text.lower()
-              body_pos = lower.rfind("</body>")
-              html_pos = lower.rfind("</html>")
-              if body_pos < 0 or html_pos < 0 or body_pos > html_pos:
-                  raise RuntimeError("Could not locate the final document closing tags safely")
-
-              index_text = index_text[:body_pos] + "  " + script_tag + "\n" + index_text[body_pos:]
+              if index_text.count(head_anchor) != 1:
+                  raise RuntimeError("Expected one stable head anchor")
+              index_text = index_text.replace(
+                  head_anchor,
+                  head_anchor + "\n" + script_tag,
+                  1,
+              )
               index_path.write_text(index_text, encoding="utf-8")
 
           final_index = index_path.read_text(encoding="utf-8")
           if final_index.count(script_tag) != 1:
               raise RuntimeError("Expected exactly one contractor assignment script tag")
-          if final_index.rfind(script_tag) > final_index.lower().rfind("</body>"):
-              raise RuntimeError("Contractor assignment script tag is outside the body")
+
+          tag_pos = final_index.find(script_tag)
+          anchor_pos = final_index.find(head_anchor)
+          sheetjs_pos = final_index.find(sheetjs_anchor)
+          if not (anchor_pos < tag_pos < sheetjs_pos):
+              raise RuntimeError("Contractor assignment script tag is not in the document head")
 
           sw_text = sw_path.read_text(encoding="utf-8")
           old_cache_line = "const CACHE_NAME = 'hpal-production-monitor-v1.7.1-emergency-rollback';"
@@ -61,7 +69,11 @@ jobs:
               manifest_entry = "  './manifest.webmanifest',\n"
               if manifest_entry not in sw_text:
                   raise RuntimeError("Could not locate manifest entry in APP_SHELL")
-              sw_text = sw_text.replace(manifest_entry, manifest_entry + enhancement_entry, 1)
+              sw_text = sw_text.replace(
+                  manifest_entry,
+                  manifest_entry + enhancement_entry,
+                  1,
+              )
 
           if "injectContractorEnhancement" in sw_text:
               raise RuntimeError("Unsafe HTML transformation code is still present")
@@ -80,8 +92,10 @@ jobs:
 
           html = Path("index.html").read_text(encoding="utf-8")
           tag = '<script src="./contractor-assignment.js" defer></script>'
+          anchor = '<meta name="msapplication-TileColor" content="#0a0e1a">'
+          sheetjs = '<script>/*! xlsx.js'
           assert html.count(tag) == 1
-          assert html.rfind(tag) < html.lower().rfind("</body>") < html.lower().rfind("</html>")
+          assert html.find(anchor) < html.find(tag) < html.find(sheetjs)
 
           sw = Path("service-worker.js").read_text(encoding="utf-8")
           assert "hpal-production-monitor-v1.7.2-direct-index-integration" in sw
