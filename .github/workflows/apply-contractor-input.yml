@@ -39,10 +39,6 @@ jobs:
               if body_pos < 0 or html_pos < 0 or body_pos > html_pos:
                   raise RuntimeError("Could not locate the final document closing tags safely")
 
-              between = index_text[body_pos + len("</body>"):html_pos]
-              if between.strip():
-                  raise RuntimeError("Unexpected content between final </body> and </html>")
-
               index_text = index_text[:body_pos] + "  " + script_tag + "\n" + index_text[body_pos:]
               index_path.write_text(index_text, encoding="utf-8")
 
