@@ -1,8 +1,10 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.6.0-contractor-sync';
+const CACHE_NAME = 'hpal-production-monitor-v1.7.0-unmatched-contractor-input';
+const ENHANCEMENT_SCRIPT = './contractor-assignment.js';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  ENHANCEMENT_SCRIPT,
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
@@ -28,6 +30,30 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+async function injectContractorEnhancement(response) {
+  if (!response) return response;
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('text/html')) return response;
+
+  let html = await response.text();
+  if (!html.includes('contractor-assignment.js')) {
+    const scriptTag = `<script src="${ENHANCEMENT_SCRIPT}" defer></script>`;
+    html = html.includes('</body>')
+      ? html.replace('</body>', `${scriptTag}</body>`)
+      : `${html}${scriptTag}`;
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+
+  return new Response(html, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
@@ -46,12 +72,16 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
+        .then(async (response) => {
+          const enhanced = await injectContractorEnhancement(response);
+          const copy = enhanced.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
-          return response;
+          return enhanced;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(async () => {
+          const cached = await caches.match('./index.html');
+          return injectContractorEnhancement(cached);
+        })
     );
     return;
   }
