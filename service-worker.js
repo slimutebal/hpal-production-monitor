@@ -1,8 +1,9 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.7.1-emergency-rollback';
+const CACHE_NAME = 'hpal-production-monitor-v1.7.2-direct-index-integration';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './contractor-assignment.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
