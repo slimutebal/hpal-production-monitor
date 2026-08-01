@@ -269,7 +269,7 @@ Aplikasi ini berjalan di sisi browser.
 - Data kontraktor bersama disinkron melalui Google Sheet / Google Apps Script.
 - Data lokal tambahan menggunakan `localStorage` browser.
 
-Catatan: repository ini public untuk kebutuhan deployment. Jangan menyimpan credential, token API, data rahasia perusahaan, atau data sensitif langsung di repository.
+Catatan: repository ini public hanya untuk kebutuhan deployment.
 
 ---
 
@@ -283,38 +283,6 @@ hpal-production-monitor/
 ├─ .nojekyll               # Mencegah GitHub Pages memproses file sebagai Jekyll
 └─ icons/                  # Icon PWA/Home Screen
 ```
-
----
-
-## Catatan maintenance
-
-Untuk update manual via GitHub:
-
-1. Siapkan `index.html` versi terbaru.
-2. Jika cache PWA perlu dipaksa refresh, update juga `service-worker.js` dan naikkan nama cache.
-3. Upload/replace file yang berubah saja.
-4. Jangan upload ulang `.nojekyll` jika sudah ada.
-5. Commit ke branch `main`.
-6. Tunggu GitHub Pages deployment selesai.
-7. Jika perangkat masih menampilkan versi lama, hapus site data/cache untuk `slimutebal.github.io`.
-8. Untuk iOS Add to Home Screen, remove app dari Home Screen lalu add ulang jika cache/icon masih tertahan.
-
-File yang biasanya berubah saat update aplikasi:
-
-```text
-index.html
-service-worker.js
-```
-
-File yang biasanya tidak perlu diubah:
-
-```text
-.nojekyll
-icons/
-manifest.webmanifest
-```
-
----
 
 ## Changelog
 
@@ -376,12 +344,12 @@ manifest.webmanifest
 
 ---
 
-## Known notes
+## Catatan Penting
 
-- iOS PWA cache and icon can be persistent. If a deployed update does not appear, remove the Home Screen app and add it again.
-- Android/Chrome usually receives service worker updates faster, but site data/cache may still need to be cleared after major updates.
-- Tooltip behavior differs between normal browser tabs and standalone PWA mode, so both modes should be tested after chart-related changes.
-- GitHub Pages deployment dapat sesekali stuck/queued. Jika live app masih berjalan, deployment terakhir yang sukses tetap aktif.
+- Cache dan ikon PWA di iOS bersifat persisten. Jika pembaruan yang di-deploy tidak muncul, hapus aplikasi dari Home Screen lalu tambahkan kembali.
+- Android/Chrome biasanya menerima pembaruan service worker lebih cepat, tetapi data situs/cache mungkin tetap perlu dibersihkan setelah pembaruan besar.
+- Perilaku tooltip berbeda antara tab browser biasa dan mode PWA standalone, sehingga kedua mode tersebut harus diuji setelah ada perubahan terkait grafik (chart).
+- Deployment GitHub Pages dapat sesekali mengalami stuck atau queued. Jika aplikasi live masih berjalan, deployment terakhir yang sukses akan tetap aktif.
 
 ---
 
@@ -391,7 +359,6 @@ manifest.webmanifest
 - File Excel dengan format kolom/sheet yang berubah jauh bisa gagal dibaca.
 - Offline mode bergantung pada cache browser.
 - Sinkronisasi data kontraktor membutuhkan koneksi internet.
-- Repository public berarti source aplikasi bisa dilihat publik.
 
 ---
 
