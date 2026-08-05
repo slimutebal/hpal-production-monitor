@@ -1,0 +1,61 @@
+/* V2.0 App Shell — page container + routing display rules.
+   Scoped to the shell wrapper/page sections so it never touches Monitor's
+   existing selectors (body rules below only add bottom clearance, they do
+   not remove or replace anything Monitor already declares). */
+
+:root {
+  --bottom-nav-height: 64px;
+}
+
+#app-pages {
+  display: block;
+}
+
+.app-page {
+  display: none;
+}
+
+.app-page.is-active {
+  display: block;
+}
+
+/* Reserve space so the fixed bottom navigation never covers page content.
+   Overrides Monitor's original padding-bottom (cascade: this stylesheet is
+   linked after the inline <style> block, same specificity, source order wins). */
+body {
+  padding-bottom: calc(var(--bottom-nav-height) + 20px + env(safe-area-inset-bottom));
+}
+
+/* Shared placeholder layout reused by the Report and Settings pages. */
+.page-placeholder {
+  min-height: 45vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 32px 16px;
+}
+
+.page-placeholder__title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text, inherit);
+}
+
+.page-placeholder__subtitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--muted, #8fa3bd);
+}
+
+.page-placeholder__note {
+  font-size: 0.82rem;
+  margin: 6px 0 0;
+  color: var(--muted, #8fa3bd);
+  max-width: 320px;
+  line-height: 1.5;
+}

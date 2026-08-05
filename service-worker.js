@@ -1,9 +1,17 @@
-const CACHE_NAME = 'hpal-production-monitor-v1.7.2-direct-index-integration';
+const CACHE_NAME = 'hpal-production-monitor-v2.0.1-app-shell-fixes';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './contractor-assignment.js',
+  './assets/css/app-shell.css',
+  './assets/css/bottom-navigation.css',
+  './assets/css/settings.css',
+  './js/app.js',
+  './js/router.js',
+  './js/components/bottom-navigation.js',
+  './js/pages/report/report-page.js',
+  './js/pages/settings/settings-page.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
