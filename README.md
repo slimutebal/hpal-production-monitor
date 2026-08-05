@@ -1,6 +1,6 @@
 # HPAL Production Monitor
 
-**HPAL Production Monitor** adalah aplikasi web/PWA ringan untuk membantu monitoring hauling **Limonite** berbasis file Excel timbangan. Aplikasi berjalan langsung di browser, dapat dipasang ke home screen seperti aplikasi, dan mendukung penggunaan offline setelah pertama kali dibuka.
+**HPAL Production Monitor** adalah aplikasi web/PWA untuk membantu monitoring hauling **Limonite** dan pembuatan laporan produksi harian berbasis file Excel timbangan. Aplikasi berjalan langsung di browser, dapat dipasang ke home screen seperti aplikasi, dan mendukung penggunaan offline setelah pertama kali dibuka.
 
 **Live app:** [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
 
@@ -8,133 +8,74 @@
 
 ## Ringkasan
 
-Aplikasi ini membaca file Excel timbangan lalu menampilkan ringkasan hauling, ritase, tonase, ore class, kadar Ni, ID dome, kontraktor, analisis NI per jam, serta indikasi perpindahan DT.
+Mulai V2.0, aplikasi ini menjadi aplikasi tiga halaman dengan navigasi bawah (bottom navigation) seperti aplikasi mobile:
+
+| Halaman | Route | Fungsi |
+| --- | --- | --- |
+| **Monitor** | `#/monitor` | Analisis hauling dari file Excel timbangan — fungsi utama yang sudah ada sebelumnya, tidak berubah. |
+| **Report** | `#/report` | Generator laporan produksi harian. Saat ini hanya mendukung buyer **HYNC**. |
+| **Settings** | `#/settings` | Placeholder untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 
 Fokus utama:
 
-- Monitoring hauling Limonite dari file Excel timbangan.
+- Monitoring hauling Limonite dari file Excel timbangan (halaman Monitor).
 - Membaca ritase, tonase, ore class, dome, dan kadar Ni.
 - Menampilkan visualisasi kadar Ni dan tonase per jam.
 - Menganalisis penyumbang naik/turun `ΔNI` terhadap base NI.
 - Mendeteksi perpindahan DT antar kontraktor/dome/class.
-- Menampilkan resume perpindahan per kontraktor.
+- Membuat **Daily Production Geology Report** untuk buyer HYNC (halaman Report).
 - Menyediakan tampilan mobile-friendly untuk Android, iOS, dan PC.
 - Mendukung PWA/offline cache via GitHub Pages.
+
+Catatan lingkup V2.0:
+
+- Monitor mempertahankan seluruh fungsi yang sudah ada — tidak ada perubahan rumus, parser, atau grafik selama integrasi ke struktur tiga halaman.
+- Report baru mendukung **HYNC**. Report untuk buyer lain (ESG, SLNC) direncanakan untuk V2.1 dan **belum tersedia** di V2.0.
+- Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah pengguna di V2.0.
 
 ---
 
 ## Status rilis terbaru
 
-**Current release:** `v1.6.x — Contractor Sync + NI Indikasi Fix + iOS Tooltip/Icon Fix`
+**Current release:** `v2.0.0 — Three-Page App Shell + HYNC Production Report`
 
-Update terbaru mencakup:
+V2.0 menambahkan:
 
-### 1. Data kontraktor bersama via Google Sheet
+1. App shell tiga halaman (Monitor, Report, Settings).
+2. Routing berbasis hash (`#/monitor`, `#/report`, `#/settings`).
+3. Bottom navigation tetap (fixed) untuk perangkat mobile.
+4. Monitor yang sudah ada dipertahankan penuh, tanpa perubahan perilaku.
+5. Generator **Daily Production Geology Report** untuk buyer HYNC.
+6. Halaman Settings sebagai placeholder.
+7. Cache app-shell PWA yang diperbarui untuk file-file V2.0.
+8. State Report (langkah aktif, input, hasil) tetap tersimpan selama berpindah halaman dalam satu sesi.
 
-Data kontraktor tidak lagi hanya bergantung pada data lokal masing-masing device.
-
-- Data kontraktor disinkron dari Google Sheet melalui Google Apps Script Web App.
-- Semua user bisa menerima data kontraktor terbaru yang sama ketika online.
-- Tombol **➕ Update Kontraktor** untuk input No DT + Nama Kontraktor.
-- Tombol **🔄 Sinkron Sekarang** untuk fetch ulang manual.
-- Fitur **📄 Update via File Excel** tetap tersedia sebagai override lokal per-device.
-
-Prioritas sumber data kontraktor:
-
-```text
-Upload Excel manual device ini → Google Sheet bersama → data bawaan aplikasi
-```
-
-### 2. Dukungan offline untuk update kontraktor
-
-- Jika device online saat submit, data langsung terkirim ke Google Sheet.
-- Jika device offline, data tetap berlaku di device itu dan masuk antrean lokal.
-- Saat device online kembali, antrean lokal akan dikirim ke Google Sheet.
-
-### 3. Logika INDIKASI NI per jam diperbaiki
-
-Kolom **INDIKASI** pada tabel `Analisis NI per Jam` menggunakan kontribusi terhadap base NI, bukan sekadar perubahan mix antar jam.
-
-Aturan label:
-
-```text
-abs(ΔNI) < 0.009          → —
-0.009 <= abs(ΔNI) < 0.015 → Mix sedikit berubah
-abs(ΔNI) >= 0.015         → penyumbang utama + faktor penahan opsional
-```
-
-Contoh label:
-
-```text
-↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
-```
-
-Makna label:
-
-- `↓ LGLO -0.030 DOME-12` = penyumbang utama yang menarik NI turun.
-- `↑ HGLO +0.008 DOME-03` = faktor penahan yang membantu menahan penurunan NI.
-
-### 4. Fix tooltip grafik di iOS PWA
-
-- Memperbaiki tooltip/popup grafik `Analisis NI per Jam` yang bisa tertahan saat app dibuka dari **Add to Home Screen** di iOS.
-- Tap/click di luar chart akan memaksa tooltip Chart.js hilang.
-- Event yang ditangani: `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
-
-### 5. Fix PWA/Home Screen icon
-
-- Menambahkan kembali link `manifest.webmanifest` di `index.html`.
-- Menambahkan favicon PNG multi-size.
-- Menambahkan `apple-touch-icon` untuk iOS.
-- Menambahkan metadata Apple/mobile web app.
-
-### 6. Theme dan tampilan
-
-- Dark mode.
-- Light mode.
-- Auto mode mengikuti preferensi sistem/browser.
-- Sub-baris dome collapsible untuk `HGLO`, `MGLO`, dan `LGLO`.
-- Header dan isi cell kolom `ΔNI` rata tengah.
-- `📋 Resume Perpindahan per Kontraktor` tampil sebelum `🔁 Perpindahan DT`.
-
-### 7. Service worker dan cache
-
-- Cache version dinaikkan ke `v1.6.0-contractor-sync`.
-- Request lintas-origin seperti Google Apps Script tidak ikut di-cache.
-- Ini mencegah data kontraktor dari Google Sheet menjadi basi karena tertahan cache lama.
+Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC ada di bagian [Report HYNC](#report-hync).
 
 ---
 
 ## Cara pakai
 
-### 1. Buka aplikasi
+Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Settings) yang selalu terlihat di bagian bawah layar, baik di HP maupun desktop. Berpindah halaman tidak melakukan reload — data yang sudah diisi di satu halaman tetap ada saat kembali dari halaman lain.
 
-Buka:
+### Menggunakan Monitor
 
-[https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
+1. Buka halaman **Monitor** (default saat aplikasi pertama dibuka).
+2. Klik **Pilih File Excel** pada kartu **Data Timbangan**, lalu pilih file `.xlsx` timbangan (sheet pertama: `过磅明细`).
+3. Aplikasi menampilkan ringkasan hauling/produksi, tonase dan ritase, breakdown ore class, visualisasi kadar Ni, analisis NI per jam, indikasi penyumbang `ΔNI`, resume perpindahan per kontraktor, perpindahan DT, dan sub-baris dome per ore class.
 
-### 2. Upload file Excel timbangan
+### Menggunakan Report
 
-Klik **Pilih File Excel**, lalu pilih file `.xlsx`.
+1. Buka halaman **Report**.
+2. Di **Step 1 — Input**: paste teks report shift sebelumnya, upload file timbangan HYNC (`.xlsx`/`.xls`), lalu isi Week, PIC SCM, PIC AWK, Manpower AWK, Total Manpower, Problem, dan Preventive Action.
+3. Di **Step 2 — Area Muat**: pilih area (BR / BR 23 / DS) untuk setiap dome yang terdeteksi dari file.
+4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
-Format yang ditargetkan:
+Upload file di Report terpisah dari upload file di Monitor — keduanya membaca file masing-masing secara independen.
 
-- File Excel `.xlsx`.
-- Sheet utama: `过磅明细`.
-- Format data FPP atau format lain yang sudah didukung parser aplikasi.
+### Menggunakan Settings
 
-### 3. Baca hasil monitoring
-
-Aplikasi akan menampilkan:
-
-- Ringkasan hauling/produksi.
-- Tonase dan ritase.
-- Breakdown ore class.
-- Visualisasi kadar Ni.
-- Analisis NI per jam.
-- Indikasi penyumbang `ΔNI`.
-- Resume perpindahan per kontraktor.
-- Perpindahan DT.
-- Sub-baris dome per ore class.
+Halaman Settings saat ini hanya berupa placeholder. Belum ada pengaturan yang bisa diubah pengguna di V2.0 — pengaturan personel, kontraktor, dan lisensi direncanakan untuk versi berikutnya.
 
 ---
 
@@ -181,6 +122,7 @@ Catatan iOS:
 - iOS PWA sering menahan cache dan icon lebih lama dibanding browser biasa.
 - Jika icon tidak berubah setelah update, remove dari Home Screen lalu Add to Home Screen ulang.
 - Tooltip grafik iOS sudah diperbaiki, tetapi chart-related changes tetap perlu dites di mode Safari biasa dan mode Home Screen.
+- Validasi final bottom navigation dan safe-area di perangkat iOS asli masih perlu dilakukan (lihat [Limitasi](#limitasi)).
 
 ### PC / Laptop
 
@@ -198,8 +140,8 @@ Cara menggunakan di PC:
 
    [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
 
-2. Upload file Excel timbangan.
-3. Gunakan langsung di browser.
+2. Gunakan navigasi bawah untuk berpindah antara Monitor, Report, dan Settings.
+3. Upload file Excel sesuai halaman yang digunakan.
 
 Install sebagai aplikasi desktop:
 
@@ -218,11 +160,180 @@ Catatan PC:
 
 ---
 
+## Monitor
+
+Monitor adalah halaman analisis hauling yang sudah tersedia sejak sebelum V2.0. **Perilaku Monitor dipertahankan penuh selama integrasi ke struktur app shell V2.0** — tidak ada perubahan rumus, parser Excel, grafik, atau contractor sync. Monitor hanya dipindahkan ke dalam page container dan sistem navigasi baru.
+
+### Data kontraktor bersama via Google Sheet
+
+Data kontraktor tidak hanya bergantung pada data lokal masing-masing device.
+
+- Data kontraktor disinkron dari Google Sheet melalui Google Apps Script Web App.
+- Semua user bisa menerima data kontraktor terbaru yang sama ketika online.
+- Tombol **➕ Update Kontraktor** untuk input No DT + Nama Kontraktor.
+- Tombol **🔄 Sinkron Sekarang** untuk fetch ulang manual.
+- Fitur **📄 Update via File Excel** tetap tersedia sebagai override lokal per-device.
+
+Prioritas sumber data kontraktor:
+
+```text
+Upload Excel manual device ini → Google Sheet bersama → data bawaan aplikasi
+```
+
+### Dukungan offline untuk update kontraktor
+
+- Jika device online saat submit, data langsung terkirim ke Google Sheet.
+- Jika device offline, data tetap berlaku di device itu dan masuk antrean lokal.
+- Saat device online kembali, antrean lokal akan dikirim ke Google Sheet.
+
+### Logika INDIKASI NI per jam
+
+Kolom **INDIKASI** pada tabel `Analisis NI per Jam` menggunakan kontribusi terhadap base NI, bukan sekadar perubahan mix antar jam.
+
+Aturan label:
+
+```text
+abs(ΔNI) < 0.009          → —
+0.009 <= abs(ΔNI) < 0.015 → Mix sedikit berubah
+abs(ΔNI) >= 0.015         → penyumbang utama + faktor penahan opsional
+```
+
+Contoh label (ilustrasi, bukan data operasional):
+
+```text
+↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
+```
+
+Makna label:
+
+- `↓ LGLO -0.030 DOME-12` = penyumbang utama yang menarik NI turun.
+- `↑ HGLO +0.008 DOME-03` = faktor penahan yang membantu menahan penurunan NI.
+
+### Tooltip grafik di iOS PWA
+
+- Tooltip/popup grafik `Analisis NI per Jam` tidak tertahan saat app dibuka dari **Add to Home Screen** di iOS.
+- Tap/click di luar chart akan memaksa tooltip Chart.js hilang.
+- Event yang ditangani: `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
+
+### Theme dan tampilan
+
+- Dark mode.
+- Light mode.
+- Auto mode mengikuti preferensi sistem/browser.
+- Sub-baris dome collapsible untuk `HGLO`, `MGLO`, dan `LGLO`.
+- Header dan isi cell kolom `ΔNI` rata tengah.
+- `📋 Resume Perpindahan per Kontraktor` tampil sebelum `🔁 Perpindahan DT`.
+
+---
+
+## Report HYNC
+
+Halaman **Report** (`#/report`) menghasilkan laporan dengan format:
+
+```text
+DAILY PRODUCTION GEOLOGY REPORT
+HPAL Ore Selling SCM — FPP HYNC
+```
+
+Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Saat ini Report hanya mendukung buyer **HYNC** — ESG dan SLNC belum diimplementasikan (lihat [Limitasi](#limitasi)).
+
+### Alur tiga langkah
+
+#### 1. Input
+
+- Teks report shift sebelumnya (wajib — dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama).
+- File Excel timbangan HYNC (wajib).
+- Week.
+- PIC SCM.
+- PIC AWK.
+- Manpower AWK.
+- Total Manpower.
+- Problem (boleh kosong, tampil sebagai `-` di laporan).
+- Preventive Action (boleh kosong, tampil sebagai `-` di laporan).
+
+Format file yang didukung:
+
+- `.xlsx` atau `.xls`.
+- Sheet yang diutamakan: `过磅明细`.
+- Header kolom yang wajib ada:
+  - `流水号`
+  - `车号`
+  - `净重`
+  - `毛重时间`
+  - `日期`
+  - `规格`
+
+Jika sheet atau header yang dibutuhkan tidak ditemukan, aplikasi menampilkan pesan error yang jelas dan tidak melanjutkan ke langkah berikutnya.
+
+#### 2. Area Muat
+
+- Semua dome unik yang terdeteksi dari file ditampilkan.
+- Setiap dome menampilkan nama dome dan ore class.
+- Setiap dome wajib diberi salah satu area: **BR**, **BR 23**, atau **DS** sebelum bisa lanjut ke Step 3.
+
+#### 3. Hasil
+
+Menampilkan:
+
+- Tanggal dan shift terdeteksi.
+- On Shift tonnage dan ritase.
+- Jumlah DT dan ADT.
+- Breakdown jumlah truck per kontraktor.
+- Loading point per area (DS / BR / BR 23).
+- Daily, WTD, MTD, YTD.
+- Problem dan Preventive Action.
+- Preview teks laporan lengkap, dengan tombol **Copy Laporan** untuk menyalin ke clipboard.
+
+### Penyimpanan state Report
+
+Input dan hasil laporan yang sudah dibuat tetap tersimpan selama pengguna berpindah ke Monitor atau Settings lalu kembali ke Report, karena halaman Report tidak dibangun ulang saat berpindah rute. State Report bersifat in-memory (sesi berjalan) — akan hilang saat refresh, tab ditutup, atau tombol Reset ditekan. Report **tidak** menyediakan riwayat laporan permanen di V2.0.
+
+### Ringkasan perhitungan
+
+#### On Shift tonnage
+
+```text
+On Shift tonnage = jumlah seluruh net weight valid / 1000
+```
+
+#### On Shift ritase
+
+```text
+On Shift ritase = jumlah record valid
+```
+
+#### Daily
+
+```text
+Day Shift                                        → Daily = On Shift
+Night Shift, tanggal report sebelumnya sama       → Daily = Previous Daily + On Shift
+Night Shift, tanggal report sebelumnya berbeda     → Daily = On Shift
+```
+
+#### Akumulasi
+
+```text
+WTD = Previous WTD + On Shift
+MTD = Previous MTD + On Shift
+YTD = Previous YTD + On Shift
+```
+
+#### Ore class
+
+```text
+Ni > 1.4   → HGLO
+Ni < 1.2   → LGLO
+lainnya    → MGLO
+```
+
+---
+
 ## Fitur utama
 
 | Fitur | Keterangan |
-|---|---|
-| Upload Excel | Membaca file `.xlsx` timbangan dari perangkat pengguna. |
+| --- | --- |
+| Three-page navigation | Monitor, Report, dan Settings melalui bottom navigation ala aplikasi mobile. |
+| Upload Excel | Membaca file `.xlsx` timbangan dari perangkat pengguna (Monitor). |
 | Analisis NI per jam | Menampilkan tonase per ore class dan line kadar NI per jam. |
 | Indikasi ΔNI | Menjelaskan penyumbang utama naik/turun NI dari base. |
 | Sync kontraktor | Mengambil dan mengirim data kontraktor melalui Google Sheet. |
@@ -231,13 +342,23 @@ Catatan PC:
 | Perpindahan DT | Menampilkan indikasi perpindahan DT antar dome/class/kontraktor. |
 | Collapsible dome rows | Baris dome per `HGLO`, `MGLO`, dan `LGLO` dapat dibuka/tutup. |
 | Theme mode | Mendukung dark, light, dan auto mode. |
+| Report HYNC | Membuat Daily Production Geology Report untuk buyer HYNC dari file timbangan terpisah. |
+| Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
+| Settings placeholder | Reserved untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 | PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
 
 ---
 
 ## Offline mode
 
-Aplikasi mendukung offline mode melalui service worker.
+Aplikasi mendukung offline mode melalui service worker. Cache app-shell V2.0 mencakup:
+
+- `index.html`, `manifest.webmanifest`, `contractor-assignment.js`.
+- CSS app shell, bottom navigation, Report HYNC, dan Settings (`assets/css/*.css`).
+- JavaScript app shell dan router (`js/app.js`, `js/router.js`, `js/components/bottom-navigation.js`).
+- JavaScript Report HYNC dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
+- JavaScript halaman Settings placeholder.
+- Icon PWA dan manifest.
 
 ```text
 Pertama kali:
@@ -247,14 +368,15 @@ Setelah itu:
 Bisa dibuka dari Home Screen/browser tanpa internet
 ```
 
-Catatan:
+Catatan penting:
 
-- Offline mode bergantung pada cache browser.
+- Yang dicache adalah **file aplikasi** (HTML/CSS/JS/icon) — file Excel operasional (timbangan Monitor maupun HYNC) **tidak** diupload atau disimpan oleh service worker; file tetap diproses lokal di browser saat dipilih pengguna.
+- Sinkronisasi kontraktor via Google Sheet tetap membutuhkan koneksi internet.
+- Perilaku copy ke clipboard bergantung pada izin/permission browser yang sedang digunakan.
+- Load pertama setelah setiap deployment baru tetap membutuhkan koneksi internet.
 - Jika browser menghapus site data/cache, aplikasi perlu dibuka online lagi.
-- Update aplikasi dari GitHub memerlukan koneksi internet.
 - Untuk update besar, terutama di iOS PWA, kadang perlu remove/add ulang dari Home Screen.
-- Data kontraktor dari Google Sheet membutuhkan koneksi internet untuk sinkronisasi.
-- Update kontraktor saat offline akan disimpan lokal terlebih dahulu.
+- Validasi final perilaku offline/PWA di perangkat Android dan iOS asli masih perlu dilakukan — lihat [Limitasi](#limitasi).
 
 ---
 
@@ -263,10 +385,14 @@ Catatan:
 Aplikasi ini berjalan di sisi browser.
 
 - File Excel dipilih dari perangkat pengguna.
-- Parsing dan perhitungan file Excel dilakukan lokal di browser.
-- Tidak ada backend khusus untuk menerima file Excel.
+- Parsing dan perhitungan file Excel Monitor dilakukan lokal di browser.
+- Parsing Excel timbangan HYNC untuk Report juga dilakukan lokal di browser.
+- Teks report sebelumnya yang di-paste di halaman Report hanya tersimpan di state halaman/sesi saat ini.
+- Teks laporan hasil Report hanya disalin ke clipboard saat pengguna menekan tombol Copy.
+- Tidak ada backend khusus untuk menerima file Excel Monitor maupun file Excel HYNC.
+- Halaman Report tidak menyediakan riwayat laporan permanen di V2.0.
 - Data kontraktor bawaan tersimpan di file aplikasi.
-- Data kontraktor bersama disinkron melalui Google Sheet / Google Apps Script.
+- Data kontraktor bersama (Monitor) disinkron melalui Google Sheet / Google Apps Script.
 - Data lokal tambahan menggunakan `localStorage` browser.
 
 Catatan: repository ini public hanya untuk kebutuhan deployment.
@@ -277,14 +403,63 @@ Catatan: repository ini public hanya untuk kebutuhan deployment.
 
 ```text
 hpal-production-monitor/
-├─ index.html              # Aplikasi utama, termasuk CSS/JS/library inline
-├─ manifest.webmanifest    # Konfigurasi PWA dan icon Android/desktop
-├─ service-worker.js       # Offline cache dan cache routing
-├─ .nojekyll               # Mencegah GitHub Pages memproses file sebagai Jekyll
-└─ icons/                  # Icon PWA/Home Screen
+├── index.html
+├── manifest.webmanifest
+├── service-worker.js
+├── contractor-assignment.js
+├── assets/
+│   └── css/
+│       ├── app-shell.css
+│       ├── bottom-navigation.css
+│       ├── report-hync.css
+│       └── settings.css
+├── js/
+│   ├── app.js
+│   ├── router.js
+│   ├── components/
+│   │   └── bottom-navigation.js
+│   ├── services/
+│   │   └── contractor-adapter.js
+│   └── pages/
+│       ├── report/
+│       │   ├── report-page.js
+│       │   ├── report-state.js
+│       │   ├── report-utils.js
+│       │   └── profiles/
+│       │       └── hync-profile.js
+│       └── settings/
+│           └── settings-page.js
+├── docs/
+│   ├── V2.0_ARCHITECTURE_AND_ROADMAP.md
+│   └── references/
+└── icons/
 ```
 
+Catatan:
+
+- `docs/references/` berisi referensi implementasi (mis. generator HYNC sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, dan tidak dicache oleh service worker.
+- Report ESG dan SLNC **belum diimplementasikan** di V2.0.
+
+---
+
 ## Changelog
+
+### v2.0.0 — Three-Page App Shell + HYNC Production Report
+
+- Added Monitor, Report, and Settings routes (`#/monitor`, `#/report`, `#/settings`).
+- Added fixed bottom navigation for mobile and desktop.
+- Preserved existing Monitor behavior during the app-shell integration.
+- Added modular HYNC report generator (Input → Area Muat → Hasil).
+- Added HYNC weighbridge Excel validation (sheet + required headers).
+- Added previous-report text parsing (date, Daily, WTD, MTD, YTD).
+- Added dome area assignment (BR / BR 23 / DS).
+- Added Daily/WTD/MTD/YTD calculations for the HYNC report.
+- Added report preview and clipboard copy with fallback.
+- Preserved Report state (step, input, generated report) across route changes within a session.
+- Added scoped Report CSS (`#page-report`) and isolated ES modules (no global variable/function collisions with Monitor).
+- Updated PWA app-shell cache for the new V2.0 files.
+- Settings remains a placeholder in V2.0 — no CRUD, no license logic.
+- ESG and SLNC report profiles are planned for V2.1.
 
 ### v1.6.x — Contractor Sync + Icon Fix
 
@@ -355,10 +530,19 @@ hpal-production-monitor/
 
 ## Limitasi
 
-- Aplikasi bergantung pada struktur Excel yang dikenali parser.
+- Report V2.0 hanya mendukung buyer **HYNC**.
+- Report ESG dan SLNC belum diimplementasikan.
+- Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah.
+- Parsing Report HYNC bergantung pada header workbook yang sesuai format yang diharapkan.
+- Teks report sebelumnya wajib diisi agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif.
+- State Report bersifat sesi/in-memory saja — tidak disimpan permanen.
+- Riwayat laporan tidak disimpan secara permanen.
+- Mapping kontraktor untuk Report HYNC saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor.
+- Aplikasi bergantung pada struktur Excel yang dikenali parser (Monitor maupun Report).
 - File Excel dengan format kolom/sheet yang berubah jauh bisa gagal dibaca.
 - Offline mode bergantung pada cache browser.
-- Sinkronisasi data kontraktor membutuhkan koneksi internet.
+- Sinkronisasi data kontraktor Monitor membutuhkan koneksi internet.
+- Validasi akhir PWA di perangkat Android/iOS asli mungkin masih diperlukan.
 
 ---
 
