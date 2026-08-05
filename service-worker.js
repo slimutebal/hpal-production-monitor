@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.0.1-app-shell-fixes';
+const CACHE_NAME = 'hpal-production-monitor-v2.0.0-report-hync';
 const APP_SHELL = [
   './',
   './index.html',
@@ -6,11 +6,16 @@ const APP_SHELL = [
   './contractor-assignment.js',
   './assets/css/app-shell.css',
   './assets/css/bottom-navigation.css',
+  './assets/css/report-hync.css',
   './assets/css/settings.css',
   './js/app.js',
   './js/router.js',
   './js/components/bottom-navigation.js',
+  './js/services/contractor-adapter.js',
   './js/pages/report/report-page.js',
+  './js/pages/report/report-state.js',
+  './js/pages/report/report-utils.js',
+  './js/pages/report/profiles/hync-profile.js',
   './js/pages/settings/settings-page.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

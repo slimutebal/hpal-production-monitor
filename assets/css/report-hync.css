@@ -1,0 +1,390 @@
+/* Report HYNC -- every selector is scoped under #page-report so this file
+   can never leak into Monitor or Settings. Structural layout (stepper,
+   cards, dome rows, scale display, output box) is adapted from
+   docs/references/HYNC_daily_report_WAG.html; the visual theme uses the
+   app's own CSS custom properties (var(--text), var(--accent), ...)
+   instead of the reference's own dark/orange palette, per the V2.0
+   requirement that Report visually fit the app shell rather than
+   reproduce the reference page's global body theme. */
+
+#page-report .hync-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4px 0 24px;
+}
+
+#page-report .hync-header {
+  margin-bottom: 18px;
+}
+
+#page-report .hync-eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #38bdf8);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+#page-report .hync-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: var(--text, inherit);
+}
+
+#page-report .hync-subtitle {
+  color: var(--muted, #8fa3bd);
+  font-size: 0.8rem;
+}
+
+/* Stepper */
+#page-report .hync-stepper {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0 20px;
+  font-size: 0.68rem;
+}
+
+#page-report .hync-step-pill {
+  flex: 1;
+  text-align: center;
+  padding: 9px 4px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--muted, #8fa3bd);
+  background: var(--glass, rgba(255, 255, 255, 0.05));
+  font-weight: 600;
+}
+
+#page-report .hync-step-pill.active {
+  border-color: var(--accent, #38bdf8);
+  color: var(--accent, #38bdf8);
+  background: var(--glass-strong, rgba(255, 255, 255, 0.09));
+}
+
+#page-report .hync-step-pill.done {
+  color: var(--good, #34d399);
+  border-color: var(--good, #34d399);
+}
+
+/* Panels */
+#page-report .hync-panel {
+  display: none;
+}
+#page-report .hync-panel.active {
+  display: block;
+}
+
+#page-report .hync-card {
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow, none);
+}
+#page-report .hync-card h2 {
+  font-size: 0.92rem;
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: var(--text, inherit);
+}
+#page-report .hync-hint {
+  color: var(--muted, #8fa3bd);
+  font-size: 0.75rem;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+#page-report .hync-accent-text {
+  color: var(--accent, #38bdf8);
+}
+#page-report .hync-optional {
+  color: var(--muted, #8fa3bd);
+  font-weight: 400;
+}
+
+#page-report .hync-field {
+  margin-bottom: 12px;
+}
+#page-report .hync-field--inline-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+#page-report .hync-field label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+#page-report .hync-req::after {
+  content: ' *';
+  color: var(--accent, #38bdf8);
+}
+
+#page-report .hync-textarea,
+#page-report .hync-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 44px;
+}
+#page-report .hync-textarea:focus,
+#page-report .hync-input:focus {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+#page-report .hync-mono-area {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  min-height: 140px;
+  resize: vertical;
+}
+
+/* File upload */
+#page-report .hync-file-drop {
+  display: block;
+  border: 1.5px dashed var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted, #8fa3bd);
+  font-size: 0.78rem;
+}
+#page-report .hync-file-drop:hover {
+  border-color: var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.06);
+}
+#page-report .hync-file-drop input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+#page-report .hync-file-icon {
+  font-size: 1.4rem;
+  margin-bottom: 4px;
+}
+#page-report .hync-file-status {
+  margin-top: 10px;
+  font-size: 0.75rem;
+  padding: 10px 12px;
+  border-radius: 10px;
+  display: none;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+#page-report .hync-file-status.ok {
+  display: block;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid var(--good, #34d399);
+  color: var(--good, #34d399);
+}
+#page-report .hync-file-status.err {
+  display: block;
+  background: var(--error-bg, rgba(248, 113, 113, 0.1));
+  border: 1px solid var(--error-border, rgba(248, 113, 113, 0.35));
+  color: var(--error-text, #fca5a5);
+}
+
+#page-report .hync-alert {
+  font-size: 0.78rem;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  background: var(--error-bg, rgba(248, 113, 113, 0.1));
+  border: 1px solid var(--error-border, rgba(248, 113, 113, 0.35));
+  color: var(--error-text, #fca5a5);
+  line-height: 1.6;
+}
+
+#page-report .hync-warn-box {
+  font-size: 0.75rem;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: var(--accent2, #fbbf24);
+  line-height: 1.6;
+}
+
+/* Buttons */
+#page-report .hync-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+#page-report .hync-btn {
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  border: none;
+  min-height: 42px;
+  font-family: inherit;
+}
+#page-report .hync-btn-primary {
+  background: var(--accent-chip, var(--accent, #38bdf8));
+  color: var(--btn-text, #07121f);
+  flex: 1;
+}
+#page-report .hync-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text, inherit);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+}
+#page-report .hync-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#page-report .hync-btn:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* Dome list */
+#page-report .hync-dome-row {
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+#page-report .hync-dome-row--missing {
+  border-color: var(--bad, #f87171);
+}
+#page-report .hync-dome-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+#page-report .hync-dome-class {
+  font-size: 0.65rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-left: 7px;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--accent, #38bdf8);
+}
+#page-report .hync-area-options {
+  display: flex;
+  gap: 8px;
+  margin-top: 9px;
+}
+#page-report .hync-area-opt {
+  flex: 1;
+}
+#page-report .hync-area-opt input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+#page-report .hync-area-opt label {
+  display: block;
+  text-align: center;
+  padding: 8px 4px;
+  margin: 0;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--muted, #8fa3bd);
+}
+#page-report .hync-area-opt input:checked + label {
+  background: var(--accent, #38bdf8);
+  color: var(--btn-text, #07121f);
+  border-color: var(--accent, #38bdf8);
+  font-weight: 700;
+}
+#page-report .hync-area-opt input:focus-visible + label {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* Scale display */
+#page-report .hync-scale-display {
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+#page-report .hync-scale-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+#page-report .hync-scale-row:last-child {
+  border-bottom: none;
+}
+#page-report .hync-scale-label {
+  font-size: 0.65rem;
+  color: var(--muted, #8fa3bd);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+#page-report .hync-scale-value {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent2, #fbbf24);
+}
+
+#page-report .hync-output-box {
+  width: 100%;
+  min-height: 420px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  padding: 14px;
+  color: var(--text, inherit);
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  resize: vertical;
+}
+#page-report .hync-copy-feedback {
+  font-size: 0.75rem;
+  color: var(--good, #34d399);
+  margin-top: 8px;
+  display: none;
+}
+#page-report .hync-copy-feedback--error {
+  color: var(--bad, #f87171);
+}
+
+#page-report .hync-footnote {
+  font-size: 0.7rem;
+  color: var(--muted, #8fa3bd);
+  text-align: center;
+  margin-top: 22px;
+}
+
+@media (min-width: 640px) {
+  #page-report .hync-field--inline-2 {
+    gap: 14px;
+  }
+}
