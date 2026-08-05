@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Production Geology Report — FPP HYNC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg: #1b1815;
+    --surface: #242019;
+    --surface-2: #2c2620;
+    --border: #41382e;
+    --text: #f1ece1;
+    --text-muted: #a89a85;
+    --accent: #d97a3f;
+    --accent-dim: #8a4f29;
+    --led: #ffb347;
+    --ok: #8aa86a;
+    --warn: #d4574a;
+    --radius: 10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(217,122,63,0.10), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    line-height:1.5;
+    min-height:100vh;
+    padding: 28px 16px 80px;
+  }
+  .wrap{max-width:640px; margin:0 auto;}
+
+  header.top{margin-bottom:22px;}
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    color:var(--accent);
+    text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:23px;
+    font-weight:700;
+    margin:0 0 4px;
+    letter-spacing:-.01em;
+  }
+  .sub{color:var(--text-muted); font-size:13px;}
+
+  /* Stepper */
+  .stepper{
+    display:flex; gap:6px; margin: 20px 0 24px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+  }
+  .step-pill{
+    flex:1; text-align:center; padding:9px 4px;
+    border-radius:8px; border:1px solid var(--border);
+    color:var(--text-muted); background:var(--surface);
+    transition: all .25s ease;
+  }
+  .step-pill.active{
+    border-color:var(--accent); color:var(--led); background:var(--surface-2);
+    box-shadow: 0 0 0 1px var(--accent-dim) inset;
+  }
+  .step-pill.done{ color:var(--ok); border-color:#3c4733;}
+
+  .panel{display:none;}
+  .panel.active{display:block; animation: fadein .35s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  .card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:18px;
+    margin-bottom:16px;
+  }
+  .card h2{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:15px; margin:0 0 4px; font-weight:600;
+  }
+  .card .hint{color:var(--text-muted); font-size:12.5px; margin-bottom:12px;}
+
+  label{
+    display:block; font-size:12.5px; color:var(--text-muted);
+    margin-bottom:5px; font-weight:500;
+  }
+  .field{margin-bottom:14px;}
+  .field.inline-2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  textarea, input[type=text], input[type=number]{
+    width:100%; background:var(--bg); border:1px solid var(--border);
+    color:var(--text); border-radius:8px; padding:10px 12px;
+    font-family:'IBM Plex Sans', sans-serif; font-size:14px;
+    resize:vertical;
+  }
+  textarea:focus, input:focus{ outline:none; border-color:var(--accent); }
+  textarea.mono-area{ font-family:'IBM Plex Mono', monospace; font-size:12.5px; min-height:160px;}
+  .req::after{content:" *"; color:var(--accent);}
+
+  /* File upload */
+  .file-drop{
+    border:1.5px dashed var(--border); border-radius:10px;
+    padding:18px; text-align:center; cursor:pointer;
+    transition: border-color .2s, background .2s;
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .file-drop:hover{border-color:var(--accent); background:rgba(217,122,63,0.05);}
+  .file-drop input{display:none;}
+  .file-drop .icon{font-size:22px; margin-bottom:4px;}
+  .file-status{
+    margin-top:10px; font-size:12.5px; font-family:'IBM Plex Mono', monospace;
+    padding:10px 12px; border-radius:8px; display:none;
+  }
+  .file-status.ok{display:block; background:rgba(138,168,106,0.1); border:1px solid #3c4733; color:var(--ok);}
+  .file-status.err{display:block; background:rgba(212,87,74,0.1); border:1px solid #5a2f2a; color:var(--warn);}
+
+  .alert{
+    font-size:12.5px; padding:10px 12px; border-radius:8px; margin-bottom:14px;
+    border:1px solid #5a2f2a; background:rgba(212,87,74,0.08); color:#e7a89f;
+  }
+
+  /* Buttons */
+  .btn-row{display:flex; gap:10px; margin-top:6px;}
+  button{
+    font-family:'Space Grotesk', sans-serif; font-weight:600; font-size:14px;
+    border-radius:8px; padding:12px 18px; cursor:pointer; border:none;
+    transition: transform .08s ease, filter .15s ease;
+  }
+  button:active{transform:scale(0.98);}
+  .btn-primary{background:var(--accent); color:#1b1815; flex:1;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent; color:var(--text-muted); border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text); border-color:var(--text-muted);}
+  button:disabled{opacity:.4; cursor:not-allowed;}
+
+  /* Dome list */
+  .dome-row{
+    border:1px solid var(--border); border-radius:9px; padding:12px 14px;
+    margin-bottom:10px; background:var(--surface-2);
+  }
+  .dome-row.missing{border-color:var(--warn);}
+  .dome-name{font-family:'IBM Plex Mono', monospace; font-size:13.5px; font-weight:500;}
+  .dome-class{
+    font-size:10.5px; padding:1px 7px; border-radius:5px; margin-left:7px;
+    background:var(--accent-dim); color:#ffd9b8; font-family:'IBM Plex Mono', monospace;
+  }
+  .area-options{display:flex; gap:8px; margin-top:9px;}
+  .area-opt{flex:1;}
+  .area-opt input{display:none;}
+  .area-opt label{
+    display:block; text-align:center; padding:8px 4px; margin:0;
+    border:1px solid var(--border); border-radius:7px; cursor:pointer;
+    font-size:12.5px; color:var(--text-muted); font-family:'IBM Plex Mono', monospace;
+    transition: all .15s ease;
+  }
+  .area-opt input:checked + label{
+    background:var(--accent); color:#1b1815; border-color:var(--accent); font-weight:600;
+  }
+
+  /* Scale display (signature element) */
+  .scale-display{
+    background:#100e0c; border:1px solid #3a2f22; border-radius:12px;
+    padding:18px; margin-bottom:16px;
+    box-shadow: inset 0 0 24px rgba(0,0,0,0.4);
+  }
+  .scale-display .row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:5px 0; border-bottom:1px dashed #2c2620;
+  }
+  .scale-display .row:last-child{border-bottom:none;}
+  .scale-label{font-size:11px; color:#7a6c5a; font-family:'IBM Plex Mono', monospace; letter-spacing:.08em; text-transform:uppercase;}
+  .scale-value{
+    font-family:'IBM Plex Mono', monospace; font-weight:600; font-size:16px;
+    color:var(--led); text-shadow:0 0 8px rgba(255,179,71,0.45);
+  }
+
+  .output-box{
+    width:100%; min-height:480px; background:var(--bg); border:1px solid var(--border);
+    border-radius:10px; padding:14px; color:var(--text);
+    font-family:'IBM Plex Mono', monospace; font-size:12.8px; white-space:pre-wrap;
+    resize:vertical;
+  }
+  .copy-feedback{
+    font-size:12.5px; color:var(--ok); margin-top:8px; display:none; font-family:'IBM Plex Mono', monospace;
+  }
+
+  .warn-box{
+    font-size:12px; color:#cdb89a; background:rgba(217,122,63,0.07);
+    border:1px solid var(--accent-dim); border-radius:8px; padding:10px 12px; margin-bottom:14px;
+    font-family:'IBM Plex Mono', monospace; line-height:1.5;
+  }
+  .footnote{font-size:11.5px; color:var(--text-muted); text-align:center; margin-top:24px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow">SCM · HPAL Ore Selling — FPP HYNC</div>
+    <h1>Daily Production Geology Report</h1>
+    <div class="sub">Generator laporan shift dari data timbangan HYNC</div>
+  </header>
+
+  <div class="stepper">
+    <div class="step-pill active" id="pill-1">1 · Input</div>
+    <div class="step-pill" id="pill-2">2 · Area Muat</div>
+    <div class="step-pill" id="pill-3">3 · Hasil</div>
+  </div>
+
+  <!-- ============ PANEL 1 : INPUT ============ -->
+  <div class="panel active" id="panel-1">
+
+    <div class="card">
+      <h2>Teks Report Sebelumnya</h2>
+      <div class="hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama.</div>
+      <div class="field">
+        <textarea id="prevText" class="mono-area" placeholder="Paste teks report shift sebelumnya di sini..."></textarea>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Data Timbangan <span style="color:var(--accent)">(khusus HYNC)</span></h2>
+      <div class="hint">Upload file timbangan (.xlsx) sheet <b>过磅明细</b> — pastikan ini data milik buyer <b>HYNC</b>, bukan QMB/ESG/MEIM.</div>
+      <label class="file-drop" id="fileDrop">
+        <div class="icon">📁</div>
+        <div id="fileDropText">Klik untuk upload file timbangan (.xlsx)</div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls">
+      </label>
+      <div class="file-status" id="fileStatus"></div>
+    </div>
+
+    <div class="card">
+      <h2>Man Power &amp; Support</h2>
+      <div class="field">
+        <label class="req">Week</label>
+        <input type="text" id="inWeek" placeholder="contoh: 26">
+      </div>
+      <div class="field">
+        <label class="req">PIC SCM</label>
+        <input type="text" id="inPicScm" placeholder="contoh: Illofi, Adi guna (pisahkan koma jika lebih dari satu)">
+      </div>
+      <div class="field">
+        <label class="req">PIC AWK</label>
+        <input type="text" id="inPicAwk" placeholder="contoh: La Ode Osardi">
+      </div>
+      <div class="field inline-2">
+        <div>
+          <label class="req">Manpower AWK</label>
+          <input type="number" id="inMpAwk" placeholder="25">
+        </div>
+        <div>
+          <label class="req">Total Manpower</label>
+          <input type="number" id="inMpTotal" placeholder="27">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Problem &amp; Action</h2>
+      <div class="field">
+        <label>Problem <span style="color:var(--text-muted)">(boleh kosong)</span></label>
+        <textarea id="inProblem" rows="2" placeholder="Tulis problem jika ada..."></textarea>
+      </div>
+      <div class="field">
+        <label>Preventive Action <span style="color:var(--text-muted)">(boleh kosong)</span></label>
+        <textarea id="inAction" rows="2" placeholder="Tulis preventive action jika ada..."></textarea>
+      </div>
+    </div>
+
+    <div id="step1Errors"></div>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="btnNext" onclick="goToStep2()">Lanjut →</button>
+    </div>
+  </div>
+
+  <!-- ============ PANEL 2 : AREA MUAT ============ -->
+  <div class="panel" id="panel-2">
+    <div class="card">
+      <h2>Pilih Area Tiap Dome</h2>
+      <div class="hint">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR / BR 23 / DS) untuk tiap dome.</div>
+      <div id="domeList"></div>
+    </div>
+    <div id="step2Errors"></div>
+    <div class="btn-row">
+      <button class="btn-ghost" onclick="backToStep1()">← Kembali</button>
+      <button class="btn-primary" onclick="goToStep3()">Generate Laporan →</button>
+    </div>
+  </div>
+
+  <!-- ============ PANEL 3 : HASIL ============ -->
+  <div class="panel" id="panel-3">
+
+    <div class="scale-display" id="scaleDisplay"></div>
+
+    <div id="step3Warnings"></div>
+
+    <div class="card">
+      <h2>Teks Laporan</h2>
+      <div class="hint">Cek dulu sebelum di-copy ke WA Group. Bisa diedit manual langsung di kotak ini kalau perlu.</div>
+      <textarea class="output-box" id="outputBox" readonly></textarea>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn-primary" onclick="copyOutput()">📋 Copy Laporan</button>
+      </div>
+      <div class="copy-feedback" id="copyFeedback">✓ Tersalin ke clipboard</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-ghost" onclick="backToStep2()">← Kembali Pilih Area</button>
+    </div>
+  </div>
+
+  <div class="footnote">FPP HYNC · Internal use — SCM HPAL Ore Selling</div>
+</div>
+
+<script>
+/* ============================================================
+   DATA: DT ID -> Contractor (dari List_DT.xlsx)
+============================================================ */
+const DT_LIST = [["ADT 001", "ADT HILLCON"], ["ADT 002", "ADT HILLCON"], ["ADT 003", "ADT HILLCON"], ["ADT 004", "ADT HILLCON"], ["ADT 005", "ADT HILLCON"], ["ADT 006", "ADT HILLCON"], ["ADT 007", "ADT HILLCON"], ["ADT 008", "ADT HILLCON"], ["ADT 009", "ADT HILLCON"], ["ADT 010", "ADT HILLCON"], ["ADT 011", "ADT HILLCON"], ["ADT 012", "ADT HILLCON"], ["ADT 013", "ADT HILLCON"], ["ADT 014", "ADT HILLCON"], ["ADT 015", "ADT HILLCON"], ["ADT 016", "ADT HILLCON"], ["ADT 017", "ADT HILLCON"], ["ADT 018", "ADT HILLCON"], ["ADT 019", "ADT HILLCON"], ["ADT 020", "ADT HILLCON"], ["ADT 021", "ADT HILLCON"], ["ADT 022", "ADT HILLCON"], ["ADT 023", "ADT HILLCON"], ["ADT 024", "ADT HILLCON"], ["ADT 025", "ADT HILLCON"], ["ADT 026", "ADT HILLCON"], ["ADT 027", "ADT HILLCON"], ["ADT 028", "ADT HILLCON"], ["ADT 029", "ADT HILLCON"], ["ADT 030", "ADT HILLCON"], ["ADT 031", "ADT HILLCON"], ["ADT 032", "ADT HILLCON"], ["ADT 033", "ADT HILLCON"], ["ADT 034", "ADT HILLCON"], ["ADT 035", "ADT HILLCON"], ["ADT 036", "ADT HILLCON"], ["ADT 037", "ADT HILLCON"], ["ADT 038", "ADT HILLCON"], ["ADT 039", "ADT HILLCON"], ["ADT 040", "ADT HILLCON"], ["ADT 041", "ADT HILLCON"], ["ADT 042", "ADT HILLCON"], ["ADT 043", "ADT HILLCON"], ["ADT 044", "ADT HILLCON"], ["ADT 045", "ADT HILLCON"], ["ADT 046", "ADT HILLCON"], ["ADT 047", "ADT HILLCON"], ["ADT 048", "ADT HILLCON"], ["ADT 050", "ADT HILLCON"], ["ADT 051", "ADT HILLCON"], ["ADT-RL 001", "ADT REAL"], ["ADT-RL 007", "ADT REAL"], ["ADT-RL 012", "ADT REAL"], ["ADT-RL 013", "ADT REAL"], ["ADT-RL 014", "ADT REAL"], ["ADT-RL 015", "ADT REAL"], ["ADT-RL 016", "ADT REAL"], ["ADT-RL 017", "ADT REAL"], ["ADT-RL 018", "ADT REAL"], ["ADT-RL 019", "ADT REAL"], ["ADT-RL 020", "ADT REAL"], ["ADT-RL 021", "ADT REAL"], ["ADT-RL 022", "ADT REAL"], ["ADT-RL 023", "ADT REAL"], ["ADT-RL 024", "ADT REAL"], ["ADT-RL 025", "ADT REAL"], ["ADT-RL 047", "ADT REAL"], ["DT014KS", "HYNC"], ["DT022KS", "HYNC"], ["DT045KS", "HYNC"], ["DT3004PB", "HYNC"], ["DT3006PB", "HYNC"], ["DT3009PB", "HYNC"], ["DT3012PB", "HYNC"], ["DT3016PB", "HYNC"], ["DT3020PB", "HYNC"], ["DT3025PB", "HYNC"], ["DT3029PB", "HYNC"], ["DT3033PB", "HYNC"], ["DT-SCM-HLG 014", "MIM"], ["DT-SCM-HLG 036", "MIM"], ["DT-SCM-HLG 037", "MIM"], ["DT-SCM-HLG 038", "MIM"], ["DT-SCM-HLG 039", "MIM"], ["DT-SCM-HLG 040", "MIM"], ["DT-SCM-HLG 041", "MIM"], ["DT-SCM-HLG 042", "MIM"], ["DT-SCM-HLG 043", "MIM"], ["DT-SCM-HLG 044", "MIM"], ["DT-SCM-HLG 045", "MIM"], ["DT-SCM-HLG 046", "MIM"], ["DT-SCM-HLG 047", "MIM"], ["DT-SCM-HLG 048", "MIM"], ["DT-SCM-HLG 050", "MIM"], ["DT-SCM-HLG 182", "MIM"], ["DT-SCM-HLG 183", "MIM"], ["DT-SCM-HLG 184", "MIM"], ["DT-SCM-HLG 185", "MIM"], ["DT-SCM-HLG 186", "MIM"], ["DT-SCM-HLG 187", "MIM"], ["DT-SCM-HLG 188", "MIM"], ["DT-SCM-HLG 189", "MIM"], ["DT-SCM-HLG 191", "MIM"], ["DT-SCM-HLG 192", "MIM"], ["DT-SCM-HLG 193", "MIM"], ["DT-SCM-HLG 194", "MIM"], ["DT-SCM-HLG 392", "STM"], ["DT-SCM-HLG 393", "STM"], ["DT-SCM-HLG 394", "STM"], ["DT-SCM-HLG 395", "STM"], ["DT-SCM-HLG 396", "STM"], ["DT-SCM-HLG 397", "STM"], ["DT-SCM-HLG 398", "STM"], ["DT-SCM-HLG 399", "STM"], ["DT-SCM-HLG 400", "STM"], ["DT-SCM-HLG 401", "STM"], ["DT-SCM-HLG 402", "STM"], ["DT-SCM-HLG 403", "STM"], ["DT-SCM-HLG 404", "STM"], ["DT-SCM-HLG 405", "STM"], ["DT-SCM-HLG 406", "STM"], ["DT-SCM-HLG 407", "STM"], ["DT-SCM-HLG 408", "STM"], ["DT-SCM-HLG 409", "STM"], ["DT-SCM-HLG 410", "STM"], ["DT-SCM-HLG 412", "STM"], ["DT-SCM-HLG 413", "STM"], ["DT-SCM-HLG 414", "STM"], ["DT-SCM-HLG 415", "STM"], ["DT-SCM-HLG 416", "STM"], ["DT-SCM-HLG 417", "STM"], ["DT-SCM-HLG 418", "STM"], ["DT-SCM-HLG 419", "STM"], ["DT-SCM-HLG 420", "STM"], ["DT-SCM-HLG 422", "STM"], ["DT-SCM-HLG 424", "STM"], ["DT-SCM-HLG 425", "STM"], ["DT-SCM-HLG 426", "STM"], ["DT-SCM-HLG 427", "STM"], ["DT-SCM-HLG 428", "STM"], ["DT-SCM-HLG 429", "STM"], ["DT-SCM-HLG 430", "STM"], ["DT-SCM-HLG 431", "STM"], ["DT-SCM-HLG 432", "STM"], ["DT-SCM-HLG 433", "STM"], ["DT-SCM-HLG 434", "STM"], ["DT-SCM-HLG 435", "STM"], ["DT-SCM-HLG 436", "STM"], ["DT-SCM-HLG 437", "STM"], ["DT-SCM-HLG 438", "STM"], ["DT-SCM-HLG 439", "STM"], ["DT-SCM-HLG 440", "STM"], ["DT-SCM-HLG 441", "STM"], ["DT-SCM-HLG 442", "STM"], ["DT-SCM-HLG 443", "STM"], ["DT-SCM-HLG 444", "STM"], ["DT-SCM-HLG 445", "STM"], ["DT-SCM-HLG 446", "STM"], ["DT-SCM-HLG 447", "STM"], ["DT-SCM-HLG 448", "STM"], ["DT-SCM-HLG 449", "STM"], ["DT-SCM-HLG 450", "STM"], ["DT-SCM-HLG 451", "STM"], ["DT-SCM-HLG 453", "STM"], ["DT-SCM-HLG 454", "STM"], ["DT-SCM-HLG 455", "STM"], ["DT-SCM-HLG 458", "STM"], ["DT-SCM-HLG 459", "STM"], ["DT-SCM-HLG 460", "STM"], ["DT-SCM-HLG 462", "STM"], ["DT-SCM-HLG 463", "STM"], ["DT-SCM-HLG 464", "STM"], ["DT-SCM-HLG 465", "STM"], ["DT-SCM-HLG 466", "STM"], ["DT-SCM-HLG 467", "STM"], ["DT-SCM-HLG 468", "STM"], ["DT-SCM-HLG 469", "STM"], ["DT-SCM-HLG 470", "STM"], ["DT-SCM-HLG 471", "STM"], ["DT-SCM-HLG 473", "STM"], ["DT-SCM-HLG 474", "STM"], ["DT-SCM-HLG 475", "STM"], ["DT-SCM-HLG 476", "STM"], ["DT-SCM-HLG 480", "STM"], ["DT-SCM-HLG 481", "STM"], ["DT-SCM-HLG 482", "STM"], ["DT-SCM-HLG 485", "STM"], ["DT-SCM-HLG 486", "STM"], ["DT-SCM-HLG 488", "STM"], ["DT-SCM-HLG 490", "STM"], ["DT-SCM-HLG 491", "STM"], ["DT-SCM-HLG-014", "MIM"], ["DT-SCM-HLG-037", "MIM"], ["DT-SCM-HLG-038", "MIM"], ["DT-SCM-HLG-039", "MIM"], ["DT-SCM-HLG-040", "MIM"], ["DT-SCM-HLG-041", "MIM"], ["DT-SCM-HLG-042", "MIM"], ["DT-SCM-HLG-043", "MIM"], ["DT-SCM-HLG-044", "MIM"], ["DT-SCM-HLG-045", "MIM"], ["DT-SCM-HLG-046", "MIM"], ["DT-SCM-HLG-187", "MIM"], ["MIM 117", "MIM"], ["MIM 120", "MIM"], ["MIM 130", "MIM"], ["MIM -130", "MIM"], ["MIM 132", "MIM"], ["MIM 141", "MIM"], ["MIM 145", "MIM"], ["MIM 146", "MIM"], ["MIM 147", "MIM"], ["MIM 149", "MIM"], ["MIM 152", "MIM"], ["MIM 159", "MIM"], ["MIM 168", "MIM"], ["MIM 172", "MIM"], ["MIM-DT 113", "MIM"], ["MIM-DT 120", "MIM"], ["MIM-DT 130", "MIM"], ["MIM-DT 132", "MIM"], ["MIM-DT 141", "MIM"], ["MIM-DT 145", "MIM"], ["MIM-DT 146", "MIM"], ["MIM-DT 147", "MIM"], ["MIM-DT 148", "MIM"], ["MIM-DT 149", "MIM"], ["MIM-DT 172", "MIM"], ["SCM HLG 399", "STM"], ["SCM-HLG 357", "STM"], ["SCM-HLG 392", "STM"], ["SCM-HLG 393", "STM"], ["SCM-HLG 394", "STM"], ["SCM-HLG 395", "STM"], ["SCM-HLG 396", "STM"], ["SCM-HLG 397", "STM"], ["SCM-HLG 399", "STM"], ["SCM-HLG 400", "STM"], ["SCM-HLG 402", "STM"], ["SCM-HLG 408", "STM"], ["SCM-HLG 410", "STM"], ["SCM-HLG 415", "STM"], ["SCM-HLG 416", "STM"], ["SCM-HLG 419", "STM"], ["SCM-HLG 438", "STM"], ["SCM-HLG 441", "STM"], ["SCM-HLG 445", "STM"], ["SCM-HLG 447", "STM"], ["SCM-HLG 449", "STM"], ["SCM-HLG 450", "STM"], ["SCM-HLG 453", "STM"], ["SCM-HLG 455", "STM"], ["SCM-HLG 456", "STM"], ["SCM-HLG 458", "STM"], ["SCM-HLG 471", "STM"], ["SCM-HLG 472", "STM"], ["SCM-HLG 473", "STM"], ["SCM-HLG 474", "STM"], ["SCM-HLG 475", "STM"], ["SCM-HLG 483", "STM"], ["SCM-HLH 400", "STM"], ["SCM-LIM 200", "REAL"], ["SCM-LIM 201", "REAL"], ["SCM-LIM 202", "REAL"], ["SCM-LIM 203", "REAL"], ["SCM-LIM 204", "REAL"], ["SCM-LIM 205", "REAL"], ["SCM-LIM 206", "REAL"], ["SCM-LIM 207", "REAL"], ["SCM-LIM 208", "REAL"], ["SCM-LIM 209", "REAL"], ["SCM-LIM 211", "REAL"], ["SCM-LIM 212", "REAL"], ["SCM-LIM 213", "REAL"], ["SCM-LIM 214", "REAL"], ["SCM-LIM 215", "REAL"], ["SCM-LIM 216", "REAL"], ["SCM-LIM 217", "REAL"], ["SCM-LIM 219", "REAL"], ["SCM-LIM 220", "REAL"], ["SCM-LIM 221", "REAL"], ["SCM-LIM 301", "MRP"], ["SCM-LIM 302", "MRP"], ["SCM-LIM 303", "MRP"], ["SCM-LIM 304", "MRP"], ["SCM-LIM 305", "MRP"], ["SCM-LIM 306", "MRP"], ["SCM-LIM 307", "MRP"], ["SCM-LIM 308", "MRP"], ["SCM-LIM 309", "MRP"], ["SCM-LIM 310", "MRP"], ["SCM-LIM 311", "MRP"], ["SCM-LIM 312", "MRP"], ["SCM-LIM 313", "MRP"], ["SCM-LIM 314", "MRP"], ["SCM-LIM 315", "MRP"], ["SCM-LIM 316", "MRP"], ["SCM-LIM 317", "MRP"], ["SCM-LIM 318", "MRP"], ["SCM-LIM 319", "MRP"], ["SCM-LIM 320", "MRP"], ["SCM-LIM 321", "MRP"], ["SCM-LIM 322", "MRP"], ["SCM-LIM 323", "MRP"], ["SCM-LIM 324", "MRP"], ["SCM-LIM 325", "MRP"], ["SCM-LIM 326", "MRP"], ["SCM-LIM 327", "MRP"], ["SCM-LIM 328", "MRP"], ["SCM-LIM 329", "MRP"], ["SCM-LIM 330", "MRP"], ["SCM-LIM 331", "MRP"], ["SCM-LIM 332", "MRP"], ["SCM-LIM 333", "MRP"], ["SCM-LIM 334", "MRP"], ["SCM-LIM 335", "MRP"], ["SCM-LIM 336", "MRP"], ["SCM-LIM 337", "MRP"], ["SCM-LIM 338", "MRP"], ["SCM-LIM 339", "MRP"], ["SCM-LIM 340", "MRP"], ["SCM-LIM 341", "MRP"], ["SCM-LIM 342", "MRP"], ["SCM-LIM 343", "MRP"], ["SCM-LIM 344", "MRP"], ["SCM-LIM 345", "MRP"], ["SCM-LIM 346", "MRP"], ["SCM-LIM 347", "MRP"], ["SCM-LIM 348", "MRP"], ["SCM-LIM 349", "MRP"], ["SCM-LIM 350", "MRP"], ["SCM-LIM 351", "MRP"], ["SCM-LIM 352", "MRP"], ["SCM-LIM 353", "MRP"], ["SCM-LIM 354", "MRP"], ["SCM-LIM 355", "MRP"], ["SCM-LIM 356", "MRP"], ["SCM-LIM 357", "MRP"], ["SCM-LIM 358", "MRP"], ["SCM-LIM 359", "MRP"], ["SCM-LIM 360", "MRP"], ["SCM-LIM 361", "MRP"], ["SCM-LIM 362", "MRP"], ["SCM-LIM 363", "MRP"], ["SCM-LIM 364", "MRP"], ["SCM-LIM 365", "MRP"], ["SCM-LIM 366", "MRP"], ["SCM-LIM 367", "MRP"], ["SCM-LIM 368", "MRP"], ["SCM-LIM 369", "MRP"], ["SCM-LIM 370", "MRP"], ["SCM-LIM 371", "MRP"], ["SCM-LIM 372", "MRP"], ["SCM-LIM 373", "MRP"], ["SCM-LIM 374", "MRP"], ["SCM-LIM 375", "MRP"], ["SCM-LIM 376", "MRP"], ["SCM-LIM 377", "MRP"], ["SCM-LIM 378", "MRP"], ["SCM-LIM 379", "MRP"], ["SCM-LIM 380", "MRP"], ["SCM-LIM 381", "MRP"], ["SCM-LIM 382", "MRP"], ["SCM-LIM 383", "MRP"], ["SCM-LIM 384", "MRP"], ["SCM-LIM 385", "MRP"], ["SCM-LIM 386", "MRP"], ["SCM-LIM 387", "MRP"], ["SCM-LIM 388", "MRP"], ["SCM-LIM 389", "MRP"], ["SCM-LIM 390", "MRP"], ["SCM-LIM 391", "MRP"], ["SCM-LIM 392", "MRP"], ["SCM-LIM 393", "MRP"], ["SCM-LIM 394", "MRP"], ["SCM-LIM 395", "MRP"], ["SCM-LIM 396", "MRP"], ["SCM-LIM 397", "MRP"], ["SCM-LIM 398", "MRP"], ["SCM-LIM 399", "MRP"], ["SCM-LIM 400", "MRP"], ["SCM-LIM 401", "PMS"], ["SCM-LIM 402", "PMS"], ["SCM-LIM 403", "PMS"], ["SCM-LIM 404", "PMS"], ["SCM-LIM 405", "PMS"], ["SCM-LIM 406", "PMS"], ["SCM-LIM 407", "PMS"], ["SCM-LIM 408", "PMS"], ["SCM-LIM 409", "PMS"], ["SCM-LIM 410", "PMS"], ["SCM-LIM 411", "PMS"], ["SCM-LIM 412", "PMS"], ["SCM-LIM 413", "PMS"], ["SCM-LIM 414", "PMS"], ["SCM-LIM 415", "PMS"], ["SCM-LIM 416", "PMS"], ["SCM-LIM 417", "PMS"], ["SCM-LIM 418", "PMS"], ["SCM-LIM 501", "MIM"], ["SCM-LIM 502", "MIM"], ["SCM-LIM 503", "MIM"], ["SCM-LIM 504", "MIM"], ["SCM-LIM 505", "MIM"], ["SCM-LIM 506", "MIM"], ["SCM-LIM 507", "MIM"], ["SCM-LIM 508", "MIM"], ["SCM-LIM 509", "MIM"], ["SCM-LIM 510", "MIM"], ["SCM-LIM 511", "MIM"], ["SCM-LIM 512", "MIM"], ["SCM-LIM 513", "MIM"], ["SCM-LIM 514", "MIM"], ["SCM-LIM 515", "MIM"], ["SCM-LIM 516", "MIM"], ["SCM-LIM 517", "MIM"], ["SCM-LIM 518", "MIM"], ["SCM-LIM 519", "MIM"], ["SCM-LIM 520", "MIM"], ["SCM-LIM 521", "MIM"], ["SCM-LIM 522", "MIM"], ["SCM-LIM 523", "MIM"], ["SCM-LIM 524", "MIM"], ["SCM-LIM 525", "MIM"], ["SCM-LIM 526", "MIM"], ["SCM-LIM 527", "MIM"], ["SCM-LIM 528", "MIM"], ["SCM-LIM 529", "MIM"], ["SCM-LIM 530", "MIM"], ["SCM-LIM 531", "MIM"], ["SCM-LIM 532", "MIM"], ["SCM-LIM 533", "MIM"], ["SCM-LIM 534", "MIM"], ["SCM-LIM 535", "MIM"], ["SCM-LIM 536", "MIM"], ["SCM-LIM 537", "MIM"], ["SCM-LIM 538", "MIM"], ["SCM-LIM 539", "MIM"], ["SCM-LIM 540", "MIM"], ["SCM-LIM 541", "MIM"], ["SCM-LIM 542", "MIM"], ["SCM-LIM 543", "MIM"], ["SCM-LIM 544", "MIM"], ["SCM-LIM 545", "MIM"], ["SCM-LIM 546", "MIM"], ["SCM-LIM 547", "MIM"], ["SCM-LIM 548", "MIM"], ["SCM-LIM 549", "MIM"], ["SCM-LIM 550", "MIM"], ["SCM-LIM 551", "MIM"], ["SCM-LIM 552", "MIM"], ["SCM-LIM 553", "MIM"], ["SCM-LIM 554", "MIM"], ["SCM-LIM 555", "MIM"], ["SCM-LIM 556", "MIM"], ["SCM-LIM 557", "MIM"], ["SCM-LIM 558", "MIM"], ["SCM-LIM 559", "MIM"], ["SCM-LIM 560", "MIM"], ["SCM-LIM 561", "MIM"], ["SCM-LIM 562", "MIM"], ["SCM-LIM 563", "MIM"], ["SCM-LIM 564", "MIM"], ["SCM-LIM 565", "MIM"], ["SCM-LIM 566", "MIM"], ["SCM-LIM 567", "MIM"], ["SCM-LIM 568", "MIM"], ["SCM-LIM 569", "MIM"], ["SCM-LIM 570", "MIM"], ["SCM-LIM 571", "MIM"], ["SCM-LIM 572", "MIM"], ["SCM-LIM 573", "MIM"], ["SCM-LIM 574", "MIM"], ["SCM-LIM 575", "MIM"], ["SCM-LIM 576", "MIM"], ["SCM-LIM 577", "MIM"], ["SCM-LIM 578", "MIM"], ["SCM-LIM 579", "MIM"], ["SCM-LIM 580", "MIM"], ["SCM-LIM 581", "MIM"], ["SCM-LIM 582", "MIM"], ["SCM-LIM 583", "MIM"], ["SCM-LIM 584", "MIM"], ["SCM-LIM 585", "MIM"], ["SCM-LIM 586", "MIM"], ["SCM-LIM 587", "MIM"], ["SCM-LIM 588", "MIM"], ["SCM-LIM 589", "MIM"], ["SCM-LIM 590", "MIM"], ["SCM-LIM 591", "MIM"], ["SCM-LIM 592", "MIM"], ["SCM-LIM 593", "MIM"], ["SCM-LIM 594", "MIM"], ["SCM-LIM 595", "MIM"], ["SCM-LIM 596", "MIM"], ["SCM-LIM 597", "MIM"], ["SCM-LIM 598", "MIM"], ["SCM-LIM 601", "REAL"], ["SCM-LIM 602", "REAL"], ["SCM-LIM 603", "REAL"], ["SCM-LIM 604", "REAL"], ["SCM-LIM 605", "REAL"], ["SCM-LIM 606", "REAL"], ["SCM-LIM 607", "REAL"], ["SCM-LIM 608", "REAL"], ["SCM-LIM 609", "REAL"], ["SCM-LIM 610", "REAL"], ["SCM-LIM 611", "REAL"], ["SCM-LIM 612", "REAL"], ["SCM-LIM 613", "REAL"], ["SCM-LIM 614", "REAL"], ["SCM-LIM 615", "REAL"], ["SCM-LIM 616", "REAL"], ["SCM-LIM 617", "REAL"], ["SCM-LIM 618", "REAL"], ["SCM-LIM 619", "REAL"], ["SCM-LIM 620", "REAL"], ["SCM-LIM 621", "REAL"], ["SCM-LIM 622", "REAL"], ["SCM-LIM 623", "REAL"], ["SCM-LIM 719", "HILLCON"], ["SCM-LIM 720", "HILLCON"], ["SCM-LIM 721", "HILLCON"], ["SCM-LIM 722", "HILLCON"], ["SCM-LIM 723", "HILLCON"], ["SCM-LIM 724", "HILLCON"], ["SCM-LIM 725", "PMS"], ["SCM-LIM 726", "PMS"], ["SCM-LIM 727", "PMS"], ["SCM-LIM 728", "HILLCON"], ["SCM-LIM 729", "HILLCON"], ["SCM-LIM 730", "HILLCON"], ["SCM-LIM 731", "HILLCON"], ["SCM-LIM 732", "HILLCON"], ["SCM-LIM 733", "HILLCON"], ["SCM-LIM 734", "HILLCON"], ["SCM-LIM 735", "HILLCON"], ["SCM-LIM 736", "HILLCON"], ["SCM-LIM 737", "HILLCON"], ["SCM-LIM 738", "HILLCON"], ["SCM-LIM 739", "HILLCON"], ["SCM-LIM 740", "HILLCON"], ["SCM-LIM 741", "HILLCON"], ["SCM-LIM 742", "HILLCON"], ["SCM-LIM 743", "HILLCON"], ["SCM-LIM 744", "HILLCON"], ["SCM-LIM 745", "HILLCON"], ["SCM-LIM 746", "HILLCON"], ["SCM-LIM 747", "HILLCON"], ["SCM-LIM 748", "HILLCON"], ["SCM-LIM 749", "HILLCON"], ["SCM-LIM 751", "PMS"], ["SCM-LIM 755", "HILLCON"], ["SCM-LIM 756", "HILLCON"], ["SCM-LIM 757", "PMS"], ["SCM-LIM 758", "PMS"], ["SCM-LIM 801", "JAM"], ["SCM-LIM 802", "JAM"], ["SCM-LIM 803", "JAM"], ["SCM-LIM 804", "JAM"], ["SCM-LIM 805", "JAM"], ["SCM-LIM 806", "JAM"], ["SCM-LIM 807", "JAM"], ["SCM-LIM 808", "JAM"], ["SCM-LIM 809", "JAM"], ["SCM-LIM 810", "JAM"], ["SCM-LIM 811", "JAM"], ["SCM-LIM 812", "JAM"], ["SCM-LIM 813", "JAM"], ["SCM-LIM 814", "JAM"], ["SCM-LIM 815", "JAM"], ["SCM-LIM 816", "JAM"], ["SCM-LIM 817", "JAM"], ["SCM-LIM 818", "JAM"], ["SCM-LIM 819", "JAM"], ["SCM-LIM 820", "JAM"], ["SCM-LIM 821", "JAM"], ["SCM-LIM 822", "JAM"], ["SCM-LIM 823", "JAM"], ["SCM-LIM 824", "JAM"], ["SCM-LIM 825", "JAM"], ["SCM-LIM 826", "JAM"], ["SCM-LIM 827", "JAM"], ["SCM-LIM 828", "JAM"], ["SCM-LIM 829", "JAM"], ["SCM-LIM 830", "JAM"], ["SCM-LIM 831", "JAM"], ["SCM-LIM 832", "JAM"], ["SCM-LIM 833", "JAM"], ["SCM-LIM 834", "JAM"], ["SCM-LIM 835", "JAM"], ["SCM-LIM 836", "JAM"], ["SCM-LIM 837", "JAM"], ["SCM-LIM 838", "JAM"], ["SCM-LIM 839", "JAM"], ["SCM-LIM 840", "JAM"], ["SCM-LIM 841", "JAM"], ["SCM-LIM 842", "JAM"], ["SCM-LIM 843", "JAM"], ["SCM-LIM 844", "JAM"], ["SCM-LIM 845", "JAM"], ["SCM-LIM 846", "JAM"], ["SCM-LIM 900", "TII"], ["SCM-LIM 901", "TII"], ["SCM-LIM 902", "TII"], ["SCM-LIM 903", "TII"], ["SCM-LIM 904", "TII"], ["SCM-LIM 905", "TII"], ["SCM-LIM 906", "TII"], ["SCM-LIM 907", "TII"], ["SCM-LIM 908", "TII"], ["SCM-LIM 909", "TII"], ["SCM-LIM 910", "TII"], ["SCM-LIM 911", "TII"], ["SCM-LIM 912", "TII"], ["SCM-LIM 913", "TII"], ["SCM-LIM 914", "TII"], ["SCM-LIM 915", "TII"], ["SCM-LIM 916", "TII"], ["SCM-LIM 917", "TII"], ["SCM-LIM 918", "TII"], ["SCM-LIM 919", "TII"], ["SCM-LIM 920", "TII"], ["SCM-LIM 921", "TII"], ["SCM-LIM 922", "TII"], ["SCM-LIM 923", "TII"], ["SCM-LIM 924", "TII"], ["SCM-LIM 925", "TII"], ["SCM-LIM 926", "TII"], ["SCM-LIM 927", "TII"], ["SCM-LIM 928", "TII"], ["SCM-LIM 929", "TII"], ["SCM-LIM 930", "TII"], ["SCM-LIM 931", "TII"], ["SCM-LIM 932", "TII"], ["SCM-LIM 933", "TII"], ["SCM-LIM 934", "TII"], ["SCM-LIM 935", "TII"], ["SCM-LIM 936", "TII"], ["SCM-LIM 937", "TII"], ["SCM-LIM 938", "TII"], ["SCM-LIM 939", "TII"], ["SCM-LIM 940", "TII"], ["SCM-LIM 941", "TII"], ["SCM-LIM 942", "TII"], ["SCM-LIM 943", "TII"], ["SCM-LIM 944", "TII"], ["SCM-LIM 945", "TII"], ["SCM-LIM 946", "TII"], ["SCM-LIM 947", "TII"], ["SCM-LIM 948", "TII"], ["SCM-LIM 949", "TII"], ["SCM-LIM 950", "TII"], ["SCM-LIM 951", "TII"], ["SCM-LIM 952", "TII"], ["SCM-LIM 953", "TII"], ["SCM-LIM 954", "TII"], ["SCM-LIM 955", "TII"], ["SCM-LIM 956", "TII"], ["SCM-LIM 957", "TII"], ["SCM-LIM 958", "TII"], ["SCM-LIM 959", "TII"], ["SCM-LIM 960", "TII"], ["SCM-LIM 961", "TII"], ["SCM-LIM 962", "TII"], ["SCM-LIM 963", "TII"], ["SCM-LIM 964", "TII"], ["SMA 4173 ADT", "ADT SMA"], ["SMA 4176 ADT", "ADT SMA"], ["SMA 4177 ADT", "ADT SMA"], ["SMA 4178 ADT", "ADT SMA"], ["SMA 4179 ADT", "ADT SMA"], ["SCM-LIM 965", "TII"], ["SCM-LIM 966", "TII"], ["SCM-LIM 967", "TII"], ["SCM-LIM 968", "TII"], ["SCM-LIM 969", "TII"], ["SCM-LIM 970", "TII"], ["SCM-LIM 971", "TII"], ["SCM-LIM 972", "TII"], ["SCM-LIM 973", "TII"], ["SCM-LIM 974", "TII"], ["SCM-LIM 975", "TII"], ["SCM-LIM 976", "TII"], ["SCM-LIM 977", "TII"], ["SCM-LIM 978", "TII"], ["SCM-LIM 979", "TII"], ["SCM-LIM 980", "TII"], ["SCM-LIM 981", "TII"], ["SCM-LIM 982", "TII"], ["SCM-LIM 983", "TII"], ["SCM-LIM 984", "TII"], ["SCM-LIM 985", "TII"], ["SCM-LIM 986", "TII"], ["SCM-LIM 987", "TII"], ["SCM-LIM 210", "REAL"], ["SCM-LIM 218", "REAL"], ["SCM-LIM 992", "TII"], ["SCM-LIM 990", "TII"], ["SCM-LIM 991", "TII"], ["SCM-LIM 993", "TII"], ["SCM-LIM 989", "TII"], ["SCM-LIM 988", "TII"], ["SCM-LIM 994", "TII"]];
+
+const DT_MAP = new Map();
+DT_LIST.forEach(([id, contractor]) => {
+  DT_MAP.set(normalizeKey(id), contractor);
+});
+
+function normalizeKey(s){
+  return String(s).trim().toUpperCase().replace(/\s+/g,' ');
+}
+
+/* Urutan prioritas tampil untuk kontraktor non-ADT.
+   Yang tidak ada di list ini akan ditampilkan setelahnya, urut alfabet. */
+const CONTRACTOR_PRIORITY = ['PMS','MRP','TII','REAL','JAM','STM','MIM','HYNC'];
+
+/* Alias: kontraktor non-ADT yang harus digabung jadi satu nama tampilan.
+   Tambahkan baris baru di sini kalau ada penggabungan lain di kemudian hari. */
+const CONTRACTOR_ALIAS = {
+  'HILLCON': 'PMS',
+};
+
+/* ============================================================
+   STATE
+============================================================ */
+let state = {
+  records: [],          // {carNo, netKg, grossTime, fileDate, dome, grade, oreClass}
+  fileDate: null,
+  domes: [],            // [{dome, oreClass}] unique, in first-seen order
+  domeAreas: {},         // dome -> 'BR' | 'BR 23' | 'DS'
+  shiftLabel: '',
+  onShiftTon: 0,
+  onShiftRit: 0,
+  contractorCounts: [],  // [[name, count], ...] excluding ADT
+  totalADT: 0,
+  totalDT: 0,
+  unmatchedTrucks: [],
+  prevDate: null,
+  prevDaily: {ton:0, rit:0},
+  prevWtd: {ton:0, rit:0},
+  prevMtd: {ton:0, rit:0},
+  prevYtd: {ton:0, rit:0},
+};
+
+/* ============================================================
+   UTILS
+============================================================ */
+function parseIDNumber(str){
+  if (str === null || str === undefined) return NaN;
+  const cleaned = String(str).trim().replace(/\./g,'').replace(',', '.');
+  return parseFloat(cleaned);
+}
+function fmtTon(num){
+  return num.toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtRit(num){
+  return Math.round(num).toLocaleString('id-ID');
+}
+const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function formatDateID(d){
+  return `${d.getDate()} ${MONTHS_ID[d.getMonth()]} ${d.getFullYear()}`;
+}
+function parseDateID(str){
+  const m = str.match(/(\d{1,2})\s+([A-Za-zÀ-ÿ]+)\s+(\d{4})/);
+  if (!m) return null;
+  const day = parseInt(m[1],10);
+  const monthName = m[2].toLowerCase();
+  const monthIdx = MONTHS_ID.findIndex(mo => mo.toLowerCase() === monthName);
+  if (monthIdx === -1) return null;
+  const year = parseInt(m[3],10);
+  return new Date(year, monthIdx, day);
+}
+function sameDate(a,b){
+  if (!a || !b) return false;
+  return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+}
+function cleanInvisible(str){
+  return str.replace(/[\u200B-\u200F\uFEFF]/g,'');
+}
+
+/* ============================================================
+   STEP 1 -> parse file + parse prev text + validate
+============================================================ */
+const fileDrop = document.getElementById('fileDrop');
+const fileInput = document.getElementById('fileInput');
+let fileParsed = false;
+
+fileInput.addEventListener('change', handleFile);
+
+function handleFile(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('fileStatus');
+  const reader = new FileReader();
+  reader.onload = function(evt){
+    try{
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const sheetName = wb.SheetNames.includes('过磅明细') ? '过磅明细' : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+      parseTimbanganRows(rows, sheetName, file.name);
+      renderFileStatus(true, buildFileSummary());
+      fileParsed = true;
+      document.getElementById('fileDropText').textContent = '✓ ' + file.name;
+    }catch(err){
+      console.error(err);
+      renderFileStatus(false, 'Gagal membaca file: ' + err.message);
+      fileParsed = false;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderFileStatus(ok, msg){
+  const el = document.getElementById('fileStatus');
+  el.className = 'file-status ' + (ok ? 'ok':'err');
+  el.innerHTML = msg;
+}
+
+function buildFileSummary(){
+  let s = `${state.records.length} baris timbangan terbaca\n`;
+  s += `Tanggal terdeteksi : ${state.fileDate ? formatDateID(state.fileDate) : '-'}\n`;
+  s += `Shift terdeteksi    : ${state.shiftLabel}\n`;
+  s += `On Shift            : ${fmtTon(state.onShiftTon)} wmt [ ${fmtRit(state.onShiftRit)} Rit ]\n`;
+  s += `Dome ditemukan      : ${state.domes.length}`;
+  if (state.unmatchedTrucks.length){
+    s += `\n⚠ ${state.unmatchedTrucks.length} no. truck tidak ada di List_DT: ${state.unmatchedTrucks.slice(0,6).join(', ')}${state.unmatchedTrucks.length>6 ? ', ...' : ''}`;
+  }
+  return s;
+}
+
+function parseTimbanganRows(rows, sheetName, fileName){
+  if (!rows.length) throw new Error('Sheet kosong / tidak terbaca.');
+  const header = rows[0].map(h => String(h).trim());
+  const need = ['流水号','车号','净重','毛重时间','日期','规格'];
+  const idx = {};
+  need.forEach(col => {
+    const i = header.indexOf(col);
+    if (i === -1) throw new Error(`Kolom "${col}" tidak ditemukan di sheet "${sheetName}". Pastikan upload data timbangan yang benar.`);
+    idx[col] = i;
+  });
+
+  const records = [];
+  const unmatched = new Set();
+  let detectedDate = null;
+  let dateMismatch = false;
+
+  for (let r = 1; r < rows.length; r++){
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const carNoRaw = row[idx['车号']];
+    if (!carNoRaw || String(carNoRaw).trim() === '') continue;
+    const carNo = String(carNoRaw).trim();
+
+    const netKg = parseFloat(row[idx['净重']]) || 0;
+    const grossTime = parseFlexibleDateTime(row[idx['毛重时间']]);
+    const rowDate = parseFlexibleDate(row[idx['日期']]);
+    if (rowDate){
+      if (!detectedDate) detectedDate = rowDate;
+      else if (!sameDate(detectedDate, rowDate)) dateMismatch = true;
+    }
+
+    const specRaw = String(row[idx['规格']] || '').trim();
+    const specMatch = specRaw.match(/^(.*?)\s*\(\s*NI\s*:\s*([\d.,]+)\s*\)\s*$/i);
+    let dome, grade, oreClass;
+    if (specMatch){
+      dome = specMatch[1].trim();
+      grade = parseFloat(specMatch[2].replace(',','.'));
+      oreClass = grade > 1.4 ? 'HGLO' : (grade < 1.2 ? 'LGLO' : 'MGLO');
+    } else {
+      dome = specRaw || '(tanpa spesifikasi)';
+      grade = null;
+      oreClass = '-';
+    }
+
+    const contractor = DT_MAP.get(normalizeKey(carNo));
+    if (!contractor) unmatched.add(carNo);
+
+    records.push({carNo, netKg, grossTime, dome, grade, oreClass, contractor: contractor || 'TIDAK DIKENALI'});
+  }
+
+  if (!records.length) throw new Error('Tidak ada baris data yang terbaca (cek isi file).');
+
+  state.records = records;
+  state.fileDate = detectedDate;
+  state.unmatchedTrucks = Array.from(unmatched);
+
+  // On shift ton & rit
+  state.onShiftRit = records.length;
+  state.onShiftTon = records.reduce((sum,r) => sum + r.netKg, 0) / 1000;
+
+  // Shift detection: sort by grossTime, first 20, average time-of-day
+  const withTime = records.filter(r => r.grossTime instanceof Date && !isNaN(r.grossTime)).slice().sort((a,b)=>a.grossTime-b.grossTime);
+  if (withTime.length){
+    const sample = withTime.slice(0, 20);
+    const avgSec = sample.reduce((s,r)=>{
+      const t = r.grossTime;
+      return s + t.getHours()*3600 + t.getMinutes()*60 + t.getSeconds();
+    },0) / sample.length;
+    const dayStart = 5*3600+60;   // 05:01:00
+    const dayEnd = 17*3600;       // 17:00:00
+    state.shiftLabel = (avgSec >= dayStart && avgSec <= dayEnd) ? 'Day Shift' : 'Night Shift';
+  } else {
+    state.shiftLabel = 'Day Shift';
+    state._shiftFallback = true;
+  }
+
+  // Unique domes, first-seen order
+  const seen = new Set();
+  state.domes = [];
+  records.forEach(r => {
+    if (!seen.has(r.dome)){
+      seen.add(r.dome);
+      state.domes.push({dome:r.dome, oreClass:r.oreClass});
+    }
+  });
+
+  // Contractor breakdown (unique trucks)
+  const truckContractor = new Map();
+  records.forEach(r => { if (!truckContractor.has(r.carNo)) truckContractor.set(r.carNo, r.contractor); });
+
+  const bucketCounts = new Map();
+  truckContractor.forEach(contractor => {
+    let bucket = contractor.toUpperCase().startsWith('ADT') ? 'ADT' : contractor;
+    if (CONTRACTOR_ALIAS[bucket.toUpperCase()]) bucket = CONTRACTOR_ALIAS[bucket.toUpperCase()];
+    bucketCounts.set(bucket, (bucketCounts.get(bucket)||0) + 1);
+  });
+
+  const totalADT = bucketCounts.get('ADT') || 0;
+  const totalTrucks = truckContractor.size;
+  const totalDT = totalTrucks - totalADT;
+
+  const nonAdtEntries = Array.from(bucketCounts.entries()).filter(([k]) => k !== 'ADT');
+  nonAdtEntries.sort((a,b) => {
+    const pa = CONTRACTOR_PRIORITY.indexOf(a[0]);
+    const pb = CONTRACTOR_PRIORITY.indexOf(b[0]);
+    const ra = pa === -1 ? 999 : pa;
+    const rb = pb === -1 ? 999 : pb;
+    if (ra !== rb) return ra - rb;
+    return a[0].localeCompare(b[0]);
+  });
+
+  state.contractorCounts = nonAdtEntries;
+  state.totalADT = totalADT;
+  state.totalDT = totalDT;
+  state._dateMismatch = dateMismatch;
+}
+
+function parseFlexibleDateTime(val){
+  if (val instanceof Date && !isNaN(val)) return val;
+  if (typeof val === 'string'){
+    const m = val.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+    if (m) return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+    const d = new Date(val);
+    if (!isNaN(d)) return d;
+  }
+  if (typeof val === 'number'){
+    // Fallback kalau jam timbang tersimpan sebagai serial Excel (bukan teks).
+    // Sama seperti kolom tanggal: dikonversi murni jadi angka jam/menit/detik,
+    // tidak lewat objek Date/UTC sama sekali.
+    const d = XLSX.SSF.parse_date_code(val);
+    if (d) return new Date(d.y, d.m - 1, d.d, d.H||0, d.M||0, Math.floor(d.S||0));
+    return null;
+  }
+  return null;
+}
+function parseFlexibleDate(val){
+  // Tidak pakai objek Date sama sekali untuk kolom 日期 -> tidak ada urusan timezone/UTC.
+  // Angka serial Excel dikonversi langsung jadi {y,m,d} pakai fungsi murni dari SheetJS,
+  // baru di akhir dibungkus jadi Date lokal cuma buat keperluan tampil & banding tanggal.
+  if (typeof val === 'number'){
+    const d = XLSX.SSF.parse_date_code(val);
+    if (d) return new Date(d.y, d.m - 1, d.d);
+    return null;
+  }
+  if (typeof val === 'string'){
+    const m = val.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+  }
+  if (val instanceof Date && !isNaN(val)) return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+  return null;
+}
+
+/* ============================================================
+   STEP 1 -> 2
+============================================================ */
+function goToStep2(){
+  const errs = [];
+
+  const prevTextRaw = document.getElementById('prevText').value;
+  if (!prevTextRaw.trim()) errs.push('Teks report sebelumnya belum diisi.');
+  if (!fileParsed) errs.push('File data timbangan belum berhasil diupload/dibaca.');
+
+  const week = document.getElementById('inWeek').value.trim();
+  const picScm = document.getElementById('inPicScm').value.trim();
+  const picAwk = document.getElementById('inPicAwk').value.trim();
+  const mpAwk = document.getElementById('inMpAwk').value.trim();
+  const mpTotal = document.getElementById('inMpTotal').value.trim();
+  if (!week) errs.push('Week belum diisi.');
+  if (!picScm) errs.push('PIC SCM belum diisi.');
+  if (!picAwk) errs.push('PIC AWK belum diisi.');
+  if (!mpAwk) errs.push('Manpower AWK belum diisi.');
+  if (!mpTotal) errs.push('Total Manpower belum diisi.');
+
+  let prevParsed = null;
+  if (prevTextRaw.trim()){
+    prevParsed = parsePrevText(prevTextRaw);
+    if (prevParsed.errors.length) errs.push(...prevParsed.errors);
+  }
+
+  const errBox = document.getElementById('step1Errors');
+  if (errs.length){
+    errBox.innerHTML = '<div class="alert">⚠ ' + errs.join('<br>⚠ ') + '</div>';
+    return;
+  }
+  errBox.innerHTML = '';
+
+  state.inputs = {
+    week, picScm, picAwk, mpAwk, mpTotal,
+    problem: document.getElementById('inProblem').value.trim(),
+    action: document.getElementById('inAction').value.trim(),
+  };
+  state.prevDate = prevParsed.date;
+  state.prevDaily = prevParsed.daily;
+  state.prevWtd = prevParsed.wtd;
+  state.prevMtd = prevParsed.mtd;
+  state.prevYtd = prevParsed.ytd;
+
+  buildDomeList();
+  setStep(2);
+}
+
+function parsePrevText(raw){
+  const text = cleanInvisible(raw);
+  const errors = [];
+  const out = {date:null, daily:{ton:0,rit:0}, wtd:{ton:0,rit:0}, mtd:{ton:0,rit:0}, ytd:{ton:0,rit:0}};
+
+  const dateMatch = text.match(/Date\s*:\s*([^\n\r]+)/i);
+  if (!dateMatch) errors.push('Tidak menemukan baris "Date" di teks report sebelumnya.');
+  else {
+    out.date = parseDateID(dateMatch[1].trim());
+    if (!out.date) errors.push(`Tidak bisa membaca format tanggal: "${dateMatch[1].trim()}"`);
+  }
+
+  function grab(label){
+    const re = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt\\s*\\[\\s*([\\d.,]+)\\s*Rit', 'i');
+    const m = text.match(re);
+    if (!m){ errors.push(`Tidak menemukan baris "${label}" (format: ... wmt [ ... Rit ]).`); return {ton:0, rit:0}; }
+    return {ton: parseIDNumber(m[1]), rit: parseIDNumber(m[2])};
+  }
+  out.daily = grab('Daily');
+  out.wtd = grab('WTD');
+  out.mtd = grab('MTD');
+  out.ytd = grab('YTD');
+
+  return {...out, errors};
+}
+
+/* ============================================================
+   STEP 2 : DOME / AREA SELECTION
+============================================================ */
+function buildDomeList(){
+  const container = document.getElementById('domeList');
+  container.innerHTML = '';
+  state.domeAreas = {};
+  state.domes.forEach((d, i) => {
+    const row = document.createElement('div');
+    row.className = 'dome-row';
+    row.id = 'dome-row-' + i;
+    row.innerHTML = `
+      <div><span class="dome-name">${escapeHtml(d.dome)}</span><span class="dome-class">${d.oreClass}</span></div>
+      <div class="area-options">
+        ${['BR','BR 23','DS'].map(area => `
+          <div class="area-opt">
+            <input type="radio" name="area-${i}" id="area-${i}-${area.replace(/\s/g,'')}" value="${area}" onchange="setDomeArea(${i}, '${area}')">
+            <label for="area-${i}-${area.replace(/\s/g,'')}">${area}</label>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+function setDomeArea(i, area){
+  state.domeAreas[state.domes[i].dome] = area;
+  document.getElementById('dome-row-'+i).classList.remove('missing');
+}
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function backToStep1(){ setStep(1); }
+
+/* ============================================================
+   STEP 2 -> 3 : GENERATE
+============================================================ */
+function goToStep3(){
+  const missing = state.domes.filter(d => !state.domeAreas[d.dome]);
+  if (missing.length){
+    document.getElementById('step2Errors').innerHTML = '<div class="alert">⚠ Pilih area untuk semua dome dulu (' + missing.length + ' belum dipilih, ditandai merah).</div>';
+    missing.forEach((d) => {
+      const idx = state.domes.findIndex(x => x.dome === d.dome);
+      document.getElementById('dome-row-'+idx).classList.add('missing');
+    });
+    return;
+  }
+  document.getElementById('step2Errors').innerHTML = '';
+
+  // Daily: Day Shift selalu shift pertama di hari operasional -> selalu reset.
+  // Night Shift adalah lanjutan Day Shift di hari yang sama -> akumulasi,
+  // tapi hanya kalau tanggal teks sebelumnya memang cocok (kalau tidak, anggap basi -> reset juga).
+  const isNightContinuation = (state.shiftLabel === 'Night Shift') && sameDate(state.prevDate, state.fileDate);
+  const dailyTon = isNightContinuation ? (state.prevDaily.ton + state.onShiftTon) : state.onShiftTon;
+  const dailyRit = isNightContinuation ? (state.prevDaily.rit + state.onShiftRit) : state.onShiftRit;
+  const wtdTon = state.prevWtd.ton + state.onShiftTon;
+  const wtdRit = state.prevWtd.rit + state.onShiftRit;
+  const mtdTon = state.prevMtd.ton + state.onShiftTon;
+  const mtdRit = state.prevMtd.rit + state.onShiftRit;
+  const ytdTon = state.prevYtd.ton + state.onShiftTon;
+  const ytdRit = state.prevYtd.rit + state.onShiftRit;
+
+  const report = buildReportText({dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit, ytdTon, ytdRit});
+  document.getElementById('outputBox').value = report;
+
+  renderScaleDisplay({dailyTon, dailyRit});
+  renderStep3Warnings();
+
+  setStep(3);
+}
+
+function renderScaleDisplay({dailyTon, dailyRit}){
+  const el = document.getElementById('scaleDisplay');
+  el.innerHTML = `
+    <div class="row"><span class="scale-label">Tanggal</span><span class="scale-value">${state.fileDate ? formatDateID(state.fileDate) : '-'}</span></div>
+    <div class="row"><span class="scale-label">Shift</span><span class="scale-value">${state.shiftLabel}</span></div>
+    <div class="row"><span class="scale-label">On Shift</span><span class="scale-value">${fmtTon(state.onShiftTon)} wmt</span></div>
+    <div class="row"><span class="scale-label">Ritase Shift</span><span class="scale-value">${fmtRit(state.onShiftRit)} Rit</span></div>
+    <div class="row"><span class="scale-label">Truck</span><span class="scale-value">${state.totalDT} DT + ${state.totalADT} ADT</span></div>
+  `;
+}
+
+function renderStep3Warnings(){
+  const warns = [];
+  if (state._shiftFallback) warns.push('Tidak ada jam timbang valid terbaca — shift otomatis di-set "Day Shift", mohon cek manual.');
+  if (state._dateMismatch) warns.push('Ada lebih dari 1 tanggal berbeda di dalam file timbangan ini — dipakai tanggal dari baris pertama.');
+  if (state.unmatchedTrucks.length) warns.push(`${state.unmatchedTrucks.length} no. truck tidak ditemukan di List_DT (dianggap "TIDAK DIKENALI"): ${state.unmatchedTrucks.join(', ')}`);
+  const el = document.getElementById('step3Warnings');
+  el.innerHTML = warns.length ? `<div class="warn-box">${warns.map(w=>'⚠ '+w).join('<br>')}</div>` : '';
+}
+
+function buildReportText({dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit, ytdTon, ytdRit}){
+  const inp = state.inputs;
+  const picScmJoined = inp.picScm.split(',').map(s=>s.trim()).filter(Boolean).join(' & ');
+
+  const lines = [];
+  lines.push('*DAILY PRODUCTION GEOLOGY REPORT*');
+  lines.push('');
+  lines.push(`*HPAL Ore Selling SCM - FPP HYNC*`);
+  lines.push(`*Date    : ${state.fileDate ? formatDateID(state.fileDate) : '-'}*`);
+  lines.push(`*Week  : ${inp.week}*`);
+  lines.push(`*Shift    : ${state.shiftLabel}*`);
+  lines.push('');
+  lines.push('Man Power and Support');
+  lines.push(`PIC SCM : ${picScmJoined}`);
+  lines.push(`PIC AWK : ${inp.picAwk}`);
+  lines.push(`Manpower AWK  : ${inp.mpAwk}`);
+  lines.push(`Total Manpower  : ${inp.mpTotal}`);
+  lines.push(`Number of Truck : ${state.totalDT} DT + ${state.totalADT} ADT`);
+  state.contractorCounts.forEach(([name, count]) => {
+    lines.push(`${name.padEnd(20,' ')}: ${count} Trucks`);
+  });
+  if (state.totalADT > 0){
+    lines.push(`${'ADT'.padEnd(20,' ')}: ${state.totalADT} Trucks`);
+  }
+  lines.push('');
+  lines.push('Loading Point');
+  ['DS','BR','BR 23'].forEach(area => {
+    const domesInArea = state.domes.filter(d => state.domeAreas[d.dome] === area);
+    if (domesInArea.length){
+      lines.push(`Pit ${area} :`);
+      domesInArea.forEach((d,i) => lines.push(`${i+1}. ${d.dome} (${d.oreClass})`));
+      lines.push('');
+    }
+  });
+  lines.push('A. Ore Delivered to FPP HYNC');
+  lines.push(`On Shift    : ${fmtTon(state.onShiftTon)} wmt [ ${fmtRit(state.onShiftRit)} Rit ]`);
+  lines.push(`Daily         : ${fmtTon(dailyTon)} wmt [ ${fmtRit(dailyRit)} Rit ]`);
+  lines.push(`WTD         : ${fmtTon(wtdTon)} wmt [ ${fmtRit(wtdRit)} Rit ]`);
+  lines.push(`MTD         : ${fmtTon(mtdTon)} wmt [ ${fmtRit(mtdRit)} Rit ]`);
+  lines.push(`YTD          : ${fmtTon(ytdTon)} wmt [ ${fmtRit(ytdRit)} Rit ]`);
+  lines.push('');
+  lines.push('B. Problem and Action');
+  lines.push(`1. Problem : ${inp.problem || '-'}`);
+  lines.push('');
+  lines.push(`2. Preventive action : ${inp.action || '-'}`);
+  lines.push('');
+  lines.push('TANGGUH');
+  lines.push('SEMANGAT');
+  lines.push('LUAR BIASA');
+
+  return lines.join('\n');
+}
+
+function backToStep2(){ setStep(2); }
+
+function copyOutput(){
+  const box = document.getElementById('outputBox');
+  box.select();
+  navigator.clipboard.writeText(box.value).then(()=>{
+    const fb = document.getElementById('copyFeedback');
+    fb.style.display = 'block';
+    setTimeout(()=> fb.style.display='none', 2000);
+  }).catch(()=>{
+    document.execCommand('copy');
+  });
+}
+
+/* ============================================================
+   STEP NAV
+============================================================ */
+function setStep(n){
+  [1,2,3].forEach(i => {
+    document.getElementById('panel-'+i).classList.toggle('active', i===n);
+    const pill = document.getElementById('pill-'+i);
+    pill.classList.toggle('active', i===n);
+    pill.classList.toggle('done', i<n);
+  });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+</script>
+</body>
+</html>

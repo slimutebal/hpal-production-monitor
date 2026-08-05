@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Production Geology Report - FPP ESG</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#0f172a;
+    --panel:#1e293b;
+    --panel2:#283548;
+    --accent:#f59e0b;
+    --accent2:#22c55e;
+    --text:#e2e8f0;
+    --muted:#94a3b8;
+    --border:#334155;
+    --danger:#ef4444;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:linear-gradient(160deg,#0f172a,#15203a 60%,#1a1033);
+    color:var(--text);
+    min-height:100vh;
+    padding:16px;
+  }
+  .wrap{max-width:780px;margin:0 auto;}
+  header{
+    text-align:center;
+    margin-bottom:18px;
+    padding:18px 12px 14px;
+  }
+  header h1{
+    font-size:1.3rem;
+    margin:0 0 4px;
+    letter-spacing:.02em;
+  }
+  header .sub{
+    color:var(--accent);
+    font-weight:600;
+    font-size:.95rem;
+  }
+  .steps{
+    display:flex;
+    gap:6px;
+    margin-bottom:18px;
+  }
+  .step-pill{
+    flex:1;
+    text-align:center;
+    padding:8px 4px;
+    border-radius:10px;
+    background:var(--panel);
+    color:var(--muted);
+    font-size:.78rem;
+    font-weight:600;
+    border:1px solid var(--border);
+    transition:.2s;
+  }
+  .step-pill.active{
+    background:var(--accent);
+    color:#1a1300;
+    border-color:var(--accent);
+  }
+  .step-pill.done{
+    background:var(--panel2);
+    color:var(--accent2);
+    border-color:var(--accent2);
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px;
+    margin-bottom:14px;
+  }
+  .card h2{
+    font-size:1rem;
+    margin:0 0 14px;
+    color:var(--accent);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  label{
+    display:block;
+    font-size:.82rem;
+    color:var(--muted);
+    margin:12px 0 5px;
+    font-weight:600;
+  }
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=number], textarea{
+    width:100%;
+    background:#0f172a;
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--text);
+    padding:10px 12px;
+    font-size:.92rem;
+    font-family:inherit;
+  }
+  textarea{resize:vertical;min-height:70px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82rem;}
+  #prevText{resize:none;overflow:hidden;transition:height .1s ease;}
+  input:focus, textarea:focus, select:focus{outline:2px solid var(--accent);outline-offset:1px;}
+  .hint{font-size:.74rem;color:var(--muted);margin-top:4px;line-height:1.4;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:520px){.row2{grid-template-columns:1fr;}}
+
+  .upload-zone{
+    border:2px dashed var(--border);
+    border-radius:12px;
+    padding:22px 14px;
+    text-align:center;
+    cursor:pointer;
+    display:block;
+    transition:.15s;
+    background:#0f172a;
+  }
+  .upload-zone:active{background:#16223a;}
+  .upload-zone.has-file{border-color:var(--accent2);background:#0f1f17;}
+  .upload-zone .ic{font-size:1.6rem;display:block;margin-bottom:6px;}
+  .upload-zone .fname{color:var(--accent2);font-weight:600;font-size:.85rem;margin-top:6px;word-break:break-all;}
+  /* visually-hidden but iOS-safe file input */
+  .file-real{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0,0,0,0);white-space:nowrap;border:0;
+  }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    background:var(--accent);
+    color:#1a1300;
+    border:none;
+    border-radius:10px;
+    padding:13px 18px;
+    font-size:.95rem;
+    font-weight:700;
+    cursor:pointer;
+    width:100%;
+    margin-top:6px;
+  }
+  .btn:active{transform:scale(.98);}
+  .btn.secondary{
+    background:var(--panel2);
+    color:var(--text);
+    border:1px solid var(--border);
+  }
+  .btn.ghost{
+    background:transparent;
+    color:var(--muted);
+    border:1px solid var(--border);
+  }
+  .btn-row{display:flex;gap:10px;}
+  .btn-row .btn{flex:1;}
+
+  .summary-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin-bottom:4px;
+  }
+  .summary-grid .item{
+    background:#0f172a;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:10px 12px;
+  }
+  .summary-grid .item .l{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .summary-grid .item .v{font-size:1rem;font-weight:700;margin-top:2px;}
+
+  .dome-card{
+    background:#0f172a;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+  }
+  .dome-card .dh{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .dome-card .dname{font-weight:700;font-size:.95rem;}
+  .badge{
+    font-size:.68rem;
+    font-weight:700;
+    padding:2px 8px;
+    border-radius:20px;
+    letter-spacing:.03em;
+  }
+  .badge.LGLO{background:#1e3a2e;color:#4ade80;}
+  .badge.MGLO{background:#3a2e1e;color:#fbbf24;}
+  .badge.HGLO{background:#3a1e1e;color:#f87171;}
+  .dome-card .dstat{font-size:.74rem;color:var(--muted);margin-bottom:8px;}
+  .pit-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .pitbtn-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .pitbtn{
+    background:#0f172a;
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--muted);
+    padding:11px 6px;
+    font-size:.82rem;
+    font-weight:700;
+    letter-spacing:.02em;
+    cursor:pointer;
+    text-align:center;
+    transition:.12s;
+  }
+  .pitbtn:active{transform:scale(.97);}
+  .pitbtn.active{
+    background:var(--accent);
+    color:#1a1300;
+    border-color:var(--accent);
+  }
+  select{
+    width:100%;
+    background:#0f172a;
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--text);
+    padding:9px 10px;
+    font-size:.88rem;
+  }
+
+  .contractor-list{font-size:.82rem;color:var(--muted);line-height:1.7;margin-top:6px;}
+  .contractor-list b{color:var(--text);}
+
+  pre.preview{
+    background:#080d18;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:.78rem;
+    line-height:1.5;
+    white-space:pre-wrap;
+    word-break:break-word;
+    max-height:60vh;
+    overflow-y:auto;
+    color:#d1d5db;
+  }
+  .copied-toast{
+    position:fixed;
+    bottom:24px;left:50%;
+    transform:translateX(-50%);
+    background:var(--accent2);
+    color:#062b14;
+    padding:10px 20px;
+    border-radius:30px;
+    font-weight:700;
+    font-size:.85rem;
+    opacity:0;
+    transition:opacity .25s;
+    pointer-events:none;
+    z-index:50;
+  }
+  .copied-toast.show{opacity:1;}
+  .err{
+    background:#3a1e1e;
+    border:1px solid #5c2a2a;
+    color:#fca5a5;
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:.82rem;
+    margin-top:10px;
+    display:none;
+  }
+  .err.show{display:block;}
+  .small-note{font-size:.74rem;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5;}
+  .step-screen{display:none;}
+  .step-screen.active{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📋 Daily Production Geology Report</h1>
+    <div class="sub">HPAL Ore Selling SCM — FPP ESG</div>
+  </header>
+
+  <div class="steps">
+    <div class="step-pill active" id="pill-1">1. Input</div>
+    <div class="step-pill" id="pill-2">2. Loading Point</div>
+    <div class="step-pill" id="pill-3">3. Hasil</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step-screen active" id="step-1">
+
+    <div class="card">
+      <h2>📎 Teks Report Shift Sebelumnya</h2>
+      <label>Paste teks WA report shift sebelumnya (untuk hitung akumulasi WTD/MTD/YTD/Daily)</label>
+      <textarea id="prevText" placeholder="Kosongkan kalau ini laporan pertama / mulai periode baru..."></textarea>
+      <div class="hint">Kalau dikosongkan, WTD/MTD/YTD/Daily akan dianggap mulai dari nol (= sama dengan On Shift).</div>
+    </div>
+
+    <div class="card">
+      <h2>📊 File Timbangan ESG (.xlsx)</h2>
+      <label for="fileInput" class="upload-zone" id="uploadZone">
+        <span class="ic">📁</span>
+        <span id="uploadLabel">Tap untuk pilih file Excel timbangan</span>
+        <div class="fname" id="fnameDisplay"></div>
+      </label>
+      <input type="file" id="fileInput" class="file-real" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <div class="err" id="fileErr"></div>
+    </div>
+
+    <div class="card">
+      <h2>👥 Man Power and Support</h2>
+      <div class="row2">
+        <div>
+          <label>Week</label>
+          <input type="number" id="week" placeholder="26">
+        </div>
+        <div>
+          <label>Total Manpower</label>
+          <input type="number" id="totalManpower" placeholder="17">
+        </div>
+      </div>
+      <label>PIC SCM</label>
+      <input type="text" id="picScm" placeholder="Illofi, Bayu, Yusran">
+      <div class="row2">
+        <div>
+          <label>PIC ATQ</label>
+          <input type="text" id="picAtq" placeholder="Khalifa Akbar">
+        </div>
+        <div>
+          <label>Manpower ATQ</label>
+          <input type="number" id="manpowerAtq" placeholder="15">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>⚠️ Problem &amp; Preventive Action</h2>
+      <label>1. Problem</label>
+      <textarea id="problem" placeholder="-" style="min-height:50px;"></textarea>
+      <label>2. Preventive Action</label>
+      <textarea id="preventive" placeholder="-" style="min-height:50px;"></textarea>
+    </div>
+
+    <button class="btn" onclick="goStep2()">Lanjut ke Loading Point →</button>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step-screen" id="step-2">
+    <div class="card">
+      <h2>✅ Ringkasan Data Excel</h2>
+      <div class="summary-grid">
+        <div class="item"><div class="l">Tanggal</div><div class="v" id="sumDate">-</div></div>
+        <div class="item"><div class="l">Shift</div><div class="v" id="sumShift">-</div></div>
+        <div class="item"><div class="l">Tonase On Shift</div><div class="v" id="sumTon">-</div></div>
+        <div class="item"><div class="l">Ritase On Shift</div><div class="v" id="sumRit">-</div></div>
+      </div>
+      <div class="contractor-list" id="sumContractor"></div>
+    </div>
+
+    <div class="card">
+      <h2>🗺️ Pilih Area Tiap Dome</h2>
+      <div class="hint" style="margin-bottom:12px;">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR / BR 23 / DS) untuk tiap dome.</div>
+      <div id="domeList"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn secondary" onclick="goStep(1)">← Kembali</button>
+      <button class="btn" onclick="goStep3()">Generate Report →</button>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step-screen" id="step-3">
+    <div class="card">
+      <h2>📝 Hasil Report</h2>
+      <pre class="preview" id="resultText"></pre>
+    </div>
+    <div class="btn-row">
+      <button class="btn secondary" onclick="goStep(2)">← Kembali</button>
+      <button class="btn" onclick="copyResult()">📋 Copy ke Clipboard</button>
+    </div>
+    <button class="btn ghost" onclick="resetAll()" style="margin-top:10px;">↺ Mulai Laporan Baru</button>
+  </div>
+
+  <div class="small-note">SCM-ESG · Daily Production Geology Report Generator</div>
+</div>
+
+<div class="copied-toast" id="toast">Tersalin ke clipboard ✓</div>
+
+<script>
+const CONTRACTOR_MAP = {"ADT 001": "ADT HILLCON", "ADT 002": "ADT HILLCON", "ADT 003": "ADT HILLCON", "ADT 004": "ADT HILLCON", "ADT 005": "ADT HILLCON", "ADT 006": "ADT HILLCON", "ADT 007": "ADT HILLCON", "ADT 008": "ADT HILLCON", "ADT 009": "ADT HILLCON", "ADT 010": "ADT HILLCON", "ADT 011": "ADT HILLCON", "ADT 012": "ADT HILLCON", "ADT 013": "ADT HILLCON", "ADT 014": "ADT HILLCON", "ADT 015": "ADT HILLCON", "ADT 016": "ADT HILLCON", "ADT 017": "ADT HILLCON", "ADT 018": "ADT HILLCON", "ADT 019": "ADT HILLCON", "ADT 020": "ADT HILLCON", "ADT 021": "ADT HILLCON", "ADT 022": "ADT HILLCON", "ADT 023": "ADT HILLCON", "ADT 024": "ADT HILLCON", "ADT 025": "ADT HILLCON", "ADT 026": "ADT HILLCON", "ADT 027": "ADT HILLCON", "ADT 028": "ADT HILLCON", "ADT 029": "ADT HILLCON", "ADT 030": "ADT HILLCON", "ADT 031": "ADT HILLCON", "ADT 032": "ADT HILLCON", "ADT 033": "ADT HILLCON", "ADT 034": "ADT HILLCON", "ADT 035": "ADT HILLCON", "ADT 036": "ADT HILLCON", "ADT 037": "ADT HILLCON", "ADT 038": "ADT HILLCON", "ADT 039": "ADT HILLCON", "ADT 040": "ADT HILLCON", "ADT 041": "ADT HILLCON", "ADT 042": "ADT HILLCON", "ADT 043": "ADT HILLCON", "ADT 044": "ADT HILLCON", "ADT 045": "ADT HILLCON", "ADT 046": "ADT HILLCON", "ADT 047": "ADT HILLCON", "ADT 048": "ADT HILLCON", "ADT 050": "ADT HILLCON", "ADT 051": "ADT HILLCON", "ADT-RL 001": "ADT REAL", "ADT-RL 007": "ADT REAL", "ADT-RL 012": "ADT REAL", "ADT-RL 013": "ADT REAL", "ADT-RL 014": "ADT REAL", "ADT-RL 015": "ADT REAL", "ADT-RL 016": "ADT REAL", "ADT-RL 017": "ADT REAL", "ADT-RL 018": "ADT REAL", "ADT-RL 019": "ADT REAL", "ADT-RL 020": "ADT REAL", "ADT-RL 021": "ADT REAL", "ADT-RL 022": "ADT REAL", "ADT-RL 023": "ADT REAL", "ADT-RL 024": "ADT REAL", "ADT-RL 025": "ADT REAL", "ADT-RL 047": "ADT REAL", "DT014KS": "HYNC", "DT022KS": "HYNC", "DT045KS": "HYNC", "DT3004PB": "HYNC", "DT3006PB": "HYNC", "DT3009PB": "HYNC", "DT3012PB": "HYNC", "DT3016PB": "HYNC", "DT3020PB": "HYNC", "DT3025PB": "HYNC", "DT3029PB": "HYNC", "DT3033PB": "HYNC", "DT-SCM-HLG 014": "MIM", "DT-SCM-HLG 036": "MIM", "DT-SCM-HLG 037": "MIM", "DT-SCM-HLG 038": "MIM", "DT-SCM-HLG 039": "MIM", "DT-SCM-HLG 040": "MIM", "DT-SCM-HLG 041": "MIM", "DT-SCM-HLG 042": "MIM", "DT-SCM-HLG 043": "MIM", "DT-SCM-HLG 044": "MIM", "DT-SCM-HLG 045": "MIM", "DT-SCM-HLG 046": "MIM", "DT-SCM-HLG 047": "MIM", "DT-SCM-HLG 048": "MIM", "DT-SCM-HLG 050": "MIM", "DT-SCM-HLG 182": "MIM", "DT-SCM-HLG 183": "MIM", "DT-SCM-HLG 184": "MIM", "DT-SCM-HLG 185": "MIM", "DT-SCM-HLG 186": "MIM", "DT-SCM-HLG 187": "MIM", "DT-SCM-HLG 188": "MIM", "DT-SCM-HLG 189": "MIM", "DT-SCM-HLG 191": "MIM", "DT-SCM-HLG 192": "MIM", "DT-SCM-HLG 193": "MIM", "DT-SCM-HLG 194": "MIM", "DT-SCM-HLG 392": "STM", "DT-SCM-HLG 393": "STM", "DT-SCM-HLG 394": "STM", "DT-SCM-HLG 395": "STM", "DT-SCM-HLG 396": "STM", "DT-SCM-HLG 397": "STM", "DT-SCM-HLG 398": "STM", "DT-SCM-HLG 399": "STM", "DT-SCM-HLG 400": "STM", "DT-SCM-HLG 401": "STM", "DT-SCM-HLG 402": "STM", "DT-SCM-HLG 403": "STM", "DT-SCM-HLG 404": "STM", "DT-SCM-HLG 405": "STM", "DT-SCM-HLG 406": "STM", "DT-SCM-HLG 407": "STM", "DT-SCM-HLG 408": "STM", "DT-SCM-HLG 409": "STM", "DT-SCM-HLG 410": "STM", "DT-SCM-HLG 412": "STM", "DT-SCM-HLG 413": "STM", "DT-SCM-HLG 414": "STM", "DT-SCM-HLG 415": "STM", "DT-SCM-HLG 416": "STM", "DT-SCM-HLG 417": "STM", "DT-SCM-HLG 418": "STM", "DT-SCM-HLG 419": "STM", "DT-SCM-HLG 420": "STM", "DT-SCM-HLG 422": "STM", "DT-SCM-HLG 424": "STM", "DT-SCM-HLG 425": "STM", "DT-SCM-HLG 426": "STM", "DT-SCM-HLG 427": "STM", "DT-SCM-HLG 428": "STM", "DT-SCM-HLG 429": "STM", "DT-SCM-HLG 430": "STM", "DT-SCM-HLG 431": "STM", "DT-SCM-HLG 432": "STM", "DT-SCM-HLG 433": "STM", "DT-SCM-HLG 434": "STM", "DT-SCM-HLG 435": "STM", "DT-SCM-HLG 436": "STM", "DT-SCM-HLG 437": "STM", "DT-SCM-HLG 438": "STM", "DT-SCM-HLG 439": "STM", "DT-SCM-HLG 440": "STM", "DT-SCM-HLG 441": "STM", "DT-SCM-HLG 442": "STM", "DT-SCM-HLG 443": "STM", "DT-SCM-HLG 444": "STM", "DT-SCM-HLG 445": "STM", "DT-SCM-HLG 446": "STM", "DT-SCM-HLG 447": "STM", "DT-SCM-HLG 448": "STM", "DT-SCM-HLG 449": "STM", "DT-SCM-HLG 450": "STM", "DT-SCM-HLG 451": "STM", "DT-SCM-HLG 453": "STM", "DT-SCM-HLG 454": "STM", "DT-SCM-HLG 455": "STM", "DT-SCM-HLG 458": "STM", "DT-SCM-HLG 459": "STM", "DT-SCM-HLG 460": "STM", "DT-SCM-HLG 462": "STM", "DT-SCM-HLG 463": "STM", "DT-SCM-HLG 464": "STM", "DT-SCM-HLG 465": "STM", "DT-SCM-HLG 466": "STM", "DT-SCM-HLG 467": "STM", "DT-SCM-HLG 468": "STM", "DT-SCM-HLG 469": "STM", "DT-SCM-HLG 470": "STM", "DT-SCM-HLG 471": "STM", "DT-SCM-HLG 473": "STM", "DT-SCM-HLG 474": "STM", "DT-SCM-HLG 475": "STM", "DT-SCM-HLG 476": "STM", "DT-SCM-HLG 480": "STM", "DT-SCM-HLG 481": "STM", "DT-SCM-HLG 482": "STM", "DT-SCM-HLG 485": "STM", "DT-SCM-HLG 486": "STM", "DT-SCM-HLG 488": "STM", "DT-SCM-HLG 490": "STM", "DT-SCM-HLG 491": "STM", "DT-SCM-HLG-014": "MIM", "DT-SCM-HLG-037": "MIM", "DT-SCM-HLG-038": "MIM", "DT-SCM-HLG-039": "MIM", "DT-SCM-HLG-040": "MIM", "DT-SCM-HLG-041": "MIM", "DT-SCM-HLG-042": "MIM", "DT-SCM-HLG-043": "MIM", "DT-SCM-HLG-044": "MIM", "DT-SCM-HLG-045": "MIM", "DT-SCM-HLG-046": "MIM", "DT-SCM-HLG-187": "MIM", "MIM 117": "MIM", "MIM 120": "MIM", "MIM 130": "MIM", "MIM -130": "MIM", "MIM 132": "MIM", "MIM 141": "MIM", "MIM 145": "MIM", "MIM 146": "MIM", "MIM 147": "MIM", "MIM 149": "MIM", "MIM 152": "MIM", "MIM 159": "MIM", "MIM 168": "MIM", "MIM 172": "MIM", "MIM-DT 113": "MIM", "MIM-DT 120": "MIM", "MIM-DT 130": "MIM", "MIM-DT 132": "MIM", "MIM-DT 141": "MIM", "MIM-DT 145": "MIM", "MIM-DT 146": "MIM", "MIM-DT 147": "MIM", "MIM-DT 148": "MIM", "MIM-DT 149": "MIM", "MIM-DT 172": "MIM", "SCM HLG 399": "STM", "SCM-HLG 357": "STM", "SCM-HLG 392": "STM", "SCM-HLG 393": "STM", "SCM-HLG 394": "STM", "SCM-HLG 395": "STM", "SCM-HLG 396": "STM", "SCM-HLG 397": "STM", "SCM-HLG 399": "STM", "SCM-HLG 400": "STM", "SCM-HLG 402": "STM", "SCM-HLG 408": "STM", "SCM-HLG 410": "STM", "SCM-HLG 415": "STM", "SCM-HLG 416": "STM", "SCM-HLG 419": "STM", "SCM-HLG 438": "STM", "SCM-HLG 441": "STM", "SCM-HLG 445": "STM", "SCM-HLG 447": "STM", "SCM-HLG 449": "STM", "SCM-HLG 450": "STM", "SCM-HLG 453": "STM", "SCM-HLG 455": "STM", "SCM-HLG 456": "STM", "SCM-HLG 458": "STM", "SCM-HLG 471": "STM", "SCM-HLG 472": "STM", "SCM-HLG 473": "STM", "SCM-HLG 474": "STM", "SCM-HLG 475": "STM", "SCM-HLG 483": "STM", "SCM-HLH 400": "STM", "SCM-LIM 200": "REAL", "SCM-LIM 201": "REAL", "SCM-LIM 202": "REAL", "SCM-LIM 203": "REAL", "SCM-LIM 204": "REAL", "SCM-LIM 205": "REAL", "SCM-LIM 206": "REAL", "SCM-LIM 207": "REAL", "SCM-LIM 208": "REAL", "SCM-LIM 209": "REAL", "SCM-LIM 211": "REAL", "SCM-LIM 212": "REAL", "SCM-LIM 213": "REAL", "SCM-LIM 214": "REAL", "SCM-LIM 215": "REAL", "SCM-LIM 216": "REAL", "SCM-LIM 217": "REAL", "SCM-LIM 219": "REAL", "SCM-LIM 220": "REAL", "SCM-LIM 221": "REAL", "SCM-LIM 301": "MRP", "SCM-LIM 302": "MRP", "SCM-LIM 303": "MRP", "SCM-LIM 304": "MRP", "SCM-LIM 305": "MRP", "SCM-LIM 306": "MRP", "SCM-LIM 307": "MRP", "SCM-LIM 308": "MRP", "SCM-LIM 309": "MRP", "SCM-LIM 310": "MRP", "SCM-LIM 311": "MRP", "SCM-LIM 312": "MRP", "SCM-LIM 313": "MRP", "SCM-LIM 314": "MRP", "SCM-LIM 315": "MRP", "SCM-LIM 316": "MRP", "SCM-LIM 317": "MRP", "SCM-LIM 318": "MRP", "SCM-LIM 319": "MRP", "SCM-LIM 320": "MRP", "SCM-LIM 321": "MRP", "SCM-LIM 322": "MRP", "SCM-LIM 323": "MRP", "SCM-LIM 324": "MRP", "SCM-LIM 325": "MRP", "SCM-LIM 326": "MRP", "SCM-LIM 327": "MRP", "SCM-LIM 328": "MRP", "SCM-LIM 329": "MRP", "SCM-LIM 330": "MRP", "SCM-LIM 331": "MRP", "SCM-LIM 332": "MRP", "SCM-LIM 333": "MRP", "SCM-LIM 334": "MRP", "SCM-LIM 335": "MRP", "SCM-LIM 336": "MRP", "SCM-LIM 337": "MRP", "SCM-LIM 338": "MRP", "SCM-LIM 339": "MRP", "SCM-LIM 340": "MRP", "SCM-LIM 341": "MRP", "SCM-LIM 342": "MRP", "SCM-LIM 343": "MRP", "SCM-LIM 344": "MRP", "SCM-LIM 345": "MRP", "SCM-LIM 346": "MRP", "SCM-LIM 347": "MRP", "SCM-LIM 348": "MRP", "SCM-LIM 349": "MRP", "SCM-LIM 350": "MRP", "SCM-LIM 351": "MRP", "SCM-LIM 352": "MRP", "SCM-LIM 353": "MRP", "SCM-LIM 354": "MRP", "SCM-LIM 355": "MRP", "SCM-LIM 356": "MRP", "SCM-LIM 357": "MRP", "SCM-LIM 358": "MRP", "SCM-LIM 359": "MRP", "SCM-LIM 360": "MRP", "SCM-LIM 361": "MRP", "SCM-LIM 362": "MRP", "SCM-LIM 363": "MRP", "SCM-LIM 364": "MRP", "SCM-LIM 365": "MRP", "SCM-LIM 366": "MRP", "SCM-LIM 367": "MRP", "SCM-LIM 368": "MRP", "SCM-LIM 369": "MRP", "SCM-LIM 370": "MRP", "SCM-LIM 371": "MRP", "SCM-LIM 372": "MRP", "SCM-LIM 373": "MRP", "SCM-LIM 374": "MRP", "SCM-LIM 375": "MRP", "SCM-LIM 376": "MRP", "SCM-LIM 377": "MRP", "SCM-LIM 378": "MRP", "SCM-LIM 379": "MRP", "SCM-LIM 380": "MRP", "SCM-LIM 381": "MRP", "SCM-LIM 382": "MRP", "SCM-LIM 383": "MRP", "SCM-LIM 384": "MRP", "SCM-LIM 385": "MRP", "SCM-LIM 386": "MRP", "SCM-LIM 387": "MRP", "SCM-LIM 388": "MRP", "SCM-LIM 389": "MRP", "SCM-LIM 390": "MRP", "SCM-LIM 391": "MRP", "SCM-LIM 392": "MRP", "SCM-LIM 393": "MRP", "SCM-LIM 394": "MRP", "SCM-LIM 395": "MRP", "SCM-LIM 396": "MRP", "SCM-LIM 397": "MRP", "SCM-LIM 398": "MRP", "SCM-LIM 399": "MRP", "SCM-LIM 400": "MRP", "SCM-LIM 401": "PMS", "SCM-LIM 402": "PMS", "SCM-LIM 403": "PMS", "SCM-LIM 404": "PMS", "SCM-LIM 405": "PMS", "SCM-LIM 406": "PMS", "SCM-LIM 407": "PMS", "SCM-LIM 408": "PMS", "SCM-LIM 409": "PMS", "SCM-LIM 410": "PMS", "SCM-LIM 411": "PMS", "SCM-LIM 412": "PMS", "SCM-LIM 413": "PMS", "SCM-LIM 414": "PMS", "SCM-LIM 415": "PMS", "SCM-LIM 416": "PMS", "SCM-LIM 417": "PMS", "SCM-LIM 418": "PMS", "SCM-LIM 501": "MIM", "SCM-LIM 502": "MIM", "SCM-LIM 503": "MIM", "SCM-LIM 504": "MIM", "SCM-LIM 505": "MIM", "SCM-LIM 506": "MIM", "SCM-LIM 507": "MIM", "SCM-LIM 508": "MIM", "SCM-LIM 509": "MIM", "SCM-LIM 510": "MIM", "SCM-LIM 511": "MIM", "SCM-LIM 512": "MIM", "SCM-LIM 513": "MIM", "SCM-LIM 514": "MIM", "SCM-LIM 515": "MIM", "SCM-LIM 516": "MIM", "SCM-LIM 517": "MIM", "SCM-LIM 518": "MIM", "SCM-LIM 519": "MIM", "SCM-LIM 520": "MIM", "SCM-LIM 521": "MIM", "SCM-LIM 522": "MIM", "SCM-LIM 523": "MIM", "SCM-LIM 524": "MIM", "SCM-LIM 525": "MIM", "SCM-LIM 526": "MIM", "SCM-LIM 527": "MIM", "SCM-LIM 528": "MIM", "SCM-LIM 529": "MIM", "SCM-LIM 530": "MIM", "SCM-LIM 531": "MIM", "SCM-LIM 532": "MIM", "SCM-LIM 533": "MIM", "SCM-LIM 534": "MIM", "SCM-LIM 535": "MIM", "SCM-LIM 536": "MIM", "SCM-LIM 537": "MIM", "SCM-LIM 538": "MIM", "SCM-LIM 539": "MIM", "SCM-LIM 540": "MIM", "SCM-LIM 541": "MIM", "SCM-LIM 542": "MIM", "SCM-LIM 543": "MIM", "SCM-LIM 544": "MIM", "SCM-LIM 545": "MIM", "SCM-LIM 546": "MIM", "SCM-LIM 547": "MIM", "SCM-LIM 548": "MIM", "SCM-LIM 549": "MIM", "SCM-LIM 550": "MIM", "SCM-LIM 551": "MIM", "SCM-LIM 552": "MIM", "SCM-LIM 553": "MIM", "SCM-LIM 554": "MIM", "SCM-LIM 555": "MIM", "SCM-LIM 556": "MIM", "SCM-LIM 557": "MIM", "SCM-LIM 558": "MIM", "SCM-LIM 559": "MIM", "SCM-LIM 560": "MIM", "SCM-LIM 561": "MIM", "SCM-LIM 562": "MIM", "SCM-LIM 563": "MIM", "SCM-LIM 564": "MIM", "SCM-LIM 565": "MIM", "SCM-LIM 566": "MIM", "SCM-LIM 567": "MIM", "SCM-LIM 568": "MIM", "SCM-LIM 569": "MIM", "SCM-LIM 570": "MIM", "SCM-LIM 571": "MIM", "SCM-LIM 572": "MIM", "SCM-LIM 573": "MIM", "SCM-LIM 574": "MIM", "SCM-LIM 575": "MIM", "SCM-LIM 576": "MIM", "SCM-LIM 577": "MIM", "SCM-LIM 578": "MIM", "SCM-LIM 579": "MIM", "SCM-LIM 580": "MIM", "SCM-LIM 581": "MIM", "SCM-LIM 582": "MIM", "SCM-LIM 583": "MIM", "SCM-LIM 584": "MIM", "SCM-LIM 585": "MIM", "SCM-LIM 586": "MIM", "SCM-LIM 587": "MIM", "SCM-LIM 588": "MIM", "SCM-LIM 589": "MIM", "SCM-LIM 590": "MIM", "SCM-LIM 591": "MIM", "SCM-LIM 592": "MIM", "SCM-LIM 593": "MIM", "SCM-LIM 594": "MIM", "SCM-LIM 595": "MIM", "SCM-LIM 596": "MIM", "SCM-LIM 597": "MIM", "SCM-LIM 598": "MIM", "SCM-LIM 601": "HYNC", "SCM-LIM 602": "HYNC", "SCM-LIM 603": "HYNC", "SCM-LIM 604": "HYNC", "SCM-LIM 605": "HYNC", "SCM-LIM 606": "HYNC", "SCM-LIM 607": "HYNC", "SCM-LIM 608": "HYNC", "SCM-LIM 609": "HYNC", "SCM-LIM 610": "HYNC", "SCM-LIM 611": "HYNC", "SCM-LIM 612": "HYNC", "SCM-LIM 613": "HYNC", "SCM-LIM 614": "HYNC", "SCM-LIM 615": "HYNC", "SCM-LIM 616": "HYNC", "SCM-LIM 617": "HYNC", "SCM-LIM 618": "HYNC", "SCM-LIM 619": "HYNC", "SCM-LIM 620": "HYNC", "SCM-LIM 621": "HYNC", "SCM-LIM 622": "HYNC", "SCM-LIM 623": "HYNC", "SCM-LIM 719": "HILLCON", "SCM-LIM 720": "HILLCON", "SCM-LIM 721": "HILLCON", "SCM-LIM 722": "HILLCON", "SCM-LIM 723": "HILLCON", "SCM-LIM 724": "HILLCON", "SCM-LIM 725": "PMS", "SCM-LIM 726": "PMS", "SCM-LIM 727": "PMS", "SCM-LIM 728": "HILLCON", "SCM-LIM 729": "HILLCON", "SCM-LIM 730": "HILLCON", "SCM-LIM 731": "HILLCON", "SCM-LIM 732": "HILLCON", "SCM-LIM 733": "HILLCON", "SCM-LIM 734": "HILLCON", "SCM-LIM 735": "HILLCON", "SCM-LIM 736": "HILLCON", "SCM-LIM 737": "HILLCON", "SCM-LIM 738": "HILLCON", "SCM-LIM 739": "HILLCON", "SCM-LIM 740": "HILLCON", "SCM-LIM 741": "HILLCON", "SCM-LIM 742": "HILLCON", "SCM-LIM 743": "HILLCON", "SCM-LIM 744": "HILLCON", "SCM-LIM 745": "HILLCON", "SCM-LIM 746": "HILLCON", "SCM-LIM 747": "HILLCON", "SCM-LIM 748": "HILLCON", "SCM-LIM 749": "HILLCON", "SCM-LIM 751": "PMS", "SCM-LIM 755": "HILLCON", "SCM-LIM 756": "HILLCON", "SCM-LIM 757": "PMS", "SCM-LIM 758": "PMS", "SCM-LIM 801": "JAM", "SCM-LIM 802": "JAM", "SCM-LIM 803": "JAM", "SCM-LIM 804": "JAM", "SCM-LIM 805": "JAM", "SCM-LIM 806": "JAM", "SCM-LIM 807": "JAM", "SCM-LIM 808": "JAM", "SCM-LIM 809": "JAM", "SCM-LIM 810": "JAM", "SCM-LIM 811": "JAM", "SCM-LIM 812": "JAM", "SCM-LIM 813": "JAM", "SCM-LIM 814": "JAM", "SCM-LIM 815": "JAM", "SCM-LIM 816": "JAM", "SCM-LIM 817": "JAM", "SCM-LIM 818": "JAM", "SCM-LIM 819": "JAM", "SCM-LIM 820": "JAM", "SCM-LIM 821": "JAM", "SCM-LIM 822": "JAM", "SCM-LIM 823": "JAM", "SCM-LIM 824": "JAM", "SCM-LIM 825": "JAM", "SCM-LIM 826": "JAM", "SCM-LIM 827": "JAM", "SCM-LIM 828": "JAM", "SCM-LIM 829": "JAM", "SCM-LIM 830": "JAM", "SCM-LIM 831": "JAM", "SCM-LIM 832": "JAM", "SCM-LIM 833": "JAM", "SCM-LIM 834": "JAM", "SCM-LIM 835": "JAM", "SCM-LIM 836": "JAM", "SCM-LIM 837": "JAM", "SCM-LIM 838": "JAM", "SCM-LIM 839": "JAM", "SCM-LIM 840": "JAM", "SCM-LIM 841": "JAM", "SCM-LIM 842": "JAM", "SCM-LIM 843": "JAM", "SCM-LIM 844": "JAM", "SCM-LIM 845": "JAM", "SCM-LIM 846": "JAM", "SCM-LIM 900": "TII", "SCM-LIM 901": "TII", "SCM-LIM 902": "TII", "SCM-LIM 903": "TII", "SCM-LIM 904": "TII", "SCM-LIM 905": "TII", "SCM-LIM 906": "TII", "SCM-LIM 907": "TII", "SCM-LIM 908": "TII", "SCM-LIM 909": "TII", "SCM-LIM 910": "TII", "SCM-LIM 911": "TII", "SCM-LIM 912": "TII", "SCM-LIM 913": "TII", "SCM-LIM 914": "TII", "SCM-LIM 915": "TII", "SCM-LIM 916": "TII", "SCM-LIM 917": "TII", "SCM-LIM 918": "TII", "SCM-LIM 919": "TII", "SCM-LIM 920": "TII", "SCM-LIM 921": "TII", "SCM-LIM 922": "TII", "SCM-LIM 923": "TII", "SCM-LIM 924": "TII", "SCM-LIM 925": "TII", "SCM-LIM 926": "TII", "SCM-LIM 927": "TII", "SCM-LIM 928": "TII", "SCM-LIM 929": "TII", "SCM-LIM 930": "TII", "SCM-LIM 931": "TII", "SCM-LIM 932": "TII", "SCM-LIM 933": "TII", "SCM-LIM 934": "TII", "SCM-LIM 935": "TII", "SCM-LIM 936": "TII", "SCM-LIM 937": "TII", "SCM-LIM 938": "TII", "SCM-LIM 939": "TII", "SCM-LIM 940": "TII", "SCM-LIM 941": "TII", "SCM-LIM 942": "TII", "SCM-LIM 943": "TII", "SCM-LIM 944": "TII", "SCM-LIM 945": "TII", "SCM-LIM 946": "TII", "SCM-LIM 947": "TII", "SCM-LIM 948": "TII", "SCM-LIM 949": "TII", "SCM-LIM 950": "TII", "SCM-LIM 951": "TII", "SCM-LIM 952": "TII", "SCM-LIM 953": "TII", "SCM-LIM 954": "TII", "SCM-LIM 955": "TII", "SCM-LIM 956": "TII", "SCM-LIM 957": "TII", "SCM-LIM 958": "TII", "SCM-LIM 959": "TII", "SCM-LIM 960": "TII", "SCM-LIM 961": "TII", "SCM-LIM 962": "TII", "SCM-LIM 963": "TII", "SCM-LIM 964": "TII", "SMA 4173 ADT": "ADT SMA", "SMA 4176 ADT": "ADT SMA", "SMA 4177 ADT": "ADT SMA", "SMA 4178 ADT": "ADT SMA", "SMA 4179 ADT": "ADT SMA", "SCM-LIM 965": "TII", "SCM-LIM 966": "TII", "SCM-LIM 967": "TII", "SCM-LIM 968": "TII", "SCM-LIM 969": "TII", "SCM-LIM 970": "TII", "SCM-LIM 971": "TII", "SCM-LIM 972": "TII", "SCM-LIM 973": "TII", "SCM-LIM 974": "TII", "SCM-LIM 975": "TII", "SCM-LIM 976": "TII", "SCM-LIM 977": "TII", "SCM-LIM 978": "TII", "SCM-LIM 979": "TII", "SCM-LIM 980": "TII", "SCM-LIM 981": "TII", "SCM-LIM 982": "TII", "SCM-LIM 983": "TII", "SCM-LIM 984": "TII", "SCM-LIM 985": "TII", "SCM-LIM 986": "TII", "SCM-LIM 987": "TII", "SCM-LIM 988": "TII", "SCM-LIM 989": "TII", "SCM-LIM 991": "TII", "SCM-LIM 994": "TII", "SCM-LIM 218": "REAL", "SCM-LIM 210": "REAL", "SCM-LIM 225": "REAL", "SCM-LIM 223": "REAL", "SCM-LIM 228": "REAL"};
+
+const CONTRACTOR_ALIAS = { 'HILLCON': 'PMS' };
+const CONTRACTOR_ORDER = ['PMS', 'MRP', 'TII', 'REAL', 'JAM', 'STM', 'MIM', 'HYNC'];
+const MONTHS_ID = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
+let state = {
+  parsed: null,
+  prev: null,
+  acc: null,
+  pitAssign: {}, // key: dome|grade -> {main, sub}
+  manual: {}
+};
+
+/* ---------- helpers ---------- */
+function normalizeDtId(raw) {
+  let s = String(raw).trim();
+  s = s.replace(/\s*DT\.?\s*$/i, '');
+  s = s.replace(/\.+$/, '').trim();
+  return s.toUpperCase();
+}
+function getContractor(rawDt) {
+  const key = normalizeDtId(rawDt);
+  let c = CONTRACTOR_MAP[key];
+  if (!c) return null;
+  if (CONTRACTOR_ALIAS[c]) c = CONTRACTOR_ALIAS[c];
+  return c;
+}
+function classifyOre(grade) {
+  if (grade < 1.2) return 'LGLO';
+  if (grade <= 1.4) return 'MGLO';
+  return 'HGLO';
+}
+function parseKodeOre(raw) {
+  const s = String(raw).trim();
+  // Handles both old "DOME (NI: 1.11)" and new "DOME ( Ni 1.11 )" formats (colon optional, spacing varies)
+  const m = s.match(/^(.*?)\s*\(\s*Ni\s*:?\s*([\d.,]+)\s*\)/i);
+  if (!m) return null;
+  let dome = m[1].trim().replace(/-/g, '_');
+  let grade = parseFloat(m[2].replace(',', '.'));
+  return { dome, grade, oreClass: classifyOre(grade) };
+}
+function formatDateFromSerial(serial) {
+  const d = XLSX.SSF.parse_date_code(serial);
+  return d.d + ' ' + MONTHS_ID[d.m - 1] + ' ' + d.y;
+}
+function parseTimeSerial(serial) {
+  // Kolom E/F di file timbangan baru bertipe time asli (serial pecahan hari), bukan string "HH:MM"
+  const d = XLSX.SSF.parse_date_code(serial);
+  return { h: d.H, mnt: d.M };
+}
+function extractTimeHHMM(jamStr) {
+  const m = String(jamStr).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return { h: parseInt(m[1], 10), mnt: parseInt(m[2], 10) };
+}
+function detectShift(timeRows) {
+  const sample = timeRows.filter(Boolean).slice(0, 10);
+  let dayCount = 0, nightCount = 0;
+  for (const t of sample) {
+    const totalMin = t.h * 60 + t.mnt;
+    const isDay = totalMin >= 5 * 60 && totalMin < 17 * 60;
+    if (isDay) dayCount++; else nightCount++;
+  }
+  return dayCount >= nightCount ? 'Day Shift' : 'Night Shift';
+}
+function formatIDNum(num, decimals) {
+  return Number(num).toLocaleString('id-ID', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function parseIDNum(str) {
+  if (!str) return 0;
+  return parseFloat(String(str).trim().replace(/\./g, '').replace(',', '.')) || 0;
+}
+function padLabel(label, width) {
+  width = width || 17;
+  return (label + ' ').padEnd(width, ' ');
+}
+
+// Exact spacing reference taken from the user's WA template (chars before the colon).
+// Keys are the visible label text; value is label + the exact spaces used before ':'.
+const EXACT_PAD = {
+  'Date': 'Date    ',
+  'Week': 'Week  ',
+  'Shift': 'Shift    ',
+  'PIC SCM': 'PIC SCM  ',
+  'PIC ATQ': 'PIC ATQ   ',
+  'Manpower ATQ': 'Manpower ATQ    ',
+  'Total Manpower': 'Total Manpower   ',
+  'Number of Truck': 'Number of Truck ',
+  'TII': 'TII                           ',
+  'MRP': 'MRP                      ',
+  'REAL': 'REAL                    ',
+  'On Shift': 'On Shift    ',
+  'Daily': 'Daily           ',
+  'WTD': 'WTD           ',
+  'MTD': 'MTD           ',
+  'YTD': 'YTD            ',
+};
+function exactPad(label) {
+  if (EXACT_PAD[label]) return EXACT_PAD[label];
+  // Fallback for contractor names not in the reference template (e.g. PMS, JAM, STM, MIM, HYNC, ADT):
+  // approximate using the closest-length known contractor's total column width.
+  const totalWidth = label.length <= 3 ? 25 : 24;
+  return label.padEnd(totalWidth, ' ');
+}
+
+/* ---------- excel parsing (format timbangan baru: kolom C-K) ---------- */
+function parseWeighbridgeExcel(workbook) {
+  const sheetName = workbook.SheetNames[0];
+  const ws = workbook.Sheets[sheetName];
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  function cell(col, r) { const a = col + (r + 1); const c = ws[a]; return c ? c.v : null; }
+
+  let totalTonase = 0, totalRit = 0;
+  const domeAgg = {};
+  const dtSet = new Set();
+  const dtRawMap = {};
+  const timeRows = [];
+  let dateSerial = null;
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const C = cell('C', r); // Vehicle No
+    if (C === null || C === undefined || !String(C).trim().toUpperCase().startsWith('SCM')) continue;
+
+    const tonase = parseFloat(cell('I', r)) || 0; // Berat ore/bersih (Ton)
+    totalTonase += tonase;
+    totalRit += 1;
+
+    const kode = parseKodeOre(cell('K', r)); // Kode Dome + Grade
+    if (kode) {
+      const key = kode.dome + '|' + kode.grade;
+      if (!domeAgg[key]) domeAgg[key] = { dome: kode.dome, grade: kode.grade, oreClass: kode.oreClass, tonase: 0, rit: 0 };
+      domeAgg[key].tonase += tonase;
+      domeAgg[key].rit += 1;
+    }
+
+    const rawDt = C;
+    const normKey = normalizeDtId(rawDt);
+    dtSet.add(normKey);
+    if (!dtRawMap[normKey]) dtRawMap[normKey] = rawDt;
+
+    const eVal = cell('E', r); // Time Loaded
+    if (eVal !== null && eVal !== undefined) timeRows.push(parseTimeSerial(eVal));
+
+    if (dateSerial === null) {
+      const d = cell('D', r); // Date
+      if (d !== null && d !== undefined) dateSerial = d;
+    }
+  }
+
+  const contractorCount = {};
+  const unmatched = [];
+  for (const normKey of dtSet) {
+    const c = getContractor(dtRawMap[normKey]);
+    if (!c) { unmatched.push(dtRawMap[normKey]); continue; }
+    contractorCount[c] = (contractorCount[c] || 0) + 1;
+  }
+  let dtCount = 0, adtCount = 0;
+  const dtBreakdown = {};
+  for (const name in contractorCount) {
+    const count = contractorCount[name];
+    if (/^ADT\b/i.test(name)) { adtCount += count; }
+    else { dtBreakdown[name] = count; dtCount += count; }
+  }
+
+  return {
+    date: formatDateFromSerial(dateSerial),
+    shift: detectShift(timeRows),
+    totalTonase, totalRit,
+    domeGroups: Object.values(domeAgg).sort((a,b)=> b.tonase - a.tonase),
+    dtCount, adtCount, dtBreakdown, unmatchedDt: unmatched
+  };
+}
+
+/* ---------- previous text parsing ---------- */
+function parsePreviousText(text) {
+  if (!text || !text.trim()) return null;
+  const result = {};
+  let m;
+  m = text.match(/Date\s*:\s*([^\n*]+)/i); if (m) result.date = m[1].trim();
+  m = text.match(/Shift\s*:\s*(Day Shift|Night Shift)/i); if (m) result.shift = m[1].trim();
+  const grab = (label) => {
+    const re = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt\\s*\\[\\s*([\\d.,]+)\\s*Rit', 'i');
+    const mm = text.match(re);
+    if (!mm) return null;
+    return { ton: parseIDNum(mm[1]), rit: parseIDNum(mm[2]) };
+  };
+  result.daily = grab('Daily');
+  result.wtd = grab('WTD');
+  result.mtd = grab('MTD');
+  result.ytd = grab('YTD');
+  return result;
+}
+
+/* ---------- accumulation ---------- */
+function computeAccumulation(prev, onShiftTon, onShiftRit, currentDate, currentShift) {
+  const sameDate = prev && prev.date && prev.date === currentDate;
+  let daily;
+  if (currentShift === 'Day Shift') {
+    daily = { ton: onShiftTon, rit: onShiftRit };
+  } else if (prev && prev.daily && sameDate) {
+    daily = { ton: prev.daily.ton + onShiftTon, rit: prev.daily.rit + onShiftRit };
+  } else {
+    daily = { ton: onShiftTon, rit: onShiftRit };
+  }
+  const accum = (key) => {
+    if (prev && prev[key]) return { ton: prev[key].ton + onShiftTon, rit: prev[key].rit + onShiftRit };
+    return { ton: onShiftTon, rit: onShiftRit };
+  };
+  return { daily, wtd: accum('wtd'), mtd: accum('mtd'), ytd: accum('ytd') };
+}
+
+/* ---------- UI: file upload (iOS-safe) ---------- */
+const fileInput = document.getElementById('fileInput');
+const uploadZone = document.getElementById('uploadZone');
+const fileErr = document.getElementById('fileErr');
+let workbookCache = null;
+
+fileInput.addEventListener('change', function(e){
+  const file = e.target.files && e.target.files[0];
+  fileErr.classList.remove('show');
+  if (!file) return;
+  document.getElementById('fnameDisplay').textContent = file.name;
+  document.getElementById('uploadLabel').textContent = 'File terpilih:';
+  uploadZone.classList.add('has-file');
+
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    try {
+      const data = new Uint8Array(ev.target.result);
+      workbookCache = XLSX.read(data, { type: 'array', cellDates: false });
+    } catch(err){
+      fileErr.textContent = 'Gagal membaca file: ' + err.message;
+      fileErr.classList.add('show');
+      workbookCache = null;
+    }
+  };
+  reader.onerror = function(){
+    fileErr.textContent = 'Gagal membaca file. Coba lagi.';
+    fileErr.classList.add('show');
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+/* ---------- auto-grow: Teks Report Shift Sebelumnya ---------- */
+const prevTextEl = document.getElementById('prevText');
+function autoGrowPrevText(){
+  prevTextEl.style.height = 'auto';
+  prevTextEl.style.height = prevTextEl.scrollHeight + 'px';
+}
+prevTextEl.addEventListener('input', autoGrowPrevText);
+autoGrowPrevText();
+
+/* ---------- step navigation ---------- */
+function goStep(n){
+  document.querySelectorAll('.step-screen').forEach(el=>el.classList.remove('active'));
+  document.getElementById('step-'+n).classList.add('active');
+  for (let i=1;i<=3;i++){
+    const pill = document.getElementById('pill-'+i);
+    pill.classList.remove('active','done');
+    if (i < n) pill.classList.add('done');
+    if (i === n) pill.classList.add('active');
+  }
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function goStep2(){
+  fileErr.classList.remove('show');
+  if (!workbookCache){
+    fileErr.textContent = 'Upload file Excel timbangan dulu ya.';
+    fileErr.classList.add('show');
+    return;
+  }
+  state.manual = {
+    week: document.getElementById('week').value.trim(),
+    picScm: document.getElementById('picScm').value.trim(),
+    picAtq: document.getElementById('picAtq').value.trim(),
+    manpowerAtq: document.getElementById('manpowerAtq').value.trim(),
+    totalManpower: document.getElementById('totalManpower').value.trim(),
+    problem: document.getElementById('problem').value.trim(),
+    preventive: document.getElementById('preventive').value.trim(),
+  };
+  try {
+    state.parsed = parseWeighbridgeExcel(workbookCache);
+  } catch(err){
+    fileErr.textContent = 'Gagal parsing file: ' + err.message;
+    fileErr.classList.add('show');
+    return;
+  }
+  state.prev = parsePreviousText(document.getElementById('prevText').value);
+  state.acc = computeAccumulation(state.prev, state.parsed.totalTonase, state.parsed.totalRit, state.parsed.date, state.parsed.shift);
+
+  renderStep2();
+  goStep(2);
+}
+
+function renderStep2(){
+  const p = state.parsed;
+  document.getElementById('sumDate').textContent = p.date;
+  document.getElementById('sumShift').textContent = p.shift;
+  document.getElementById('sumTon').textContent = formatIDNum(p.totalTonase,2) + ' wmt';
+  document.getElementById('sumRit').textContent = formatIDNum(p.totalRit,0) + ' Rit';
+
+  let contractorHtml = '<b>Breakdown truck (otomatis dari List_DT):</b><br>';
+  CONTRACTOR_ORDER.forEach(name=>{
+    if (p.dtBreakdown[name]) contractorHtml += name + ': ' + p.dtBreakdown[name] + ' unit &nbsp; ';
+  });
+  if (p.adtCount > 0) contractorHtml += 'ADT: ' + p.adtCount + ' unit';
+  if (p.unmatchedDt.length){
+    contractorHtml += '<br><span style="color:#f87171;">⚠ Tidak ketemu di List_DT: ' + p.unmatchedDt.join(', ') + '</span>';
+  }
+  document.getElementById('sumContractor').innerHTML = contractorHtml;
+
+  const domeList = document.getElementById('domeList');
+  domeList.innerHTML = '';
+  p.domeGroups.forEach((d, idx)=>{
+    const domeKey = d.dome + '|' + d.grade;
+    if (!state.pitAssign[domeKey]) state.pitAssign[domeKey] = { main: 'BR', sub: '' };
+    const a = state.pitAssign[domeKey];
+    const current = a.main === 'BR' && a.sub === '23' ? 'BR23' : (a.main === 'BR' ? 'BR' : 'DS');
+
+    const card = document.createElement('div');
+    card.className = 'dome-card';
+    card.innerHTML =
+      '<div class="dh"><span class="dname">' + d.dome + '</span><span class="badge ' + d.oreClass + '">' + d.oreClass + '</span></div>' +
+      '<div class="dstat">' + formatIDNum(d.tonase,2) + ' wmt &middot; ' + d.rit + ' Rit</div>' +
+      '<div class="pitbtn-row">' +
+        '<div class="pitbtn'+(current==='BR'?' active':'')+'" id="pb-'+idx+'-BR" onclick="selectPit('+idx+',\'BR\')">BR</div>' +
+        '<div class="pitbtn'+(current==='BR23'?' active':'')+'" id="pb-'+idx+'-BR23" onclick="selectPit('+idx+',\'BR23\')">BR 23</div>' +
+        '<div class="pitbtn'+(current==='DS'?' active':'')+'" id="pb-'+idx+'-DS" onclick="selectPit('+idx+',\'DS\')">DS</div>' +
+      '</div>';
+    card.dataset.domeKey = domeKey;
+    domeList.appendChild(card);
+  });
+}
+
+function selectPit(idx, choice){
+  const p = state.parsed;
+  const d = p.domeGroups[idx];
+  const domeKey = d.dome + '|' + d.grade;
+  if (choice === 'BR23') state.pitAssign[domeKey] = { main: 'BR', sub: '23' };
+  else if (choice === 'BR') state.pitAssign[domeKey] = { main: 'BR', sub: '' };
+  else state.pitAssign[domeKey] = { main: 'DS', sub: '' };
+
+  ['BR','BR23','DS'].forEach(c=>{
+    document.getElementById('pb-'+idx+'-'+c).classList.toggle('active', c === choice);
+  });
+}
+
+/* ---------- report generation ---------- */
+function buildLoadingPointText(){
+  const p = state.parsed;
+  const mains = ['DS','BR'];
+  const lines = [];
+  mains.forEach(main=>{
+    const flat = [];
+    const subGroups = {};
+    p.domeGroups.forEach(d=>{
+      const key = d.dome + '|' + d.grade;
+      const a = state.pitAssign[key] || { main:'BR', sub:'' };
+      if (a.main !== main) return;
+      if (a.sub) {
+        if (!subGroups[a.sub]) subGroups[a.sub] = [];
+        subGroups[a.sub].push(d);
+      } else {
+        flat.push(d);
+      }
+    });
+    const hasAny = flat.length || Object.keys(subGroups).length;
+    if (!hasAny) return;
+
+    if (lines.length) lines.push('');
+    lines.push('Pit ' + main + ' :');
+    if (flat.length){
+      flat.forEach((d,i)=> lines.push((i+1) + '. ' + d.dome + ' (' + d.oreClass + ')'));
+    }
+    Object.keys(subGroups).forEach(sub=>{
+      lines.push('');
+      lines.push('*Pit ' + main + sub + '*');
+      subGroups[sub].forEach((d,i)=> lines.push((i+1) + '. ' + d.dome + ' (' + d.oreClass + ')'));
+    });
+  });
+  return lines.join('\n');
+}
+
+function buildManpowerText(){
+  const p = state.parsed, mn = state.manual;
+  const lines = [];
+  lines.push(exactPad('PIC SCM') + ': ' + (mn.picScm || '-'));
+  lines.push(exactPad('PIC ATQ') + ': ' + (mn.picAtq || '-'));
+  lines.push(exactPad('Manpower ATQ') + ': ' + (mn.manpowerAtq || '-'));
+  lines.push(exactPad('Total Manpower') + ': ' + (mn.totalManpower || '-'));
+
+  const truckLabel = p.adtCount > 0
+    ? (p.dtCount + ' DT + ' + p.adtCount + ' ADT')
+    : (p.dtCount + ' Trucks');
+  lines.push(exactPad('Number of Truck') + ': ' + truckLabel);
+
+  CONTRACTOR_ORDER.forEach(name=>{
+    if (p.dtBreakdown[name]) lines.push(exactPad(name) + ': ' + p.dtBreakdown[name] + ' Trucks');
+  });
+  if (p.adtCount > 0) lines.push(exactPad('ADT') + ': ' + p.adtCount + ' Trucks');
+  return lines.join('\n');
+}
+
+function generateReportText(){
+  const p = state.parsed, mn = state.manual, acc = state.acc;
+  const lines = [];
+  lines.push('*DAILY PRODUCTION GEOLOGY REPORT*');
+  lines.push('*HPAL Ore Selling SCM - FPP ESG*');
+  lines.push('*Date    : ' + p.date + '*');
+  lines.push('*Week  : ' + (mn.week || '-') + '*');
+  lines.push('*Shift    : ' + p.shift + '*');
+  lines.push('');
+  lines.push('*Man Power and Suppor*');
+  lines.push(buildManpowerText());
+  lines.push('');
+  lines.push('*Loading Point*');
+  lines.push(buildLoadingPointText());
+  lines.push('');
+  lines.push('*A. Ore Delivered to FPP ESG*');
+  lines.push(exactPad('On Shift') + ': ' + formatIDNum(p.totalTonase,2) + ' wmt [ ' + formatIDNum(p.totalRit,0) + ' Rit ]');
+  lines.push(exactPad('Daily') + ': ' + formatIDNum(acc.daily.ton,2) + ' wmt [ ' + formatIDNum(acc.daily.rit,0) + ' Rit ]');
+  lines.push(exactPad('WTD') + ': ' + formatIDNum(acc.wtd.ton,2) + ' wmt [ ' + formatIDNum(acc.wtd.rit,0) + ' Rit ]');
+  lines.push(exactPad('MTD') + ': ' + formatIDNum(acc.mtd.ton,2) + ' wmt [ ' + formatIDNum(acc.mtd.rit,0) + ' Rit ]');
+  lines.push(exactPad('YTD') + ': ' + formatIDNum(acc.ytd.ton,2) + ' wmt [ ' + formatIDNum(acc.ytd.rit,0) + ' Rit ]');
+  lines.push('');
+  lines.push('*B. Problem and Action*');
+  lines.push('1. Problem : ' + (mn.problem || '-'));
+  lines.push('');
+  lines.push('2. Preventive action : ' + (mn.preventive || '-'));
+  lines.push('');
+  lines.push('*TANGGUH*');
+  lines.push('*SEMANGAT*');
+  lines.push('*LUAR BIASA*');
+  return lines.join('\n');
+}
+
+function goStep3(){
+  const text = generateReportText();
+  document.getElementById('resultText').textContent = text;
+  goStep(3);
+}
+
+function copyResult(){
+  const text = document.getElementById('resultText').textContent;
+  const showToast = () => {
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 1800);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(showToast).catch(()=>{
+      fallbackCopy(text); showToast();
+    });
+  } else {
+    fallbackCopy(text); showToast();
+  }
+}
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try{ document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+}
+
+function resetAll(){
+  if (!confirm('Mulai laporan baru? Data yang belum di-copy akan hilang.')) return;
+  document.getElementById('prevText').value = '';
+  autoGrowPrevText();
+  document.getElementById('week').value = '';
+  document.getElementById('picScm').value = '';
+  document.getElementById('picAtq').value = '';
+  document.getElementById('manpowerAtq').value = '';
+  document.getElementById('totalManpower').value = '';
+  document.getElementById('problem').value = '';
+  document.getElementById('preventive').value = '';
+  document.getElementById('fnameDisplay').textContent = '';
+  document.getElementById('uploadLabel').textContent = 'Tap untuk pilih file Excel timbangan';
+  uploadZone.classList.remove('has-file');
+  fileInput.value = '';
+  workbookCache = null;
+  state = { parsed:null, prev:null, acc:null, pitAssign:{}, manual:{} };
+  goStep(1);
+}
+</script>
+</body>
+</html>
