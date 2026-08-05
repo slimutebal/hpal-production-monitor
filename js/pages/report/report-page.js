@@ -25,6 +25,7 @@ export function initReportPage() {
   els = collectElements(page);
   wireEvents();
   renderStep(reportState.step);
+  autoGrowTextarea(els.prevText);
 }
 
 /* ============================================================
@@ -201,6 +202,24 @@ function wireEvents() {
   els.btnBackTo2.addEventListener('click', () => renderStep(2));
   els.btnCopy.addEventListener('click', copyOutput);
   els.domeList.addEventListener('change', handleDomeAreaChange);
+  // 'input' (not just 'paste') covers typing, paste, deletion, mobile IME,
+  // and autofill -- anything that changes the textarea's value.
+  els.prevText.addEventListener('input', () => autoGrowTextarea(els.prevText));
+}
+
+/* ============================================================
+   AUTO-GROW: Previous Report textarea
+============================================================ */
+function autoGrowTextarea(textarea) {
+  if (!textarea) return;
+  // While #page-report (or an ancestor) is display:none -- e.g. Monitor is
+  // the active route -- scrollHeight reads 0. Skip the measurement rather
+  // than collapsing an already-correctly-sized textarea; the inline height
+  // set the last time it was visible stays applied and reappears correctly
+  // when the page is shown again.
+  if (textarea.offsetParent === null) return;
+  textarea.style.height = 'auto';
+  textarea.style.height = textarea.scrollHeight + 'px';
 }
 
 /* ============================================================
@@ -457,6 +476,7 @@ function handleResetClick() {
   els.output.value = '';
 
   renderStep(1);
+  autoGrowTextarea(els.prevText);
 }
 
 /* ============================================================

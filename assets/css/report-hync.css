@@ -149,6 +149,18 @@
   resize: vertical;
 }
 
+/* Auto-grow target (see js/pages/report/report-page.js autoGrowTextarea).
+   JS sets an explicit inline height on input/paste/reset; resize is
+   disabled and the internal scrollbar removed so they don't fight the
+   JS-driven height, and a manual drag-resize handle would otherwise be
+   fought back to the auto-computed height on the next keystroke anyway. */
+#page-report #hync-prev-text {
+  min-height: 180px;
+  max-height: none;
+  overflow-y: hidden;
+  resize: none;
+}
+
 /* File upload */
 #page-report .hync-file-drop {
   display: block;
@@ -386,5 +398,28 @@
 @media (min-width: 640px) {
   #page-report .hync-field--inline-2 {
     gap: 14px;
+  }
+}
+
+/* iOS Safari/PWA zooms the viewport when a focused form control's computed
+   font-size is below 16px. Bumping just these controls to 16px on mobile
+   prevents that zoom without touching the viewport meta tag or pinch-zoom
+   behavior, and without changing desktop typography.
+   Placed last in the file (rather than immediately after the base field
+   rules above) and naming the actual classes explicitly -- not just the
+   bare element selectors the zoom fix is conceptually about -- because
+   #page-report .hync-textarea / .hync-mono-area / .hync-output-box are
+   themselves ID+class selectors; a same-specificity override only wins
+   the cascade by also matching on class and coming later in source order. */
+@media (max-width: 767px) {
+  #page-report input[type="text"],
+  #page-report input[type="number"],
+  #page-report textarea,
+  #page-report select,
+  #page-report .hync-input,
+  #page-report .hync-textarea,
+  #page-report .hync-mono-area,
+  #page-report .hync-output-box {
+    font-size: 16px;
   }
 }

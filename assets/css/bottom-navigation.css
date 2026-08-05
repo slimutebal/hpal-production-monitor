@@ -16,6 +16,23 @@
   border-top: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+  transition: transform 180ms ease, opacity 180ms ease;
+  will-change: transform;
+}
+
+/* Auto-hide while scrolling down (see js/components/bottom-navigation.js).
+   visibility is switched only after the slide/fade finishes (transition-
+   delay matches the 180ms above) so the nav's links leave the tab order
+   once fully hidden instead of staying keyboard-focusable while invisible. */
+#bottom-navigation.bottom-nav.is-hidden {
+  transform: translateY(calc(100% + env(safe-area-inset-bottom)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 180ms ease, opacity 180ms ease, visibility 0ms linear 180ms;
 }
 
 .bottom-nav__item {

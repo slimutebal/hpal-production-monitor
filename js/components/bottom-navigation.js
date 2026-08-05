@@ -68,3 +68,81 @@ export function updateBottomNavigation(activeRoute) {
     }
   });
 }
+
+/* ============================================================
+   AUTO-HIDE ON SCROLL
+   Hides the nav while scrolling down past a small threshold, shows it
+   again on scroll-up or near the top. Deliberately conservative: a
+   hysteresis tolerance avoids flicker on tiny/inertial scroll deltas, and
+   focusing any form control suspends hiding entirely so the on-screen
+   keyboard opening (which can itself trigger a scroll) never hides the
+   nav just because a field was focused.
+============================================================ */
+
+// Below this scrollY, the nav always stays visible regardless of direction.
+const SCROLL_HIDE_THRESHOLD = 80;
+// Scroll deltas smaller than this (px) are ignored so tiny/rubber-band
+// scroll jitter cannot repeatedly flip the nav visible/hidden.
+const SCROLL_TOLERANCE = 8;
+
+let navEl = null;
+let lastScrollY = 0;
+let ticking = false;
+let suppressHide = false;
+
+function isFormControl(el) {
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+}
+
+function handleFocusIn(event) {
+  if (!isFormControl(event.target)) return;
+  suppressHide = true;
+  showBottomNavigation();
+}
+
+function handleFocusOut(event) {
+  if (!isFormControl(event.target)) return;
+  suppressHide = false;
+}
+
+function handleScroll() {
+  if (ticking || !navEl) return;
+  ticking = true;
+  window.requestAnimationFrame(() => {
+    ticking = false;
+    if (!navEl) return;
+
+    const currentY = window.scrollY;
+
+    if (suppressHide || currentY <= SCROLL_HIDE_THRESHOLD) {
+      navEl.classList.remove('is-hidden');
+      lastScrollY = currentY;
+      return;
+    }
+
+    const delta = currentY - lastScrollY;
+    if (Math.abs(delta) < SCROLL_TOLERANCE) return;
+
+    navEl.classList.toggle('is-hidden', delta > 0);
+    lastScrollY = currentY;
+  });
+}
+
+export function showBottomNavigation() {
+  if (!navEl) navEl = document.getElementById('bottom-navigation');
+  if (!navEl) return;
+  navEl.classList.remove('is-hidden');
+  lastScrollY = window.scrollY;
+}
+
+export function initBottomNavigationAutoHide() {
+  navEl = document.getElementById('bottom-navigation');
+  if (!navEl) return;
+
+  lastScrollY = window.scrollY;
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  // Capture phase so this still runs even if a page module later stops
+  // propagation on its own focusin handling.
+  document.addEventListener('focusin', handleFocusIn, true);
+  document.addEventListener('focusout', handleFocusOut, true);
+}
