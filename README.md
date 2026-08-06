@@ -13,7 +13,7 @@ Mulai V2.0, aplikasi ini menjadi aplikasi tiga halaman dengan navigasi bawah (bo
 | Halaman | Route | Fungsi |
 | --- | --- | --- |
 | **Monitor** | `#/monitor` | Analisis hauling dari file Excel timbangan — fungsi utama yang sudah ada sebelumnya, tidak berubah. |
-| **Report** | `#/report` | Generator laporan produksi harian. Mendukung buyer **HYNC** dan **SLNC**, terdeteksi otomatis dari teks report sebelumnya dan file timbangan. |
+| **Report** | `#/report` | Generator laporan produksi harian. Mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan), terdeteksi otomatis dari teks report sebelumnya dan file timbangan. |
 | **Settings** | `#/settings` | Placeholder untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 
 Fokus utama:
@@ -23,33 +23,33 @@ Fokus utama:
 - Menampilkan visualisasi kadar Ni dan tonase per jam.
 - Menganalisis penyumbang naik/turun `ΔNI` terhadap base NI.
 - Mendeteksi perpindahan DT antar kontraktor/dome/class.
-- Membuat **Daily Production Geology Report** untuk buyer HYNC dan SLNC, dengan buyer terdeteksi otomatis (halaman Report).
+- Membuat **Daily Production Geology Report** untuk buyer HYNC, SLNC, dan ESG, dengan buyer terdeteksi otomatis (halaman Report).
 - Menyediakan tampilan mobile-friendly untuk Android, iOS, dan PC.
 - Mendukung PWA/offline cache via GitHub Pages.
 
 Catatan lingkup V2.0:
 
 - Monitor mempertahankan seluruh fungsi yang sudah ada — tidak ada perubahan rumus, parser, atau grafik selama integrasi ke struktur tiga halaman.
-- Report mendukung **HYNC** dan **SLNC** melalui satu halaman/UI yang sama — buyer terdeteksi otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC`) dan dari kolom `备注` di file timbangan (prefix `SCHY` / `SCSL`). Report untuk buyer lain (ESG) masih direncanakan untuk versi berikutnya dan **belum tersedia**.
+- Report mendukung **HYNC**, **SLNC**, dan **ESG** melalui satu halaman/UI yang sama — buyer terdeteksi otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC` / `FPP ESG`) dan dari file timbangan (HYNC/SLNC: kolom `备注`, prefix `SCHY` / `SCSL`; ESG: struktur workbook, dua format didukung — lihat [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg)).
 - Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah pengguna di V2.0.
 
 ---
 
 ## Status rilis terbaru
 
-**Current release:** `v2.1.0 — HYNC + SLNC Report`
+**Current release:** `v2.2.0 — ESG Report`
 
-V2.1 menambahkan:
+V2.2 menambahkan:
 
-1. Dukungan buyer **SLNC** di halaman Report, memakai satu UI/route yang sama dengan HYNC (`#/report`) — tidak ada route atau halaman Report terpisah per buyer.
-2. Deteksi buyer otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC`) dan dari kolom `备注` file timbangan (prefix `SCHY` → HYNC, `SCSL` → SLNC).
-3. Popup informasi saat teks report sebelumnya dan file timbangan terdeteksi berasal dari buyer yang berbeda, atau saat kolom `备注` pada file timbangan tidak konsisten/tidak bisa dikenali — progres ke Step 2 diblokir sampai keduanya sesuai.
-4. Beberapa kode FPP berbeda milik buyer yang sama dalam satu file timbangan (mis. beberapa `SCSL-xxxxxxx` berbeda) tetap diterima tanpa peringatan — yang dibandingkan hanya identitas buyer, bukan kode FPP lengkap.
-5. Parser dan builder laporan HYNC/SLNC kini berbagi satu modul inti (`js/pages/report/profiles/shared-report-profile.js`), dipilih lewat `profile-registry.js`; label buyer pada UI dan teks laporan menyesuaikan otomatis.
+1. Dukungan buyer **ESG** di halaman Report, memakai satu UI/route yang sama dengan HYNC/SLNC (`#/report`) — tidak ada route atau halaman Report terpisah per buyer.
+2. Deteksi otomatis dua format file timbangan ESG (Format A dan Format B) melalui dispatcher workbook baru (`report-workbook-dispatcher.js`) — file timbangan yang secara struktur menyerupai ESG tidak akan lagi dikirim ke parser HYNC/SLNC dan gagal dengan pesan yang membingungkan.
+3. Teks report sebelumnya bersifat **opsional khusus untuk ESG** (laporan pertama / awal periode akumulasi baru → Daily/WTD/MTD/YTD = On Shift); tetap **wajib** untuk HYNC dan SLNC.
+4. Token `FPP ESG` pada teks report sebelumnya, label field `PIC ATQ` / `Manpower ATQ` khusus ESG (menggantikan `PIC AWK` / `Manpower AWK`), tanpa mengganti ID elemen form yang sudah ada.
+5. Popup mismatch dan pesan error diperluas untuk ESG (format tidak didukung, format ambigu, data tidak valid) sambil mempertahankan perilaku popup HYNC/SLNC yang sudah ada.
 
-Rilis sebelumnya (`v2.0.0 — Three-Page App Shell + HYNC Production Report`) menambahkan app shell tiga halaman, routing berbasis hash, bottom navigation, dan generator Report HYNC pertama kali — lihat [Changelog](#changelog) untuk detail lengkap.
+Rilis sebelumnya (`v2.1.0 — HYNC + SLNC Report`) menambahkan dukungan buyer SLNC, deteksi buyer otomatis, dan popup mismatch untuk HYNC/SLNC — lihat [Changelog](#changelog) untuk detail lengkap.
 
-Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC ada di bagian [Report HYNC dan SLNC](#report-hync-dan-slnc).
+Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC/ESG ada di bagian [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg).
 
 ---
 
@@ -66,7 +66,7 @@ Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Set
 ### Menggunakan Report
 
 1. Buka halaman **Report**.
-2. Di **Step 1 — Input**: paste teks report shift sebelumnya, upload file timbangan (`.xlsx`/`.xls`, buyer HYNC atau SLNC terdeteksi otomatis), lalu isi Week, PIC SCM, PIC AWK, Manpower AWK, Total Manpower, Problem, dan Preventive Action.
+2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis), lalu isi Week, PIC SCM, PIC AWK/ATQ, Manpower AWK/ATQ, Total Manpower, Problem, dan Preventive Action.
 3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
 4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
@@ -225,9 +225,9 @@ Makna label:
 
 ---
 
-## Report HYNC dan SLNC
+## Report HYNC, SLNC, dan ESG
 
-Halaman **Report** (`#/report`) adalah satu UI yang sama untuk buyer **HYNC** maupun **SLNC** — tidak ada route atau halaman terpisah per buyer. Buyer terdeteksi otomatis, lalu label di UI dan teks laporan yang dihasilkan menyesuaikan:
+Halaman **Report** (`#/report`) adalah satu UI yang sama untuk buyer **HYNC**, **SLNC**, maupun **ESG** — tidak ada route atau halaman terpisah per buyer. Buyer terdeteksi otomatis, lalu label di UI dan teks laporan yang dihasilkan menyesuaikan:
 
 ```text
 DAILY PRODUCTION GEOLOGY REPORT
@@ -241,32 +241,41 @@ DAILY PRODUCTION GEOLOGY REPORT
 HPAL Ore Selling SCM — FPP SLNC
 ```
 
-Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Report ESG masih direncanakan untuk versi berikutnya dan belum diimplementasikan (lihat [Limitasi](#limitasi)).
+atau
+
+```text
+DAILY PRODUCTION GEOLOGY REPORT
+HPAL Ore Selling SCM — FPP ESG
+```
+
+Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Setiap file timbangan yang diupload melewati satu dispatcher (`report-workbook-dispatcher.js`) yang menentukan apakah file itu HYNC/SLNC atau salah satu dari dua format file timbangan ESG yang didukung — file yang secara struktur menyerupai ESG tidak pernah dikirim ke parser HYNC/SLNC.
 
 ### Deteksi buyer otomatis
 
 Buyer dideteksi dari dua sumber, dan progres ke Step 2 baru diizinkan setelah keduanya cocok:
 
-1. **Teks report sebelumnya** — dicari token `FPP HYNC` atau `FPP SLNC` (case-insensitive, toleran multi-spasi). Bila teks menyebut keduanya sekaligus, dianggap ambigu dan diblokir. Bila tidak ada token yang ditemukan, buyer dianggap belum terdeteksi dan diblokir (tidak pernah default diam-diam ke HYNC).
-2. **File timbangan** — dibaca dari kolom **备注** (header, bukan asumsi posisi kolom tetap): nilai yang diawali `SCHY` berarti HYNC, diawali `SCSL` berarti SLNC. Hanya prefix yang dibandingkan, bukan kode lengkap — beberapa kode berbeda milik buyer yang sama (mis. `SCSL-0000033` dan `SCSL-0000034` dalam satu file) **valid** dan tidak memicu peringatan. File diblokir jika: ada baris data valid dengan `备注` kosong atau berisi nilai yang tidak dikenali, atau file berisi campuran `SCHY` dan `SCSL` sekaligus.
+1. **Teks report sebelumnya** — dicari token `FPP HYNC`, `FPP SLNC`, atau `FPP ESG` (case-insensitive, toleran multi-spasi). Bila teks menyebut lebih dari satu token sekaligus, dianggap ambigu dan diblokir. Bila tidak ada token yang ditemukan, buyer dianggap belum terdeteksi dan diblokir (tidak pernah default diam-diam ke buyer manapun) — **kecuali** teks report sebelumnya memang dikosongkan untuk buyer ESG (lihat di bawah).
+2. **File timbangan**:
+   - HYNC/SLNC — dibaca dari kolom **备注** (header, bukan asumsi posisi kolom tetap): nilai yang diawali `SCHY` berarti HYNC, diawali `SCSL` berarti SLNC. Hanya prefix yang dibandingkan, bukan kode lengkap — beberapa kode berbeda milik buyer yang sama (mis. `SCSL-0000033` dan `SCSL-0000034` dalam satu file) **valid** dan tidak memicu peringatan. File diblokir jika: ada baris data valid dengan `备注` kosong atau berisi nilai yang tidak dikenali, atau file berisi campuran `SCHY` dan `SCSL` sekaligus.
+   - ESG — dideteksi dari struktur workbook (dua format didukung, lihat bagian ESG di bawah), bukan dari kolom `备注`.
 
-Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tidak valid), aplikasi menampilkan popup informasi yang menjelaskan buyer yang terdeteksi dari masing-masing sumber dan memblokir lanjut ke Step 2 sampai diperbaiki. Sebelum kedua sumber lengkap, label UI diperbarui secara sementara (provisional) dari sumber yang sudah ada.
+Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tidak valid), aplikasi menampilkan popup informasi yang menjelaskan buyer/format yang terdeteksi dari masing-masing sumber dan memblokir lanjut ke Step 2 sampai diperbaiki. Sebelum kedua sumber lengkap, label UI diperbarui secara sementara (provisional) dari sumber yang sudah ada.
 
 ### Alur tiga langkah
 
 #### 1. Input
 
-- Teks report shift sebelumnya (wajib — dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer).
-- File Excel timbangan (wajib; buyer HYNC atau SLNC, terdeteksi otomatis).
+- Teks report shift sebelumnya — **wajib** untuk HYNC dan SLNC (dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer); **boleh kosong khusus untuk ESG** (berarti laporan pertama / awal periode akumulasi baru — Daily/WTD/MTD/YTD dihitung mulai dari On Shift).
+- File Excel timbangan (wajib; buyer HYNC, SLNC, atau ESG terdeteksi otomatis).
 - Week.
 - PIC SCM.
-- PIC AWK.
-- Manpower AWK.
+- PIC AWK (HYNC/SLNC) atau PIC ATQ (ESG) — label field menyesuaikan otomatis, field internal tetap sama.
+- Manpower AWK (HYNC/SLNC) atau Manpower ATQ (ESG).
 - Total Manpower.
 - Problem (boleh kosong, tampil sebagai `-` di laporan).
 - Preventive Action (boleh kosong, tampil sebagai `-` di laporan).
 
-Format file yang didukung (sama untuk HYNC dan SLNC):
+Format file HYNC/SLNC yang didukung:
 
 - `.xlsx` atau `.xls`.
 - Sheet yang diutamakan: `过磅明细`.
@@ -279,7 +288,12 @@ Format file yang didukung (sama untuk HYNC dan SLNC):
   - `规格`
 - Kolom `备注` dibaca untuk deteksi buyer (lihat di atas).
 
-Jika sheet atau header yang dibutuhkan tidak ditemukan, aplikasi menampilkan pesan error yang jelas dan tidak melanjutkan ke langkah berikutnya.
+Format file ESG yang didukung — dua format berbeda, keduanya menghasilkan buyer **ESG** yang sama:
+
+- **Format A** — header dua baris (`Vehicle No`, `Date`, `Time Loaded`, `Cargo Weighing`, `Kode Dome`), bukti buyer dari metadata letterhead (`Stockpile ESG`). Berat bersih tersimpan dalam **ton** (bukan kg — dikonversi otomatis).
+- **Format B** — header satu baris (`NO.NOTA`, `NO. DT`, `PENERIMA`, `TIMBANGAN BERSIH`, `JAM TIMBANG ISI`, `TANGGAL`, `KODE ORE`), bukti buyer dari kolom `PENERIMA` (`ESG-FPP`). Berat bersih juga tersimpan dalam **ton**.
+
+Jika file tidak cocok dengan header wajib yang diharapkan, aplikasi menampilkan pesan error yang jelas (spesifik untuk ESG jika file menunjukkan struktur menyerupai ESG namun tidak lengkap) dan tidak melanjutkan ke langkah berikutnya.
 
 #### 2. Area Muat
 
@@ -358,7 +372,7 @@ lainnya    → MGLO
 | Perpindahan DT | Menampilkan indikasi perpindahan DT antar dome/class/kontraktor. |
 | Collapsible dome rows | Baris dome per `HGLO`, `MGLO`, dan `LGLO` dapat dibuka/tutup. |
 | Theme mode | Mendukung dark, light, dan auto mode. |
-| Report HYNC & SLNC | Membuat Daily Production Geology Report untuk buyer HYNC atau SLNC (terdeteksi otomatis) dari file timbangan terpisah. |
+| Report HYNC, SLNC & ESG | Membuat Daily Production Geology Report untuk buyer HYNC, SLNC, atau ESG (dua format file timbangan, terdeteksi otomatis) dari file timbangan terpisah. |
 | Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
 | Settings placeholder | Reserved untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 | PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
@@ -372,7 +386,7 @@ Aplikasi mendukung offline mode melalui service worker. Cache app-shell V2.0 men
 - `index.html`, `manifest.webmanifest`, `contractor-assignment.js`.
 - CSS app shell, bottom navigation, Report, dan Settings (`assets/css/*.css`).
 - JavaScript app shell dan router (`js/app.js`, `js/router.js`, `js/components/bottom-navigation.js`).
-- JavaScript Report (profil HYNC dan SLNC berbagi satu modul inti) dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
+- JavaScript Report (profil HYNC, SLNC, dan ESG berbagi engine inti yang sama; workbook ESG melalui dispatcher + modul ESG tersendiri) dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
 - JavaScript halaman Settings placeholder.
 - Icon PWA dan manifest.
 
@@ -445,25 +459,46 @@ hpal-production-monitor/
 │       │       ├── profile-registry.js
 │       │       ├── shared-report-profile.js
 │       │       ├── hync-profile.js
-│       │       └── slnc-profile.js
+│       │       ├── slnc-profile.js
+│       │       ├── report-workbook-dispatcher.js
+│       │       ├── esg-profile.js
+│       │       ├── esg-workbook-detector.js
+│       │       └── adapters/
+│       │           ├── esg-adapter-utils.js
+│       │           ├── esg-format-a-adapter.js
+│       │           └── esg-format-b-adapter.js
 │       └── settings/
 │           └── settings-page.js
 ├── docs/
 │   ├── V2.0_ARCHITECTURE_AND_ROADMAP.md
 │   ├── V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md
+│   ├── V2.2_ESG_REPORT_ARCHITECTURE.md
 │   └── references/
 └── icons/
 ```
 
 Catatan:
 
-- `docs/references/` berisi referensi implementasi (mis. generator HYNC sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, dan tidak dicache oleh service worker.
-- Report ESG **belum diimplementasikan**. Report HYNC dan SLNC sudah tersedia sejak v2.1.0.
-- Arsitektur as-built Report HYNC dan SLNC (profile registry, engine bersama, deteksi buyer, popup mismatch) didokumentasikan lengkap di [V2.1 HYNC and SLNC Report Architecture](docs/V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md).
+- `docs/references/` berisi referensi implementasi (mis. generator HYNC dan ESG sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, **local-only, dan di-ignore oleh Git**, dan tidak dicache oleh service worker.
+- Report HYNC, SLNC, dan ESG semuanya sudah tersedia sejak v2.2.0.
+- Arsitektur as-built Report HYNC/SLNC didokumentasikan di [V2.1 HYNC and SLNC Report Architecture](docs/V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md); arsitektur as-built Report ESG (dua format workbook, dispatcher, previous report opsional) didokumentasikan di [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
 
 ---
 
 ## Changelog
+
+### v2.2.0 — ESG Report
+
+- Added ESG as a third Report buyer profile, sharing the same Report UI/route as HYNC/SLNC (`#/report`) — no separate route or duplicated page per buyer.
+- Added a deterministic workbook dispatcher (`js/pages/report/profiles/report-workbook-dispatcher.js`) that routes every upload to HYNC/SLNC or ESG based on positive structural evidence, never by elimination — fixes the previous bug where an ESG workbook was silently sent to the HYNC/SLNC parser and failed with a misleading `Kolom "流水号" tidak ditemukan` error.
+- Added support for two distinct real ESG workbook formats (Format A: 2-row header, "Stockpile ESG" letterhead evidence; Format B: 1-row header, `PENERIMA` column evidence), both resolving to the same `ESG` buyer.
+- Added an ESG aggregation layer (`esg-profile.js`) producing the same parsed-result shape the existing Report page already expects, so the existing dome/contractor/output rendering needed no new per-buyer branching.
+- Added `FPP ESG` previous-report token detection (three-way ambiguity check alongside `FPP HYNC` / `FPP SLNC`).
+- Made the previous-report text optional for ESG only (first report / new accumulation period → Daily/WTD/MTD/YTD = On Shift); HYNC and SLNC remain unchanged (previous report still required).
+- Added ESG-specific dynamic field labels (`PIC ATQ` / `Manpower ATQ` in place of `PIC AWK` / `Manpower AWK`) without renaming any existing form-element ID.
+- Extended the buyer mismatch/invalid-workbook popup and file-success/error messages with ESG-specific content (detected format, sheet name, source-row numbers), while leaving the existing HYNC/SLNC message paths untouched.
+- Added one additive, default-safe `partnerLabel` parameter to the shared report-text builder (`shared-report-profile.js`) — HYNC/SLNC output is unchanged when the parameter isn't passed.
+- Reused the existing approved contractor mapping (`contractor-adapter.js`, unchanged) for ESG trucks via the same DT-normalization approach already proven for SLNC.
 
 ### v2.1.0 — HYNC + SLNC Report
 
@@ -564,15 +599,15 @@ Catatan:
 
 ## Limitasi
 
-- Report mendukung buyer **HYNC** dan **SLNC**. Report ESG belum diimplementasikan.
-- Deteksi buyer dari teks report sebelumnya hanya mengenali token `FPP HYNC` / `FPP SLNC` — bukan kode FPP lengkap (teks report sebelumnya tidak memuat kode tersebut).
-- Deteksi buyer dari file timbangan hanya membandingkan prefix kolom `备注` (`SCHY`/`SCSL`), bukan kode lengkap; beberapa kode berbeda milik buyer yang sama dalam satu file dianggap valid.
+- Report mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan).
+- Deteksi buyer dari teks report sebelumnya hanya mengenali token `FPP HYNC` / `FPP SLNC` / `FPP ESG` — bukan kode FPP lengkap (teks report sebelumnya tidak memuat kode tersebut).
+- Deteksi buyer HYNC/SLNC dari file timbangan hanya membandingkan prefix kolom `备注` (`SCHY`/`SCSL`), bukan kode lengkap; beberapa kode berbeda milik buyer yang sama dalam satu file dianggap valid. Deteksi buyer ESG dari file timbangan bersifat struktural (bukan berbasis kolom `备注`), lihat [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
 - Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah.
-- Parsing Report bergantung pada header workbook yang sesuai format yang diharapkan (sama untuk HYNC dan SLNC).
-- Teks report sebelumnya wajib diisi agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif.
+- Parsing Report bergantung pada header workbook yang sesuai format yang diharapkan (HYNC/SLNC: satu format; ESG: dua format berbeda yang sudah dikonfirmasi).
+- Teks report sebelumnya wajib diisi untuk HYNC dan SLNC agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif. Untuk ESG, teks report sebelumnya boleh dikosongkan (Daily/WTD/MTD/YTD dihitung mulai dari On Shift); belum ada contoh teks report sebelumnya ESG asli yang dipakai untuk memverifikasi format baris akumulasinya secara independen.
 - State Report bersifat sesi/in-memory saja — tidak disimpan permanen.
 - Riwayat laporan tidak disimpan secara permanen.
-- Mapping kontraktor untuk Report (HYNC dan SLNC) saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor. SLNC truck id dinormalisasi ke format yang sama sebelum dicocokkan (lihat `normalizeDT` di Monitor).
+- Mapping kontraktor untuk Report (HYNC, SLNC, dan ESG) saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor. SLNC dan ESG truck id dinormalisasi ke format yang sama sebelum dicocokkan (lihat `normalizeDT` di Monitor). Sebagian truck ID pada sample file timbangan ESG tidak ditemukan di mapping kontraktor saat ini (tetap tampil sebagai peringatan, tidak memblokir Report).
 - Aplikasi bergantung pada struktur Excel yang dikenali parser (Monitor maupun Report).
 - File Excel dengan format kolom/sheet yang berubah jauh bisa gagal dibaca.
 - Offline mode bergantung pada cache browser.
