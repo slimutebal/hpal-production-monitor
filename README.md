@@ -635,3 +635,5 @@ Public visibility on GitHub is provided only for deployment and maintenance purp
 Use, copying, modification, redistribution, rebranding, resale, or ownership claims are prohibited without prior written permission.
 
 Authorized use is limited to the approved internal company/work environment only.
+
+<!-- GitHub Pages deployment reset: 2026-08-06 -->
