@@ -14,7 +14,7 @@ Mulai V2.0, aplikasi ini menjadi aplikasi tiga halaman dengan navigasi bawah (bo
 | --- | --- | --- |
 | **Monitor** | `#/monitor` | Analisis hauling dari file Excel timbangan — fungsi utama yang sudah ada sebelumnya, tidak berubah. |
 | **Report** | `#/report` | Generator laporan produksi harian. Mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan), terdeteksi otomatis dari teks report sebelumnya dan file timbangan. |
-| **Settings** | `#/settings` | Placeholder untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
+| **Settings** | `#/settings` | Direktori Personel (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) -- baca dan sinkron saja (read-only); pengaturan kontraktor dan lisensi masih untuk versi berikutnya. |
 
 Fokus utama:
 
@@ -51,6 +51,8 @@ Rilis sebelumnya (`v2.1.0 — HYNC + SLNC Report`) menambahkan dukungan buyer SL
 
 Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC/ESG ada di bagian [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg).
 
+**V2.3 (dalam pengerjaan, belum dirilis):** Week Report kini dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan (lihat [V2.3 Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) section 15), dan Settings sudah menyediakan Personnel Directory (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) yang disinkron dari Google Sheet — **baca saja (read-only)** untuk saat ini. Belum tersedia: pengelolaan/penulisan personel online (Add/Edit/Deactivate/Reactivate), offline write queue, dan migrasi selektor personel Report (SPV SCM/FRM SCM/Independent Sampler/PIC 3rd masih belum terhubung ke Report; field PIC SCM/PIC AWK-ATQ/Manpower di Report masih free-text seperti sebelumnya). V2.2 tetap menjadi rilis yang di-deploy secara resmi sampai seluruh fase V2.3 selesai.
+
 ---
 
 ## Cara pakai
@@ -74,7 +76,11 @@ Upload file di Report terpisah dari upload file di Monitor — keduanya membaca 
 
 ### Menggunakan Settings
 
-Halaman Settings saat ini hanya berupa placeholder. Belum ada pengaturan yang bisa diubah pengguna di V2.0 — pengaturan personel, kontraktor, dan lisensi direncanakan untuk versi berikutnya.
+1. Buka halaman **Settings**.
+2. Kartu Sync Status menampilkan sumber data (Remote/Cached/No data), waktu sinkron terakhir, dan total personel aktif.
+3. Tekan **Sync** untuk mengambil direktori terbaru dari Google Sheet (`report_personnel`). Data yang tersimpan dari sinkron sebelumnya langsung tampil begitu Settings dibuka, tanpa perlu menekan Sync.
+4. Empat kartu personel (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) menampilkan daftar personel aktif; PIC 3rd dikelompokkan per organisasi (mis. AWK, ATQ).
+5. Fitur ini masih **read-only** — penambahan, edit, dan nonaktifkan personel, serta pengaturan kontraktor dan lisensi, direncanakan untuk versi berikutnya.
 
 ---
 
@@ -374,7 +380,7 @@ lainnya    → MGLO
 | Theme mode | Mendukung dark, light, dan auto mode. |
 | Report HYNC, SLNC & ESG | Membuat Daily Production Geology Report untuk buyer HYNC, SLNC, atau ESG (dua format file timbangan, terdeteksi otomatis) dari file timbangan terpisah. |
 | Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
-| Settings placeholder | Reserved untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
+| Personnel Directory (read-only) | Kartu SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd di Settings, disinkron dari Google Sheet; belum ada Add/Edit/Deactivate. |
 | PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
 
 ---
@@ -449,7 +455,8 @@ hpal-production-monitor/
 │   ├── components/
 │   │   └── bottom-navigation.js
 │   ├── services/
-│   │   └── contractor-adapter.js
+│   │   ├── contractor-adapter.js
+│   │   └── personnel-directory-service.js
 │   └── pages/
 │       ├── report/
 │       │   ├── report-page.js
@@ -604,7 +611,7 @@ Catatan:
 - Report mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan).
 - Deteksi buyer dari teks report sebelumnya hanya mengenali token `FPP HYNC` / `FPP SLNC` / `FPP ESG` — bukan kode FPP lengkap (teks report sebelumnya tidak memuat kode tersebut).
 - Deteksi buyer HYNC/SLNC dari file timbangan hanya membandingkan prefix kolom `备注` (`SCHY`/`SCSL`), bukan kode lengkap; beberapa kode berbeda milik buyer yang sama dalam satu file dianggap valid. Deteksi buyer ESG dari file timbangan bersifat struktural (bukan berbasis kolom `备注`), lihat [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
-- Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah.
+- Settings menyediakan Personnel Directory read-only (sinkron dari Google Sheet); belum ada Add/Edit/Deactivate/Reactivate personel, dan pengaturan kontraktor/lisensi masih placeholder untuk versi berikutnya.
 - Parsing Report bergantung pada header workbook yang sesuai format yang diharapkan (HYNC/SLNC: satu format; ESG: dua format berbeda yang sudah dikonfirmasi).
 - Teks report sebelumnya wajib diisi untuk HYNC dan SLNC agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif. Untuk ESG, teks report sebelumnya boleh dikosongkan (Daily/WTD/MTD/YTD dihitung mulai dari On Shift); belum ada contoh teks report sebelumnya ESG asli yang dipakai untuk memverifikasi format baris akumulasinya secara independen.
 - State Report bersifat sesi/in-memory saja — tidak disimpan permanen.

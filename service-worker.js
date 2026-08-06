@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-auto-week';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-personnel-read-sync';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const APP_SHELL = [
   './js/router.js',
   './js/components/bottom-navigation.js',
   './js/services/contractor-adapter.js',
+  './js/services/personnel-directory-service.js',
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',

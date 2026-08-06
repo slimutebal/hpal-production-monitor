@@ -1,12 +1,210 @@
-/* V2.0 Settings placeholder — every selector is scoped under #page-settings
-   so this file can never leak into Monitor or Report. */
+/* Settings -- every selector is scoped under #page-settings so this file
+   can never leak into Monitor or Report. Reuses the app's own CSS custom
+   properties (var(--text), var(--accent), var(--glass-border), ...) and
+   the .hync-card visual language from report-hync.css rather than
+   inventing a second styling system (V2.3 Phase 2-3, read-only Personnel
+   Directory -- see docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md
+   section 20). */
 
-#page-settings .settings-placeholder {
-  min-height: 50vh;
+#page-settings .settings-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4px 0 24px;
 }
 
-#page-settings .settings-placeholder__icon {
-  font-size: 2rem;
-  line-height: 1;
-  margin-bottom: 4px;
+#page-settings .settings-header {
+  margin-bottom: 18px;
+}
+
+#page-settings .settings-eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent, #38bdf8);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+#page-settings .settings-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: var(--text, inherit);
+}
+
+#page-settings .settings-subtitle {
+  color: var(--muted, #8fa3bd);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+#page-settings .settings-card {
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow, none);
+}
+
+#page-settings .settings-card h2 {
+  font-size: 0.92rem;
+  margin: 0 0 10px;
+  font-weight: 700;
+  color: var(--text, inherit);
+}
+
+/* Sync status card */
+#page-settings .settings-sync-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+#page-settings .settings-sync-meta__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+#page-settings .settings-sync-meta__row:last-child {
+  border-bottom: none;
+}
+
+#page-settings .settings-sync-meta dt {
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#page-settings .settings-sync-meta dd {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text, inherit);
+  text-align: right;
+}
+
+#page-settings .settings-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#page-settings .settings-btn {
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  border: none;
+  min-height: 42px;
+  font-family: inherit;
+}
+
+#page-settings .settings-btn-primary {
+  background: var(--accent-chip, var(--accent, #38bdf8));
+  color: var(--btn-text, #07121f);
+  flex: 1;
+}
+
+#page-settings .settings-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#page-settings .settings-btn:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* Status message -- never relies on color alone: the text itself always
+   states the outcome ("synchronized" / "failed" / "could not be loaded"),
+   color is a secondary reinforcement only. */
+#page-settings .settings-sync-message {
+  font-size: 0.78rem;
+  line-height: 1.6;
+  margin: 0;
+  color: var(--muted, #8fa3bd);
+}
+#page-settings .settings-sync-message--ok {
+  color: var(--good, #34d399);
+}
+#page-settings .settings-sync-message--warn {
+  color: var(--accent2, #fbbf24);
+}
+#page-settings .settings-sync-message--error {
+  color: var(--bad, #f87171);
+}
+#page-settings .settings-sync-message--info {
+  color: var(--accent, #38bdf8);
+}
+
+/* Personnel cards */
+#page-settings .settings-personnel-grid {
+  display: grid;
+  gap: 14px;
+}
+
+#page-settings .settings-card-count {
+  font-size: 0.75rem;
+  color: var(--muted, #8fa3bd);
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
+#page-settings .settings-personnel-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+#page-settings .settings-personnel-row {
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  font-size: 0.85rem;
+  color: var(--text, inherit);
+  overflow-wrap: anywhere;
+}
+
+#page-settings .settings-personnel-group-header {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #38bdf8);
+  margin-top: 6px;
+  padding: 0 2px;
+}
+#page-settings .settings-personnel-group-header:first-child {
+  margin-top: 0;
+}
+
+#page-settings .settings-personnel-empty {
+  padding: 14px 4px;
+  color: var(--muted, #8fa3bd);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+#page-settings .settings-card-note {
+  font-size: 0.7rem;
+  color: var(--muted, #8fa3bd);
+  margin: 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+@media (min-width: 640px) {
+  #page-settings .settings-personnel-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
