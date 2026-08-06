@@ -371,12 +371,15 @@ export function calculateTotals({ parsed, prev }) {
 /* ============================================================
    REPORT TEXT
 ============================================================ */
-// `buyer` ('HYNC' | 'SLNC') is the only thing that varies between the two
-// approved formats -- everything else (section order, labels, punctuation)
-// is unconfirmed to differ and so is kept identical per the task's
-// instruction not to change the approved format beyond parameterizing the
-// buyer name.
-export function buildReportText({ buyer, parsed, inputs, domeAreas, totals }) {
+// `buyer` ('HYNC' | 'SLNC' | 'ESG') and `partnerLabel` are the only things
+// that vary between the approved formats -- everything else (section
+// order, spacing, punctuation) is unconfirmed to differ and so is kept
+// identical. `partnerLabel` defaults to 'AWK' (HYNC/SLNC's existing,
+// unparameterized label) so every pre-existing call site that doesn't pass
+// it produces byte-identical output to before this parameter existed; ESG
+// passes 'ATQ' (same length as 'AWK', so the hand-tuned column spacing on
+// the PIC/Manpower lines below is unaffected either way).
+export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, partnerLabel = 'AWK' }) {
   const picScmJoined = inputs.picScm.split(',').map((s) => s.trim()).filter(Boolean).join(' & ');
 
   const lines = [];
@@ -389,8 +392,8 @@ export function buildReportText({ buyer, parsed, inputs, domeAreas, totals }) {
   lines.push('');
   lines.push('Man Power and Support');
   lines.push(`PIC SCM : ${picScmJoined}`);
-  lines.push(`PIC AWK : ${inputs.picAwk}`);
-  lines.push(`Manpower AWK  : ${inputs.mpAwk}`);
+  lines.push(`PIC ${partnerLabel} : ${inputs.picAwk}`);
+  lines.push(`Manpower ${partnerLabel}  : ${inputs.mpAwk}`);
   lines.push(`Total Manpower  : ${inputs.mpTotal}`);
   lines.push(`Number of Truck : ${parsed.totalDT} DT + ${parsed.totalADT} ADT`);
   parsed.contractorCounts.forEach(([name, count]) => {

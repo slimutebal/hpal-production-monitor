@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.1.0-hync-slnc-report';
+const CACHE_NAME = 'hpal-production-monitor-v2.2.0-esg-report';
 const APP_SHELL = [
   './',
   './index.html',
@@ -19,6 +19,12 @@ const APP_SHELL = [
   './js/pages/report/profiles/shared-report-profile.js',
   './js/pages/report/profiles/hync-profile.js',
   './js/pages/report/profiles/slnc-profile.js',
+  './js/pages/report/profiles/report-workbook-dispatcher.js',
+  './js/pages/report/profiles/esg-profile.js',
+  './js/pages/report/profiles/esg-workbook-detector.js',
+  './js/pages/report/profiles/adapters/esg-adapter-utils.js',
+  './js/pages/report/profiles/adapters/esg-format-a-adapter.js',
+  './js/pages/report/profiles/adapters/esg-format-b-adapter.js',
   './js/pages/settings/settings-page.js',
   './icons/icon-192.png',
   './icons/icon-512.png',

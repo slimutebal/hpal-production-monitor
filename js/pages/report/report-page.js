@@ -1,28 +1,30 @@
-// Report page (HYNC + SLNC, one shared UI). Builds the Step 1/2/3 DOM once
-// into #page-report and never rebuilds it on route change, so field
+// Report page (HYNC + SLNC + ESG, one shared UI). Builds the Step 1/2/3 DOM
+// once into #page-report and never rebuilds it on route change, so field
 // values, the active step, and generated output survive Report <->
 // Monitor/Settings navigation (see docs/V2.0_ARCHITECTURE_AND_ROADMAP.md
 // section 12). Everything here is module-scoped -- no globals, no inline
 // onclick attributes.
 //
-// Buyer (HYNC vs SLNC) is detected automatically from the previous-report
-// text and the uploaded workbook; this page never imports hync-profile.js
-// or slnc-profile.js directly -- it calls the shared parsing/report engine
-// (shared-report-profile.js) with whichever buyer profile-registry.js
-// resolves, so the UI truly is one shared page rather than two branches of
-// HYNC-specific code with SLNC bolted on.
-
+// Buyer is detected automatically from the previous-report text and the
+// uploaded workbook; this page never imports hync-profile.js or
+// slnc-profile.js directly, and reaches ESG only through
+// report-workbook-dispatcher.js's parseUploadedWorkbook() -- it never
+// imports esg-profile.js's workbook-parsing pieces directly either. Every
+// workbook upload goes through one dispatcher that decides HYNC/SLNC vs
+// ESG Format A vs ESG Format B vs unsupported, so the UI truly is one
+// shared page rather than buyer-specific branches bolted on.
 import { escapeHtml, formatDateID, fmtTon, fmtRit } from './report-utils.js';
 import { reportState, resetReportState, BUYER_STATUS } from './report-state.js';
 import {
   AREA_OPTIONS,
   parsePrevText,
-  parseWeighbridgeWorkbook,
   buildFileSummary,
   calculateTotals,
   buildReportText,
 } from './profiles/shared-report-profile.js';
-import { buyerFromPrevText } from './profiles/profile-registry.js';
+import { buyerFromPrevText, getProfile } from './profiles/profile-registry.js';
+import { parseUploadedWorkbook } from './profiles/report-workbook-dispatcher.js';
+import { ESG_WORKBOOK_FORMAT, buildEsgFileSummary } from './profiles/esg-profile.js';
 
 let els = null; // cached DOM references, populated once in initReportPage()
 let lastFocusedBeforeModal = null;
@@ -60,9 +62,9 @@ function buildShellMarkup() {
       <section class="hync-panel active" id="hync-step-1">
         <div class="hync-card">
           <h2>Teks Report Sebelumnya</h2>
-          <div class="hync-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC).</div>
+          <div class="hync-hint" id="hync-prev-text-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).</div>
           <div class="hync-field">
-            <label class="hync-req" for="hync-prev-text">Teks report sebelumnya</label>
+            <label class="hync-req" for="hync-prev-text" id="hync-prev-text-label">Teks report sebelumnya</label>
             <textarea id="hync-prev-text" class="hync-textarea hync-mono-area" placeholder="Paste teks report shift sebelumnya di sini..."></textarea>
           </div>
         </div>
@@ -181,13 +183,17 @@ function collectElements(page) {
     footnote: byId('hync-footnote'),
 
     prevText: byId('hync-prev-text'),
+    prevTextHint: byId('hync-prev-text-hint'),
+    prevTextLabel: byId('hync-prev-text-label'),
     fileInput: byId('hync-file-input'),
     fileDropText: byId('hync-file-drop-text'),
     fileStatus: byId('hync-file-status'),
     week: byId('hync-week'),
     picScm: byId('hync-pic-scm'),
     picAwk: byId('hync-pic-awk'),
+    picAwkLabel: page.querySelector('label[for="hync-pic-awk"]'),
     mpAwk: byId('hync-mp-awk'),
+    mpAwkLabel: page.querySelector('label[for="hync-mp-awk"]'),
     mpTotal: byId('hync-mp-total'),
     problem: byId('hync-problem'),
     action: byId('hync-action'),
@@ -278,12 +284,21 @@ function autoGrowTextarea(textarea) {
 // change" and "recheck when the user tries to continue" are satisfied
 // without reopening the popup on every keystroke while already blocked).
 function recomputeBuyerResolution({ openPopupOnNewMismatch }) {
-  const prevResult = buyerFromPrevText(els.prevText.value);
+  const prevTextRaw = els.prevText.value;
+  const prevIsEmpty = !prevTextRaw.trim();
+  const prevResult = buyerFromPrevText(prevTextRaw);
   reportState.previousReportBuyer = prevResult.status === 'ok' ? prevResult.buyer : null;
   const prevAmbiguous = prevResult.status === 'ambiguous';
 
   const workbookBuyer = reportState.workbookBuyer;
   const workbookIssues = reportState.workbookBuyerIssues;
+  const workbookProfile = workbookBuyer ? getProfile(workbookBuyer) : null;
+  // An empty previous report is a complete, valid state for a buyer whose
+  // profile allows it (currently ESG only, per the Owner-approved rule:
+  // no previous report = first report / new accumulation period, so
+  // Daily/WTD/MTD/YTD all equal On Shift) -- not "pending", and not
+  // dependent on any token being found in an empty string.
+  const emptyPrevAllowed = prevIsEmpty && workbookProfile && workbookProfile.previousReportOptional;
 
   let status;
   let resolvedBuyer = null;
@@ -292,6 +307,9 @@ function recomputeBuyerResolution({ openPopupOnNewMismatch }) {
     status = BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT;
   } else if (workbookIssues && workbookIssues.length) {
     status = BUYER_STATUS.INVALID_WORKBOOK;
+  } else if (emptyPrevAllowed) {
+    status = BUYER_STATUS.CONFIRMED;
+    resolvedBuyer = workbookBuyer;
   } else if (reportState.previousReportBuyer && workbookBuyer) {
     if (reportState.previousReportBuyer === workbookBuyer) {
       status = BUYER_STATUS.CONFIRMED;
@@ -404,12 +422,30 @@ function updateBuyerUI() {
   const status = reportState.buyerValidationStatus;
   const provisionalBuyer = reportState.resolvedBuyer || reportState.previousReportBuyer || reportState.workbookBuyer;
   const labels = provisionalBuyer ? buyerLabelSet(provisionalBuyer) : NEUTRAL_LABELS;
+  const profile = provisionalBuyer ? getProfile(provisionalBuyer) : null;
+  const partnerLabel = profile ? profile.partnerLabel : 'AWK';
+  const previousReportOptional = !!(profile && profile.previousReportOptional);
 
   els.eyebrow.textContent = labels.eyebrow;
   els.subtitle.textContent = labels.subtitle;
   els.workbookTitle.textContent = labels.workbookTitle;
   els.workbookHint.textContent = labels.workbookHint;
   els.footnote.textContent = labels.footnote;
+
+  // Field labels are profile-driven (PIC AWK/Manpower AWK for HYNC/SLNC,
+  // PIC ATQ/Manpower ATQ for ESG) without renaming the underlying input
+  // element IDs -- report-page.js's internal state keys (picAwk/mpAwk)
+  // stay the same for every buyer, only the visible label text changes.
+  els.picAwkLabel.textContent = `PIC ${partnerLabel}`;
+  els.mpAwkLabel.textContent = `Manpower ${partnerLabel}`;
+
+  // Previous Report is optional only for a buyer whose profile says so
+  // (currently ESG) -- the required-marker (*) and hint text must reflect
+  // that accurately rather than always showing "required".
+  els.prevTextLabel.classList.toggle('hync-req', !previousReportOptional);
+  els.prevTextHint.textContent = previousReportOptional
+    ? 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya), atau kosongkan jika ini laporan pertama / mulai periode akumulasi baru. Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).'
+    : 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).';
 
   els.buyerStatus.textContent = buyerStatusMessage(status);
   els.buyerStatus.className = 'hync-buyer-status ' + buyerStatusClass(status);
@@ -430,6 +466,9 @@ function buildBuyerModalContent(status) {
     };
   }
   if (status === BUYER_STATUS.INVALID_WORKBOOK) {
+    if (reportState.workbookFormat) {
+      return buildEsgInvalidWorkbookContent();
+    }
     const issues = reportState.workbookBuyerIssues || [];
     const mixed = issues.filter((i) => i.type === 'mixed');
     if (mixed.length) {
@@ -459,12 +498,51 @@ function buildBuyerModalContent(status) {
     return {
       title: 'Teks report sebelumnya ambigu',
       bodyHtml: `
-        <p>Teks report sebelumnya menyebutkan <b>FPP HYNC</b> dan <b>FPP SLNC</b> sekaligus.</p>
+        <p>Teks report sebelumnya menyebutkan lebih dari satu buyer (<b>FPP HYNC</b> / <b>FPP SLNC</b> / <b>FPP ESG</b>) sekaligus.</p>
         <p>Pastikan teks report sebelumnya hanya berasal dari satu buyer.</p>
       `,
     };
   }
   return null;
+}
+
+// ESG-specific invalid-workbook detail, shown instead of the HYNC/SLNC
+// 备注-prefix wording whenever reportState.workbookFormat is set (i.e. the
+// current workbook went through the ESG parsing path). Sourced from the
+// ESG adapters' own row-level issue records (Phase 1), which already carry
+// human-readable messages and 1-based source-row numbers -- this function
+// only groups and titles them per the task's required message shapes.
+function buildEsgInvalidWorkbookContent() {
+  const issues = reportState.workbookBuyerIssues || [];
+  const formatLabel = reportState.workbookFormat === ESG_WORKBOOK_FORMAT.ESG_FORMAT_A ? 'ESG Format A' : 'ESG Format B';
+  const sheetName = reportState.parsed ? reportState.parsed.sheetName : null;
+  const sheetText = sheetName ? `sheet <b>${escapeHtml(sheetName)}</b>` : 'sheet tidak diketahui';
+
+  const workbookLevel = issues.filter((i) => !i.sourceRow);
+  const rowLevel = issues.filter((i) => i.sourceRow);
+
+  if (workbookLevel.length && !rowLevel.length) {
+    const detail = workbookLevel.map((i) => escapeHtml(i.message)).join('<br>');
+    return {
+      title: 'Data ESG tidak valid',
+      bodyHtml: `
+        <p>Buyer/format ESG tidak dapat dipastikan dari file timbangan (${escapeHtml(formatLabel)}, ${sheetText}):</p>
+        <p>${detail}</p>
+        <p>Periksa file timbangan sebelum melanjutkan.</p>
+      `,
+    };
+  }
+
+  const rowsSummary = rowLevel.slice(0, 8).map((i) => `baris ${i.sourceRow}: ${escapeHtml(i.message)}`).join('<br>');
+  const remaining = rowLevel.length > 8 ? `<br>... dan ${rowLevel.length - 8} baris lainnya` : '';
+  return {
+    title: 'Data ESG tidak valid',
+    bodyHtml: `
+      <p>Terdapat baris timbangan valid dengan tanggal, waktu, tonase, atau kode ore yang tidak dapat dibaca (${escapeHtml(formatLabel)}, ${sheetText}).</p>
+      ${rowsSummary ? `<p>${rowsSummary}${remaining}</p>` : ''}
+      <p>Periksa file timbangan sebelum melanjutkan.</p>
+    `,
+  };
 }
 
 function openBuyerMismatchPopup() {
@@ -519,7 +597,11 @@ function handleFileChange(event) {
       }
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      const parsed = parseWeighbridgeWorkbook(workbook);
+      // parseUploadedWorkbook (report-workbook-dispatcher.js) decides
+      // HYNC/SLNC vs ESG Format A vs ESG Format B vs unsupported/ambiguous
+      // ESG-shaped file -- this page never sends a workbook to the
+      // HYNC/SLNC parser directly.
+      const parsed = parseUploadedWorkbook(workbook);
 
       reportState.parsed = parsed;
       reportState.fileName = file.name;
@@ -527,14 +609,20 @@ function handleFileChange(event) {
       reportState.domeAreas = {};
       reportState.workbookBuyer = parsed.workbookBuyer;
       reportState.workbookBuyerIssues = parsed.workbookBuyerIssues;
+      reportState.workbookFormat = parsed.workbookFormat || null;
 
-      renderFileStatus(true, buildFileSummary(parsed));
+      const summary = parsed.workbookFormat ? buildEsgFileSummary(parsed) : buildFileSummary(parsed);
+      renderFileStatus(true, summary);
       els.fileDropText.textContent = '✓ ' + file.name;
     } catch (err) {
+      // Do not clear the already-selected filename/drop-zone display on
+      // error -- only the parse result and buyer state reset, so the user
+      // can see which file failed without re-selecting it to try again.
       reportState.fileParsed = false;
       reportState.parsed = null;
       reportState.workbookBuyer = null;
       reportState.workbookBuyerIssues = null;
+      reportState.workbookFormat = null;
       renderFileStatus(false, 'Gagal membaca file: ' + err.message);
     }
     recomputeBuyerResolution({ openPopupOnNewMismatch: true });
@@ -554,7 +642,17 @@ function goToStep2() {
   const errors = [];
 
   const prevTextRaw = els.prevText.value;
-  if (!prevTextRaw.trim()) errors.push('Teks report sebelumnya belum diisi.');
+  // Previous Report is required for every buyer except one whose profile
+  // says otherwise (currently ESG only). Which buyer applies is already
+  // known reliably from the uploaded workbook at this point (upload
+  // happens independently, before this gate runs); if no workbook has
+  // been uploaded yet, default to "required" -- the file-required error
+  // below already blocks in that case regardless.
+  const workbookProfile = reportState.workbookBuyer ? getProfile(reportState.workbookBuyer) : null;
+  const prevReportRequired = !(workbookProfile && workbookProfile.previousReportOptional);
+  const partnerLabel = workbookProfile ? workbookProfile.partnerLabel : 'AWK';
+
+  if (prevReportRequired && !prevTextRaw.trim()) errors.push('Teks report sebelumnya belum diisi.');
   if (!reportState.fileParsed) errors.push('File data timbangan belum berhasil diupload/dibaca.');
 
   const week = els.week.value.trim();
@@ -564,14 +662,22 @@ function goToStep2() {
   const mpTotal = els.mpTotal.value.trim();
   if (!week) errors.push('Week belum diisi.');
   if (!picScm) errors.push('PIC SCM belum diisi.');
-  if (!picAwk) errors.push('PIC AWK belum diisi.');
-  if (!mpAwk) errors.push('Manpower AWK belum diisi.');
+  if (!picAwk) errors.push(`PIC ${partnerLabel} belum diisi.`);
+  if (!mpAwk) errors.push(`Manpower ${partnerLabel} belum diisi.`);
   if (!mpTotal) errors.push('Total Manpower belum diisi.');
 
   let prevParsed = null;
   if (prevTextRaw.trim()) {
     prevParsed = parsePrevText(prevTextRaw);
     if (prevParsed.errors.length) errors.push(...prevParsed.errors);
+  } else if (!prevReportRequired) {
+    // Empty previous report, allowed for this buyer: zero previous
+    // accumulation, so calculateTotals() (unchanged, shared, buyer-
+    // agnostic) naturally produces Daily = WTD = MTD = YTD = On Shift --
+    // isNightContinuation/sameDate both treat a null `date` as "no
+    // match", so every accumulator resets to onShift alone, exactly the
+    // approved ESG first-report/new-period behavior.
+    prevParsed = { date: null, daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 }, ytd: { ton: 0, rit: 0 }, errors: [] };
   }
 
   const buyerStatus = recomputeBuyerResolution({ openPopupOnNewMismatch: true });
@@ -673,12 +779,14 @@ function goToStep3() {
   const totals = calculateTotals({ parsed: reportState.parsed, prev: reportState.prev });
   reportState.totals = totals;
 
+  const resolvedProfile = getProfile(reportState.resolvedBuyer);
   const reportText = buildReportText({
     buyer: reportState.resolvedBuyer,
     parsed: reportState.parsed,
     inputs: reportState.inputs,
     domeAreas: reportState.domeAreas,
     totals,
+    partnerLabel: resolvedProfile ? resolvedProfile.partnerLabel : 'AWK',
   });
   reportState.reportText = reportText;
   els.output.value = reportText;
