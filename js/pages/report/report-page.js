@@ -13,7 +13,7 @@
 // workbook upload goes through one dispatcher that decides HYNC/SLNC vs
 // ESG Format A vs ESG Format B vs unsupported, so the UI truly is one
 // shared page rather than buyer-specific branches bolted on.
-import { escapeHtml, formatDateID, fmtTon, fmtRit } from './report-utils.js';
+import { escapeHtml, formatDateID, fmtTon, fmtRit, deriveWeekFromParsedWorkbook } from './report-utils.js';
 import { reportState, resetReportState, BUYER_STATUS } from './report-state.js';
 import {
   AREA_OPTIONS,
@@ -37,6 +37,7 @@ export function initReportPage() {
   els = collectElements(page);
   wireEvents();
   renderStep(reportState.step);
+  renderWeekDisplay();
   autoGrowTextarea(els.prevText);
 }
 
@@ -83,8 +84,11 @@ function buildShellMarkup() {
         <div class="hync-card">
           <h2>Man Power &amp; Support</h2>
           <div class="hync-field">
-            <label class="hync-req" for="hync-week">Week</label>
-            <input type="text" id="hync-week" class="hync-input" placeholder="contoh: 26">
+            <label id="hync-week-label">Week</label>
+            <div class="hync-week-display" id="hync-week-display" aria-live="polite" aria-labelledby="hync-week-label">
+              <span class="hync-week-number" id="hync-week-number">—</span>
+              <span class="hync-week-range" id="hync-week-range">Dihitung otomatis dari tanggal file timbangan setelah upload.</span>
+            </div>
           </div>
           <div class="hync-field">
             <label class="hync-req" for="hync-pic-scm">PIC SCM</label>
@@ -188,7 +192,9 @@ function collectElements(page) {
     fileInput: byId('hync-file-input'),
     fileDropText: byId('hync-file-drop-text'),
     fileStatus: byId('hync-file-status'),
-    week: byId('hync-week'),
+    weekDisplay: byId('hync-week-display'),
+    weekNumber: byId('hync-week-number'),
+    weekRange: byId('hync-week-range'),
     picScm: byId('hync-pic-scm'),
     picAwk: byId('hync-pic-awk'),
     picAwkLabel: page.querySelector('label[for="hync-pic-awk"]'),
@@ -583,6 +589,59 @@ function handleBuyerModalKeydown(event) {
 }
 
 /* ============================================================
+   AUTOMATIC WEEK (V2.3 Phase 1)
+   Read-only in V2.3 -- no manual override exists. Derived solely from the
+   just-parsed workbook via report-utils.js's deriveWeekFromParsedWorkbook()
+   (dateMismatch handling and calculateIsoWeek() both live there -- see
+   that function's header comment for the full dateMismatch-is-informational
+   rationale and the Night Shift regression it fixes), never from the
+   device clock or the previous-report text. Called from handleFileChange()
+   on every successful AND failed parse (so a failed re-upload never leaves
+   a previous file's Week visible), and reset to the neutral state by
+   handleResetClick().
+============================================================ */
+function applyWeekFromParsed(parsed) {
+  const week = deriveWeekFromParsedWorkbook(parsed);
+
+  reportState.weekNumber = week ? week.weekNumber : null;
+  reportState.weekYear = week ? week.weekYear : null;
+  reportState.weekStart = week ? week.weekStart : null;
+  reportState.weekEnd = week ? week.weekEnd : null;
+
+  renderWeekDisplay();
+}
+
+// Builds a local (not UTC) Date from a calculateIsoWeek()-produced
+// 'YYYY-MM-DD' string, for display formatting only (formatDateID()) --
+// never re-parsed through Date.parse() or any locale-ambiguous path.
+function dateFromIsoString(isoDate) {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function renderWeekDisplay() {
+  if (reportState.weekNumber != null) {
+    els.weekNumber.textContent = String(reportState.weekNumber);
+    els.weekRange.textContent = `${formatDateID(dateFromIsoString(reportState.weekStart))} – ${formatDateID(dateFromIsoString(reportState.weekEnd))}`;
+    els.weekDisplay.classList.remove('hync-week-display--error');
+  } else if (reportState.fileParsed) {
+    // A workbook was successfully parsed, but no valid canonical date was
+    // found on any row (parsed.fileDate is missing or invalid) -- never
+    // silently fall back to the device date, and never leave a previous,
+    // now-stale Week value on screen. Multiple distinct row dates
+    // (parsed.dateMismatch) alone do NOT reach this branch -- see
+    // applyWeekFromParsed()'s header comment.
+    els.weekNumber.textContent = '—';
+    els.weekRange.textContent = 'Tidak dapat dihitung — tanggal pada file timbangan tidak ditemukan atau tidak valid.';
+    els.weekDisplay.classList.add('hync-week-display--error');
+  } else {
+    els.weekNumber.textContent = '—';
+    els.weekRange.textContent = 'Dihitung otomatis dari tanggal file timbangan setelah upload.';
+    els.weekDisplay.classList.remove('hync-week-display--error');
+  }
+}
+
+/* ============================================================
    STEP 1: FILE UPLOAD
 ============================================================ */
 function handleFileChange(event) {
@@ -610,6 +669,7 @@ function handleFileChange(event) {
       reportState.workbookBuyer = parsed.workbookBuyer;
       reportState.workbookBuyerIssues = parsed.workbookBuyerIssues;
       reportState.workbookFormat = parsed.workbookFormat || null;
+      applyWeekFromParsed(parsed);
 
       const summary = parsed.workbookFormat ? buildEsgFileSummary(parsed) : buildFileSummary(parsed);
       renderFileStatus(true, summary);
@@ -623,6 +683,7 @@ function handleFileChange(event) {
       reportState.workbookBuyer = null;
       reportState.workbookBuyerIssues = null;
       reportState.workbookFormat = null;
+      applyWeekFromParsed(null);
       renderFileStatus(false, 'Gagal membaca file: ' + err.message);
     }
     recomputeBuyerResolution({ openPopupOnNewMismatch: true });
@@ -654,13 +715,19 @@ function goToStep2() {
 
   if (prevReportRequired && !prevTextRaw.trim()) errors.push('Teks report sebelumnya belum diisi.');
   if (!reportState.fileParsed) errors.push('File data timbangan belum berhasil diupload/dibaca.');
+  // Automatic Week (V2.3 Phase 1): only surfaced once a workbook has
+  // actually been parsed -- if no file was uploaded at all, the
+  // "File data timbangan belum berhasil diupload/dibaca." error above
+  // already explains why Week is empty, so this avoids a redundant second
+  // message for the same underlying cause.
+  if (reportState.fileParsed && reportState.weekNumber == null) {
+    errors.push('Week tidak dapat dihitung dari tanggal file timbangan — periksa kembali file yang diupload.');
+  }
 
-  const week = els.week.value.trim();
   const picScm = els.picScm.value.trim();
   const picAwk = els.picAwk.value.trim();
   const mpAwk = els.mpAwk.value.trim();
   const mpTotal = els.mpTotal.value.trim();
-  if (!week) errors.push('Week belum diisi.');
   if (!picScm) errors.push('PIC SCM belum diisi.');
   if (!picAwk) errors.push(`PIC ${partnerLabel} belum diisi.`);
   if (!mpAwk) errors.push(`Manpower ${partnerLabel} belum diisi.`);
@@ -690,7 +757,6 @@ function goToStep2() {
   els.step1Errors.innerHTML = '';
 
   reportState.inputs = {
-    week,
     picScm,
     picAwk,
     mpAwk,
@@ -787,6 +853,7 @@ function goToStep3() {
     domeAreas: reportState.domeAreas,
     totals,
     partnerLabel: resolvedProfile ? resolvedProfile.partnerLabel : 'AWK',
+    weekNumber: reportState.weekNumber,
   });
   reportState.reportText = reportText;
   els.output.value = reportText;
@@ -861,7 +928,7 @@ function handleResetClick() {
 
   resetReportState();
   els.prevText.value = '';
-  els.week.value = '';
+  renderWeekDisplay(); // resetReportState() already nulled weekNumber/weekYear/weekStart/weekEnd; this repaints the neutral placeholder
   els.picScm.value = '';
   els.picAwk.value = '';
   els.mpAwk.value = '';

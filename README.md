@@ -66,7 +66,7 @@ Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Set
 ### Menggunakan Report
 
 1. Buka halaman **Report**.
-2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis), lalu isi Week, PIC SCM, PIC AWK/ATQ, Manpower AWK/ATQ, Total Manpower, Problem, dan Preventive Action.
+2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis; Week ISO otomatis terhitung dari tanggal file, tidak bisa diedit manual), lalu isi PIC SCM, PIC AWK/ATQ, Manpower AWK/ATQ, Total Manpower, Problem, dan Preventive Action.
 3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
 4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
@@ -267,7 +267,7 @@ Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tida
 
 - Teks report shift sebelumnya — **wajib** untuk HYNC dan SLNC (dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer); **boleh kosong khusus untuk ESG** (berarti laporan pertama / awal periode akumulasi baru — Daily/WTD/MTD/YTD dihitung mulai dari On Shift).
 - File Excel timbangan (wajib; buyer HYNC, SLNC, atau ESG terdeteksi otomatis).
-- Week.
+- Week — dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan yang terbaca; read-only, tidak ada input manual. Tanggal file tidak valid/tidak terbaca akan memblokir lanjut ke Step 2.
 - PIC SCM.
 - PIC AWK (HYNC/SLNC) atau PIC ATQ (ESG) — label field menyesuaikan otomatis, field internal tetap sama.
 - Manpower AWK (HYNC/SLNC) atau Manpower ATQ (ESG).

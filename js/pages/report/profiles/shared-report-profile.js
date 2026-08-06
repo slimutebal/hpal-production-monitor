@@ -106,7 +106,11 @@ function parseFlexibleDateTime(val) {
   return null;
 }
 
-function parseFlexibleDate(val) {
+// Exported so Automatic Week's tests can exercise HYNC/SLNC's real
+// date-construction path (not a re-implementation of it) -- see
+// tests/report-week.test.mjs. No behavioral change: this function's body,
+// call sites, and every result it already produced are unchanged.
+export function parseFlexibleDate(val) {
   if (typeof val === 'number') {
     const d = XLSX.SSF.parse_date_code(val);
     if (d) return new Date(d.y, d.m - 1, d.d);
@@ -374,12 +378,18 @@ export function calculateTotals({ parsed, prev }) {
 // `buyer` ('HYNC' | 'SLNC' | 'ESG') and `partnerLabel` are the only things
 // that vary between the approved formats -- everything else (section
 // order, spacing, punctuation) is unconfirmed to differ and so is kept
-// identical. `partnerLabel` defaults to 'AWK' (HYNC/SLNC's existing,
-// unparameterized label) so every pre-existing call site that doesn't pass
+// identical. `weekNumber` (V2.3 Phase 1: Automatic Week) is the caller's
+// already-computed ISO week number for the workbook's date
+// (report-utils.js's calculateIsoWeek()) -- this function does not
+// calculate it and does not know about weekYear/weekStart/weekEnd; the
+// output line only ever shows the numeric week, matching the pre-existing
+// approved "Week  : <value>" format exactly. `partnerLabel` defaults to
+// 'AWK' (HYNC/SLNC's existing, unparameterized label) so every pre-existing
+// call site that doesn't pass
 // it produces byte-identical output to before this parameter existed; ESG
 // passes 'ATQ' (same length as 'AWK', so the hand-tuned column spacing on
 // the PIC/Manpower lines below is unaffected either way).
-export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, partnerLabel = 'AWK' }) {
+export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, partnerLabel = 'AWK', weekNumber }) {
   const picScmJoined = inputs.picScm.split(',').map((s) => s.trim()).filter(Boolean).join(' & ');
 
   const lines = [];
@@ -387,7 +397,7 @@ export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, part
   lines.push('');
   lines.push(`*HPAL Ore Selling SCM - FPP ${buyer}*`);
   lines.push(`*Date    : ${parsed.fileDate ? formatDateID(parsed.fileDate) : '-'}*`);
-  lines.push(`*Week  : ${inputs.week}*`);
+  lines.push(`*Week  : ${weekNumber}*`);
   lines.push(`*Shift    : ${parsed.shiftLabel}*`);
   lines.push('');
   lines.push('Man Power and Support');

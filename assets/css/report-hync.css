@@ -165,6 +165,40 @@
   resize: vertical;
 }
 
+/* Automatic Week (V2.3 Phase 1) -- read-only display, deliberately not an
+   <input>: there is no manual override in V2.3, so it must never look or
+   behave like an editable field (no focus outline, no caret, no typing). */
+#page-report .hync-week-display {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+#page-report .hync-week-number {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text, inherit);
+}
+#page-report .hync-week-range {
+  font-size: 0.75rem;
+  color: var(--muted, #8fa3bd);
+  line-height: 1.4;
+}
+#page-report .hync-week-display--error {
+  border-color: var(--bad, #f87171);
+}
+#page-report .hync-week-display--error .hync-week-number,
+#page-report .hync-week-display--error .hync-week-range {
+  color: var(--bad, #f87171);
+}
+
 /* Auto-grow target (see js/pages/report/report-page.js autoGrowTextarea).
    JS sets an explicit inline height on input/paste/reset; resize is
    disabled and the internal scrollbar removed so they don't fight the

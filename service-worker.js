@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.2.0-esg-report';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-auto-week';
 const APP_SHELL = [
   './',
   './index.html',

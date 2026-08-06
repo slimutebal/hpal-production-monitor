@@ -27,12 +27,24 @@ function createDefaultState() {
     fileParsed: false,
     fileName: '',
     prevText: '',
-    inputs: { week: '', picScm: '', picAwk: '', mpAwk: '', mpTotal: '', problem: '', action: '' },
+    inputs: { picScm: '', picAwk: '', mpAwk: '', mpTotal: '', problem: '', action: '' },
     parsed: null, // output of parseWeighbridgeWorkbook() / esg-profile.js's parseEsgWorkbook()
     prev: null, // output of parsePrevText(), or a zero-accumulation object for an empty ESG previous report
     domeAreas: {}, // dome name -> 'BR1' | 'BR23E' | 'BR23W' | 'DS'
     totals: null, // output of calculateTotals()
     reportText: '',
+
+    // Automatic Week (V2.3 Phase 1). Derived from parsed.fileDate via
+    // report-utils.js's calculateIsoWeek() -- never manually entered, never
+    // derived from the device clock or the previous-report text. All four
+    // fields are set together (report-page.js's applyWeekFromParsed()) and
+    // cleared together to null whenever no valid, unambiguous workbook date
+    // is available (no file parsed yet, parse failure, missing/invalid
+    // date, or a workbook the parser itself flagged as date-inconsistent).
+    weekNumber: null,
+    weekYear: null,
+    weekStart: null, // 'YYYY-MM-DD' (Monday of the ISO week)
+    weekEnd: null, // 'YYYY-MM-DD' (Sunday of the ISO week)
 
     // Buyer resolution (HYNC/SLNC/ESG). previousReportBuyer/workbookBuyer
     // are 'HYNC' | 'SLNC' | 'ESG' | null; workbookBuyerIssues is null when
