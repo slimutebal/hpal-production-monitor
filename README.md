@@ -473,6 +473,7 @@ hpal-production-monitor/
 │   ├── V2.0_ARCHITECTURE_AND_ROADMAP.md
 │   ├── V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md
 │   ├── V2.2_ESG_REPORT_ARCHITECTURE.md
+│   ├── V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md
 │   └── references/
 └── icons/
 ```
@@ -482,6 +483,7 @@ Catatan:
 - `docs/references/` berisi referensi implementasi (mis. generator HYNC dan ESG sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, **local-only, dan di-ignore oleh Git**, dan tidak dicache oleh service worker.
 - Report HYNC, SLNC, dan ESG semuanya sudah tersedia sejak v2.2.0.
 - Arsitektur as-built Report HYNC/SLNC didokumentasikan di [V2.1 HYNC and SLNC Report Architecture](docs/V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md); arsitektur as-built Report ESG (dua format workbook, dispatcher, previous report opsional) didokumentasikan di [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
+- **`v2.2.0` remains the current implemented and deployed release.** [V2.3 Automatic Week and Personnel Directory Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) is the **planned** (not yet implemented) architecture baseline for the next release — Automatic Week, a role-based Personnel Directory, Google Sheet personnel sync, Report personnel-output migration, Indonesian/English localization, Appearance settings, and an offline signed-license (`MONITOR_ONLY`/`FULL_ACCESS`) model.
 
 ---
 
