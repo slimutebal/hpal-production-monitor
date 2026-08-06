@@ -1,3 +1,7 @@
 
 # Local report reference files
 docs/references/
+
+# Local development logs
+_http_server.log
+*.log
