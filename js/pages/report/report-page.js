@@ -116,7 +116,7 @@ function buildShellMarkup() {
       <section class="hync-panel" id="hync-step-2">
         <div class="hync-card">
           <h2>Pilih Area Tiap Dome</h2>
-          <div class="hync-hint">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR / BR 23 / DS) untuk tiap dome.</div>
+          <div class="hync-hint">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR1 / BR23E / BR23W / DS) untuk tiap dome.</div>
           <div id="hync-dome-list"></div>
         </div>
         <div id="hync-step2-errors"></div>

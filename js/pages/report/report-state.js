@@ -15,7 +15,7 @@ function createDefaultState() {
     inputs: { week: '', picScm: '', picAwk: '', mpAwk: '', mpTotal: '', problem: '', action: '' },
     parsed: null, // output of parseHyncWorkbook()
     prev: null, // output of parseHyncPrevText()
-    domeAreas: {}, // dome name -> 'BR' | 'BR 23' | 'DS'
+    domeAreas: {}, // dome name -> 'BR1' | 'BR23E' | 'BR23W' | 'DS'
     totals: null, // output of calculateHyncTotals()
     reportText: '',
   };

@@ -68,7 +68,7 @@ Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Set
 
 1. Buka halaman **Report**.
 2. Di **Step 1 — Input**: paste teks report shift sebelumnya, upload file timbangan HYNC (`.xlsx`/`.xls`), lalu isi Week, PIC SCM, PIC AWK, Manpower AWK, Total Manpower, Problem, dan Preventive Action.
-3. Di **Step 2 — Area Muat**: pilih area (BR / BR 23 / DS) untuk setiap dome yang terdeteksi dari file.
+3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
 4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
 Upload file di Report terpisah dari upload file di Monitor — keduanya membaca file masing-masing secara independen.
@@ -269,7 +269,7 @@ Jika sheet atau header yang dibutuhkan tidak ditemukan, aplikasi menampilkan pes
 
 - Semua dome unik yang terdeteksi dari file ditampilkan.
 - Setiap dome menampilkan nama dome dan ore class.
-- Setiap dome wajib diberi salah satu area: **BR**, **BR 23**, atau **DS** sebelum bisa lanjut ke Step 3.
+- Setiap dome wajib diberi salah satu area: **BR1**, **BR23E**, **BR23W**, atau **DS** sebelum bisa lanjut ke Step 3.
 
 #### 3. Hasil
 
@@ -279,7 +279,7 @@ Menampilkan:
 - On Shift tonnage dan ritase.
 - Jumlah DT dan ADT.
 - Breakdown jumlah truck per kontraktor.
-- Loading point per area (DS / BR / BR 23).
+- Loading point per area (DS / BR1 / BR23E / BR23W).
 - Daily, WTD, MTD, YTD.
 - Problem dan Preventive Action.
 - Preview teks laporan lengkap, dengan tombol **Copy Laporan** untuk menyalin ke clipboard.

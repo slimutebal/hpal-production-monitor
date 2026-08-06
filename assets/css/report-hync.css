@@ -295,12 +295,10 @@
   color: var(--accent, #38bdf8);
 }
 #page-report .hync-area-options {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-top: 9px;
-}
-#page-report .hync-area-opt {
-  flex: 1;
 }
 #page-report .hync-area-opt input {
   position: absolute;
@@ -398,6 +396,9 @@
 @media (min-width: 640px) {
   #page-report .hync-field--inline-2 {
     gap: 14px;
+  }
+  #page-report .hync-area-options {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 

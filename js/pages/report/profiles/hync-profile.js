@@ -12,7 +12,7 @@ import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
 
 export const HYNC_SHEET_NAME = '过磅明细';
 export const HYNC_REQUIRED_HEADERS = ['流水号', '车号', '净重', '毛重时间', '日期', '规格'];
-export const HYNC_AREA_OPTIONS = ['BR', 'BR 23', 'DS'];
+export const HYNC_AREA_OPTIONS = ['BR1', 'BR23E', 'BR23W', 'DS'];
 
 // Priority order for non-ADT contractors in the report's truck breakdown.
 // Anything not listed here is shown afterward, alphabetically.
@@ -294,7 +294,7 @@ export function buildHyncReportText({ parsed, inputs, domeAreas, totals }) {
   }
   lines.push('');
   lines.push('Loading Point');
-  ['DS', 'BR', 'BR 23'].forEach((area) => {
+  ['DS', 'BR1', 'BR23E', 'BR23W'].forEach((area) => {
     const domesInArea = parsed.domes.filter((d) => domeAreas[d.dome] === area);
     if (domesInArea.length) {
       lines.push(`Pit ${area} :`);

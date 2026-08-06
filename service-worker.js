@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.0.1-mobile-ux';
+const CACHE_NAME = 'hpal-production-monitor-v2.0.2-loading-areas';
 const APP_SHELL = [
   './',
   './index.html',
