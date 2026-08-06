@@ -1,21 +1,31 @@
-// HYNC Report page. Builds the Step 1/2/3 DOM once into #page-report and
-// never rebuilds it on route change, so field values, the active step, and
-// generated output survive Report <-> Monitor/Settings navigation (see
-// docs/V2.0_ARCHITECTURE_AND_ROADMAP.md section 12). Everything here is
-// module-scoped -- no globals, no inline onclick attributes.
+// Report page (HYNC + SLNC, one shared UI). Builds the Step 1/2/3 DOM once
+// into #page-report and never rebuilds it on route change, so field
+// values, the active step, and generated output survive Report <->
+// Monitor/Settings navigation (see docs/V2.0_ARCHITECTURE_AND_ROADMAP.md
+// section 12). Everything here is module-scoped -- no globals, no inline
+// onclick attributes.
+//
+// Buyer (HYNC vs SLNC) is detected automatically from the previous-report
+// text and the uploaded workbook; this page never imports hync-profile.js
+// or slnc-profile.js directly -- it calls the shared parsing/report engine
+// (shared-report-profile.js) with whichever buyer profile-registry.js
+// resolves, so the UI truly is one shared page rather than two branches of
+// HYNC-specific code with SLNC bolted on.
 
 import { escapeHtml, formatDateID, fmtTon, fmtRit } from './report-utils.js';
-import { reportState, resetReportState } from './report-state.js';
+import { reportState, resetReportState, BUYER_STATUS } from './report-state.js';
 import {
-  HYNC_AREA_OPTIONS,
-  parseHyncPrevText,
-  parseHyncWorkbook,
-  buildHyncFileSummary,
-  calculateHyncTotals,
-  buildHyncReportText,
-} from './profiles/hync-profile.js';
+  AREA_OPTIONS,
+  parsePrevText,
+  parseWeighbridgeWorkbook,
+  buildFileSummary,
+  calculateTotals,
+  buildReportText,
+} from './profiles/shared-report-profile.js';
+import { buyerFromPrevText } from './profiles/profile-registry.js';
 
 let els = null; // cached DOM references, populated once in initReportPage()
+let lastFocusedBeforeModal = null;
 
 export function initReportPage() {
   const page = document.getElementById('page-report');
@@ -35,9 +45,10 @@ function buildShellMarkup() {
   return `
     <div class="hync-shell">
       <header class="hync-header">
-        <div class="hync-eyebrow">SCM · HPAL Ore Selling — FPP HYNC</div>
+        <div class="hync-eyebrow" id="hync-eyebrow">SCM · HPAL ORE SELLING — FPP</div>
         <h1 class="hync-title">Daily Production Geology Report</h1>
-        <div class="hync-subtitle">Generator laporan shift dari data timbangan HYNC</div>
+        <div class="hync-subtitle" id="hync-subtitle">Generator laporan shift dari data timbangan buyer</div>
+        <div class="hync-buyer-status" id="hync-buyer-status">Buyer belum terdeteksi</div>
       </header>
 
       <div class="hync-stepper">
@@ -49,7 +60,7 @@ function buildShellMarkup() {
       <section class="hync-panel active" id="hync-step-1">
         <div class="hync-card">
           <h2>Teks Report Sebelumnya</h2>
-          <div class="hync-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama.</div>
+          <div class="hync-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC).</div>
           <div class="hync-field">
             <label class="hync-req" for="hync-prev-text">Teks report sebelumnya</label>
             <textarea id="hync-prev-text" class="hync-textarea hync-mono-area" placeholder="Paste teks report shift sebelumnya di sini..."></textarea>
@@ -57,8 +68,8 @@ function buildShellMarkup() {
         </div>
 
         <div class="hync-card">
-          <h2>Data Timbangan <span class="hync-accent-text">(khusus HYNC)</span></h2>
-          <div class="hync-hint">Upload file timbangan (.xlsx/.xls) sheet <b>过磅明细</b> — pastikan ini data milik buyer <b>HYNC</b>, bukan buyer lain.</div>
+          <h2 id="hync-workbook-title">Data Timbangan</h2>
+          <div class="hync-hint" id="hync-workbook-hint">Upload file timbangan dan pastikan buyer sesuai dengan teks report sebelumnya.</div>
           <label class="hync-file-drop" id="hync-file-drop" for="hync-file-input">
             <div class="hync-file-icon">📁</div>
             <div id="hync-file-drop-text">Klik untuk upload file timbangan (.xlsx/.xls)</div>
@@ -144,7 +155,17 @@ function buildShellMarkup() {
         </div>
       </section>
 
-      <div class="hync-footnote">FPP HYNC · Internal use — SCM HPAL Ore Selling</div>
+      <div class="hync-footnote" id="hync-footnote">Internal use — SCM HPAL Ore Selling</div>
+    </div>
+
+    <div class="hync-modal-overlay" id="hync-buyer-modal-overlay" hidden>
+      <div class="hync-modal-box" role="dialog" aria-modal="true" aria-labelledby="hync-buyer-modal-title">
+        <h3 id="hync-buyer-modal-title">Buyer tidak sesuai</h3>
+        <div id="hync-buyer-modal-body"></div>
+        <div class="hync-btn-row">
+          <button type="button" class="hync-btn hync-btn-primary" id="hync-buyer-modal-close">Tutup</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -152,6 +173,13 @@ function buildShellMarkup() {
 function collectElements(page) {
   const byId = (id) => page.querySelector(`#${id}`);
   return {
+    eyebrow: byId('hync-eyebrow'),
+    subtitle: byId('hync-subtitle'),
+    buyerStatus: byId('hync-buyer-status'),
+    workbookTitle: byId('hync-workbook-title'),
+    workbookHint: byId('hync-workbook-hint'),
+    footnote: byId('hync-footnote'),
+
     prevText: byId('hync-prev-text'),
     fileInput: byId('hync-file-input'),
     fileDropText: byId('hync-file-drop-text'),
@@ -186,6 +214,11 @@ function collectElements(page) {
     step1: byId('hync-step-1'),
     step2: byId('hync-step-2'),
     step3: byId('hync-step-3'),
+
+    buyerModalOverlay: byId('hync-buyer-modal-overlay'),
+    buyerModalTitle: byId('hync-buyer-modal-title'),
+    buyerModalBody: byId('hync-buyer-modal-body'),
+    buyerModalClose: byId('hync-buyer-modal-close'),
   };
 }
 
@@ -203,8 +236,19 @@ function wireEvents() {
   els.btnCopy.addEventListener('click', copyOutput);
   els.domeList.addEventListener('change', handleDomeAreaChange);
   // 'input' (not just 'paste') covers typing, paste, deletion, mobile IME,
-  // and autofill -- anything that changes the textarea's value.
-  els.prevText.addEventListener('input', () => autoGrowTextarea(els.prevText));
+  // and autofill -- anything that changes the textarea's value. Buyer
+  // detection is recalculated on every change per the requirement, but the
+  // mismatch popup itself only opens on the status *transition* into a
+  // problem state (see recomputeBuyerResolution), not on every keystroke.
+  els.prevText.addEventListener('input', () => {
+    autoGrowTextarea(els.prevText);
+    recomputeBuyerResolution({ openPopupOnNewMismatch: true });
+  });
+
+  els.buyerModalClose.addEventListener('click', closeBuyerMismatchPopup);
+  els.buyerModalOverlay.addEventListener('click', (event) => {
+    if (event.target === els.buyerModalOverlay) closeBuyerMismatchPopup();
+  });
 }
 
 /* ============================================================
@@ -223,6 +267,244 @@ function autoGrowTextarea(textarea) {
 }
 
 /* ============================================================
+   BUYER RESOLUTION
+============================================================ */
+// Recomputes previousReportBuyer / resolvedBuyer / buyerValidationStatus
+// from the current textarea value and the already-stored workbook buyer
+// state, updates the dynamic UI labels, and -- only on the transition into
+// a mismatch/invalid/ambiguous state -- opens the informational popup.
+// Called from the prevText input handler, after a file finishes parsing,
+// and again at the Step 1 -> 2 gate (so both "recalculate on every text
+// change" and "recheck when the user tries to continue" are satisfied
+// without reopening the popup on every keystroke while already blocked).
+function recomputeBuyerResolution({ openPopupOnNewMismatch }) {
+  const prevResult = buyerFromPrevText(els.prevText.value);
+  reportState.previousReportBuyer = prevResult.status === 'ok' ? prevResult.buyer : null;
+  const prevAmbiguous = prevResult.status === 'ambiguous';
+
+  const workbookBuyer = reportState.workbookBuyer;
+  const workbookIssues = reportState.workbookBuyerIssues;
+
+  let status;
+  let resolvedBuyer = null;
+
+  if (prevAmbiguous) {
+    status = BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT;
+  } else if (workbookIssues && workbookIssues.length) {
+    status = BUYER_STATUS.INVALID_WORKBOOK;
+  } else if (reportState.previousReportBuyer && workbookBuyer) {
+    if (reportState.previousReportBuyer === workbookBuyer) {
+      status = BUYER_STATUS.CONFIRMED;
+      resolvedBuyer = workbookBuyer;
+    } else {
+      status = BUYER_STATUS.MISMATCH;
+    }
+  } else if (reportState.previousReportBuyer && !workbookBuyer) {
+    status = BUYER_STATUS.PENDING_WORKBOOK;
+    resolvedBuyer = reportState.previousReportBuyer; // provisional only
+  } else if (!reportState.previousReportBuyer && workbookBuyer) {
+    status = BUYER_STATUS.PENDING_PREVIOUS_REPORT;
+    resolvedBuyer = workbookBuyer; // provisional only
+  } else {
+    status = BUYER_STATUS.UNKNOWN;
+  }
+
+  const problemStatuses = [BUYER_STATUS.MISMATCH, BUYER_STATUS.INVALID_WORKBOOK, BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT];
+  const wasProblem = problemStatuses.includes(reportState.buyerValidationStatus);
+  const isProblem = problemStatuses.includes(status);
+
+  const oldResolvedBuyer = reportState.resolvedBuyer;
+  reportState.buyerValidationStatus = status;
+  reportState.resolvedBuyer = status === BUYER_STATUS.CONFIRMED ? resolvedBuyer : (isProblem ? null : resolvedBuyer);
+
+  // A confirmed buyer flipping (or being lost) must not leave a stale
+  // report generated under the old buyer's label.
+  if (oldResolvedBuyer && oldResolvedBuyer !== reportState.resolvedBuyer) {
+    reportState.reportText = '';
+  }
+
+  updateBuyerUI();
+
+  if (openPopupOnNewMismatch && isProblem && !wasProblem) {
+    openBuyerMismatchPopup();
+  }
+
+  return status;
+}
+
+function buyerGateErrorMessage(status) {
+  switch (status) {
+    case BUYER_STATUS.UNKNOWN:
+      return 'Buyer belum terdeteksi dari teks report sebelumnya maupun file timbangan.';
+    case BUYER_STATUS.PENDING_WORKBOOK:
+      return 'Buyer baru terdeteksi dari teks report sebelumnya — upload file timbangan untuk konfirmasi.';
+    case BUYER_STATUS.PENDING_PREVIOUS_REPORT:
+      return 'Buyer baru terdeteksi dari file timbangan — lengkapi teks report sebelumnya untuk konfirmasi.';
+    case BUYER_STATUS.MISMATCH:
+      return 'Buyer teks report sebelumnya dan file timbangan tidak sesuai — lihat detail di popup.';
+    case BUYER_STATUS.INVALID_WORKBOOK:
+      return 'Data buyer pada file timbangan tidak valid — lihat detail di popup.';
+    case BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT:
+      return 'Teks report sebelumnya menyebutkan lebih dari satu buyer — lihat detail di popup.';
+    default:
+      return 'Buyer belum terkonfirmasi.';
+  }
+}
+
+/* ============================================================
+   DYNAMIC BUYER LABELS
+============================================================ */
+const NEUTRAL_LABELS = {
+  eyebrow: 'SCM · HPAL ORE SELLING — FPP',
+  subtitle: 'Generator laporan shift dari data timbangan buyer',
+  workbookTitle: 'Data Timbangan',
+  workbookHint: 'Upload file timbangan dan pastikan buyer sesuai dengan teks report sebelumnya.',
+  footnote: 'Internal use — SCM HPAL Ore Selling',
+};
+
+function buyerLabelSet(buyer) {
+  return {
+    eyebrow: `SCM · HPAL Ore Selling — FPP ${buyer}`,
+    subtitle: `Generator laporan shift dari data timbangan ${buyer}`,
+    workbookTitle: `Data Timbangan (khusus ${buyer})`,
+    workbookHint: `Upload file timbangan (.xlsx/.xls) sheet 过磅明细 — pastikan ini data milik buyer ${buyer}, bukan buyer lain.`,
+    footnote: `FPP ${buyer} · Internal use — SCM HPAL Ore Selling`,
+  };
+}
+
+function buyerStatusMessage(status) {
+  const prev = reportState.previousReportBuyer;
+  const wb = reportState.workbookBuyer;
+  switch (status) {
+    case BUYER_STATUS.PENDING_WORKBOOK:
+      return `Buyer terdeteksi: ${prev} (dari teks report) — menunggu file timbangan.`;
+    case BUYER_STATUS.PENDING_PREVIOUS_REPORT:
+      return `Buyer terdeteksi: ${wb} (dari file timbangan) — menunggu teks report sebelumnya.`;
+    case BUYER_STATUS.CONFIRMED:
+      return `Buyer terkonfirmasi: ${reportState.resolvedBuyer}.`;
+    case BUYER_STATUS.MISMATCH:
+      return '⚠ Buyer tidak sesuai — lihat detail.';
+    case BUYER_STATUS.INVALID_WORKBOOK:
+      return '⚠ Data buyer file timbangan tidak valid — lihat detail.';
+    case BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT:
+      return '⚠ Teks report sebelumnya menyebutkan lebih dari satu buyer — lihat detail.';
+    default:
+      return 'Buyer belum terdeteksi';
+  }
+}
+
+function buyerStatusClass(status) {
+  if (status === BUYER_STATUS.CONFIRMED) return 'hync-buyer-status--confirmed';
+  if (status === BUYER_STATUS.PENDING_WORKBOOK || status === BUYER_STATUS.PENDING_PREVIOUS_REPORT) return 'hync-buyer-status--provisional';
+  if (status === BUYER_STATUS.MISMATCH || status === BUYER_STATUS.INVALID_WORKBOOK || status === BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT) return 'hync-buyer-status--problem';
+  return '';
+}
+
+function updateBuyerUI() {
+  const status = reportState.buyerValidationStatus;
+  const provisionalBuyer = reportState.resolvedBuyer || reportState.previousReportBuyer || reportState.workbookBuyer;
+  const labels = provisionalBuyer ? buyerLabelSet(provisionalBuyer) : NEUTRAL_LABELS;
+
+  els.eyebrow.textContent = labels.eyebrow;
+  els.subtitle.textContent = labels.subtitle;
+  els.workbookTitle.textContent = labels.workbookTitle;
+  els.workbookHint.textContent = labels.workbookHint;
+  els.footnote.textContent = labels.footnote;
+
+  els.buyerStatus.textContent = buyerStatusMessage(status);
+  els.buyerStatus.className = 'hync-buyer-status ' + buyerStatusClass(status);
+}
+
+/* ============================================================
+   BUYER MISMATCH / INVALID-WORKBOOK POPUP
+============================================================ */
+function buildBuyerModalContent(status) {
+  if (status === BUYER_STATUS.MISMATCH) {
+    return {
+      title: 'Buyer tidak sesuai',
+      bodyHtml: `
+        <p>Teks report sebelumnya terdeteksi sebagai <b>${escapeHtml(reportState.previousReportBuyer)}</b>,
+        sedangkan file timbangan terdeteksi sebagai <b>${escapeHtml(reportState.workbookBuyer)}</b>.</p>
+        <p>Pastikan teks report sebelumnya dan file timbangan berasal dari buyer yang sama.</p>
+      `,
+    };
+  }
+  if (status === BUYER_STATUS.INVALID_WORKBOOK) {
+    const issues = reportState.workbookBuyerIssues || [];
+    const mixed = issues.filter((i) => i.type === 'mixed');
+    if (mixed.length) {
+      const rowsSummary = mixed
+        .map((i) => `${escapeHtml(i.buyer)}: ${i.rows.length} baris (contoh baris ${i.rows.slice(0, 5).join(', ')})`)
+        .join('<br>');
+      return {
+        title: 'Buyer file timbangan tidak konsisten',
+        bodyHtml: `
+          <p>Kolom <b>备注</b> berisi data HYNC dan SLNC dalam satu file:</p>
+          <p>${rowsSummary}</p>
+          <p>Pastikan file timbangan hanya berisi data dari satu buyer.</p>
+        `,
+      };
+    }
+    const unrec = issues.find((i) => i.type === 'unrecognized');
+    const rowsList = unrec && unrec.rows.length ? unrec.rows.slice(0, 10).join(', ') : '';
+    return {
+      title: 'Buyer file timbangan tidak dapat dikenali',
+      bodyHtml: `
+        <p>Terdapat baris data dengan nilai <b>备注</b> yang kosong atau tidak menggunakan kode SCSL/SCHY${rowsList ? ` (baris: ${escapeHtml(rowsList)})` : ''}.</p>
+        <p>Periksa file timbangan sebelum melanjutkan.</p>
+      `,
+    };
+  }
+  if (status === BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT) {
+    return {
+      title: 'Teks report sebelumnya ambigu',
+      bodyHtml: `
+        <p>Teks report sebelumnya menyebutkan <b>FPP HYNC</b> dan <b>FPP SLNC</b> sekaligus.</p>
+        <p>Pastikan teks report sebelumnya hanya berasal dari satu buyer.</p>
+      `,
+    };
+  }
+  return null;
+}
+
+function openBuyerMismatchPopup() {
+  const content = buildBuyerModalContent(reportState.buyerValidationStatus);
+  if (!content) return;
+  els.buyerModalTitle.textContent = content.title;
+  els.buyerModalBody.innerHTML = content.bodyHtml;
+
+  lastFocusedBeforeModal = document.activeElement;
+  els.buyerModalOverlay.hidden = false;
+  document.addEventListener('keydown', handleBuyerModalKeydown, true);
+  els.buyerModalClose.focus();
+}
+
+function closeBuyerMismatchPopup() {
+  if (els.buyerModalOverlay.hidden) return;
+  els.buyerModalOverlay.hidden = true;
+  document.removeEventListener('keydown', handleBuyerModalKeydown, true);
+  if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+    lastFocusedBeforeModal.focus();
+  }
+  lastFocusedBeforeModal = null;
+}
+
+function handleBuyerModalKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeBuyerMismatchPopup();
+    return;
+  }
+  // This dialog only ever contains one focusable control (the close
+  // button), so Tab/Shift+Tab simply keep focus there instead of a full
+  // multi-element focus trap.
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    els.buyerModalClose.focus();
+  }
+}
+
+/* ============================================================
    STEP 1: FILE UPLOAD
 ============================================================ */
 function handleFileChange(event) {
@@ -237,20 +519,25 @@ function handleFileChange(event) {
       }
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });
-      const parsed = parseHyncWorkbook(workbook);
+      const parsed = parseWeighbridgeWorkbook(workbook);
 
       reportState.parsed = parsed;
       reportState.fileName = file.name;
       reportState.fileParsed = true;
       reportState.domeAreas = {};
+      reportState.workbookBuyer = parsed.workbookBuyer;
+      reportState.workbookBuyerIssues = parsed.workbookBuyerIssues;
 
-      renderFileStatus(true, buildHyncFileSummary(parsed));
+      renderFileStatus(true, buildFileSummary(parsed));
       els.fileDropText.textContent = '✓ ' + file.name;
     } catch (err) {
       reportState.fileParsed = false;
       reportState.parsed = null;
+      reportState.workbookBuyer = null;
+      reportState.workbookBuyerIssues = null;
       renderFileStatus(false, 'Gagal membaca file: ' + err.message);
     }
+    recomputeBuyerResolution({ openPopupOnNewMismatch: true });
   };
   reader.readAsArrayBuffer(file);
 }
@@ -283,9 +570,12 @@ function goToStep2() {
 
   let prevParsed = null;
   if (prevTextRaw.trim()) {
-    prevParsed = parseHyncPrevText(prevTextRaw);
+    prevParsed = parsePrevText(prevTextRaw);
     if (prevParsed.errors.length) errors.push(...prevParsed.errors);
   }
+
+  const buyerStatus = recomputeBuyerResolution({ openPopupOnNewMismatch: true });
+  if (buyerStatus !== BUYER_STATUS.CONFIRMED) errors.push(buyerGateErrorMessage(buyerStatus));
 
   if (errors.length) {
     renderAlert(els.step1Errors, errors);
@@ -320,7 +610,7 @@ function renderDomeList() {
   const domes = reportState.parsed.domes;
   els.domeList.innerHTML = domes
     .map((d, i) => {
-      const areaOptions = HYNC_AREA_OPTIONS.map((area) => {
+      const areaOptions = AREA_OPTIONS.map((area) => {
         const slug = area.replace(/\s/g, '');
         const radioId = `hync-area-${i}-${slug}`;
         return `
@@ -363,6 +653,11 @@ function handleDomeAreaChange(event) {
    STEP 2 -> 3: GENERATE
 ============================================================ */
 function goToStep3() {
+  if (reportState.buyerValidationStatus !== BUYER_STATUS.CONFIRMED || !reportState.resolvedBuyer) {
+    renderAlert(els.step2Errors, ['Buyer belum terkonfirmasi. Kembali ke Step 1 dan pastikan teks report serta file timbangan berasal dari buyer yang sama.']);
+    return;
+  }
+
   const domes = reportState.parsed.domes;
   const missing = domes.filter((d) => !reportState.domeAreas[d.dome]);
   if (missing.length) {
@@ -375,10 +670,11 @@ function goToStep3() {
   }
   els.step2Errors.innerHTML = '';
 
-  const totals = calculateHyncTotals({ parsed: reportState.parsed, prev: reportState.prev });
+  const totals = calculateTotals({ parsed: reportState.parsed, prev: reportState.prev });
   reportState.totals = totals;
 
-  const reportText = buildHyncReportText({
+  const reportText = buildReportText({
+    buyer: reportState.resolvedBuyer,
     parsed: reportState.parsed,
     inputs: reportState.inputs,
     domeAreas: reportState.domeAreas,
@@ -452,7 +748,7 @@ function showCopyFeedback(ok) {
    RESET
 ============================================================ */
 function handleResetClick() {
-  const confirmed = window.confirm('Reset semua data laporan HYNC yang sudah diisi?');
+  const confirmed = window.confirm('Reset semua data laporan yang sudah diisi?');
   if (!confirmed) return;
 
   resetReportState();
@@ -474,6 +770,9 @@ function handleResetClick() {
   els.scaleDisplay.innerHTML = '';
   els.step3Warnings.innerHTML = '';
   els.output.value = '';
+
+  closeBuyerMismatchPopup();
+  updateBuyerUI();
 
   renderStep(1);
   autoGrowTextarea(els.prevText);

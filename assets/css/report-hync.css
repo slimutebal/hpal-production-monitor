@@ -38,6 +38,22 @@
   font-size: 0.8rem;
 }
 
+#page-report .hync-buyer-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-top: 8px;
+  color: var(--muted, #8fa3bd);
+}
+#page-report .hync-buyer-status--provisional {
+  color: var(--accent2, #fbbf24);
+}
+#page-report .hync-buyer-status--confirmed {
+  color: var(--good, #34d399);
+}
+#page-report .hync-buyer-status--problem {
+  color: var(--bad, #f87171);
+}
+
 /* Stepper */
 #page-report .hync-stepper {
   display: flex;
@@ -391,6 +407,50 @@
   color: var(--muted, #8fa3bd);
   text-align: center;
   margin-top: 22px;
+}
+
+/* Buyer mismatch / invalid-workbook popup. Report-scoped and independent
+   of Monitor's #contractorModalOverlay (index.html), which is hardcoded to
+   contractor-entry fields and not reusable here -- this is a new, small,
+   accessible dialog (see js/pages/report/report-page.js openBuyerMismatchPopup). */
+#page-report .hync-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 200;
+}
+#page-report .hync-modal-overlay[hidden] {
+  display: none;
+}
+#page-report .hync-modal-box {
+  background: var(--bg-base, #0a0e1a);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+#page-report .hync-modal-box h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--bad, #f87171);
+}
+#page-report .hync-modal-box p {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text, inherit);
+  margin: 0 0 10px;
+}
+#page-report .hync-modal-box p:last-child {
+  margin-bottom: 0;
 }
 
 @media (min-width: 640px) {

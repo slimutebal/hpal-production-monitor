@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.0.2-loading-areas';
+const CACHE_NAME = 'hpal-production-monitor-v2.1.0-hync-slnc-report';
 const APP_SHELL = [
   './',
   './index.html',
@@ -15,7 +15,10 @@ const APP_SHELL = [
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',
+  './js/pages/report/profiles/profile-registry.js',
+  './js/pages/report/profiles/shared-report-profile.js',
   './js/pages/report/profiles/hync-profile.js',
+  './js/pages/report/profiles/slnc-profile.js',
   './js/pages/settings/settings-page.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
