@@ -13,7 +13,7 @@ Mulai V2.0, aplikasi ini menjadi aplikasi tiga halaman dengan navigasi bawah (bo
 | Halaman | Route | Fungsi |
 | --- | --- | --- |
 | **Monitor** | `#/monitor` | Analisis hauling dari file Excel timbangan — fungsi utama yang sudah ada sebelumnya, tidak berubah. |
-| **Report** | `#/report` | Generator laporan produksi harian. Saat ini hanya mendukung buyer **HYNC**. |
+| **Report** | `#/report` | Generator laporan produksi harian. Mendukung buyer **HYNC** dan **SLNC**, terdeteksi otomatis dari teks report sebelumnya dan file timbangan. |
 | **Settings** | `#/settings` | Placeholder untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 
 Fokus utama:
@@ -23,34 +23,33 @@ Fokus utama:
 - Menampilkan visualisasi kadar Ni dan tonase per jam.
 - Menganalisis penyumbang naik/turun `ΔNI` terhadap base NI.
 - Mendeteksi perpindahan DT antar kontraktor/dome/class.
-- Membuat **Daily Production Geology Report** untuk buyer HYNC (halaman Report).
+- Membuat **Daily Production Geology Report** untuk buyer HYNC dan SLNC, dengan buyer terdeteksi otomatis (halaman Report).
 - Menyediakan tampilan mobile-friendly untuk Android, iOS, dan PC.
 - Mendukung PWA/offline cache via GitHub Pages.
 
 Catatan lingkup V2.0:
 
 - Monitor mempertahankan seluruh fungsi yang sudah ada — tidak ada perubahan rumus, parser, atau grafik selama integrasi ke struktur tiga halaman.
-- Report baru mendukung **HYNC**. Report untuk buyer lain (ESG, SLNC) direncanakan untuk V2.1 dan **belum tersedia** di V2.0.
+- Report mendukung **HYNC** dan **SLNC** melalui satu halaman/UI yang sama — buyer terdeteksi otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC`) dan dari kolom `备注` di file timbangan (prefix `SCHY` / `SCSL`). Report untuk buyer lain (ESG) masih direncanakan untuk versi berikutnya dan **belum tersedia**.
 - Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah pengguna di V2.0.
 
 ---
 
 ## Status rilis terbaru
 
-**Current release:** `v2.0.0 — Three-Page App Shell + HYNC Production Report`
+**Current release:** `v2.1.0 — HYNC + SLNC Report`
 
-V2.0 menambahkan:
+V2.1 menambahkan:
 
-1. App shell tiga halaman (Monitor, Report, Settings).
-2. Routing berbasis hash (`#/monitor`, `#/report`, `#/settings`).
-3. Bottom navigation tetap (fixed) untuk perangkat mobile.
-4. Monitor yang sudah ada dipertahankan penuh, tanpa perubahan perilaku.
-5. Generator **Daily Production Geology Report** untuk buyer HYNC.
-6. Halaman Settings sebagai placeholder.
-7. Cache app-shell PWA yang diperbarui untuk file-file V2.0.
-8. State Report (langkah aktif, input, hasil) tetap tersimpan selama berpindah halaman dalam satu sesi.
+1. Dukungan buyer **SLNC** di halaman Report, memakai satu UI/route yang sama dengan HYNC (`#/report`) — tidak ada route atau halaman Report terpisah per buyer.
+2. Deteksi buyer otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC`) dan dari kolom `备注` file timbangan (prefix `SCHY` → HYNC, `SCSL` → SLNC).
+3. Popup informasi saat teks report sebelumnya dan file timbangan terdeteksi berasal dari buyer yang berbeda, atau saat kolom `备注` pada file timbangan tidak konsisten/tidak bisa dikenali — progres ke Step 2 diblokir sampai keduanya sesuai.
+4. Beberapa kode FPP berbeda milik buyer yang sama dalam satu file timbangan (mis. beberapa `SCSL-xxxxxxx` berbeda) tetap diterima tanpa peringatan — yang dibandingkan hanya identitas buyer, bukan kode FPP lengkap.
+5. Parser dan builder laporan HYNC/SLNC kini berbagi satu modul inti (`js/pages/report/profiles/shared-report-profile.js`), dipilih lewat `profile-registry.js`; label buyer pada UI dan teks laporan menyesuaikan otomatis.
 
-Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC ada di bagian [Report HYNC](#report-hync).
+Rilis sebelumnya (`v2.0.0 — Three-Page App Shell + HYNC Production Report`) menambahkan app shell tiga halaman, routing berbasis hash, bottom navigation, dan generator Report HYNC pertama kali — lihat [Changelog](#changelog) untuk detail lengkap.
+
+Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC ada di bagian [Report HYNC dan SLNC](#report-hync-dan-slnc).
 
 ---
 
@@ -67,7 +66,7 @@ Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Set
 ### Menggunakan Report
 
 1. Buka halaman **Report**.
-2. Di **Step 1 — Input**: paste teks report shift sebelumnya, upload file timbangan HYNC (`.xlsx`/`.xls`), lalu isi Week, PIC SCM, PIC AWK, Manpower AWK, Total Manpower, Problem, dan Preventive Action.
+2. Di **Step 1 — Input**: paste teks report shift sebelumnya, upload file timbangan (`.xlsx`/`.xls`, buyer HYNC atau SLNC terdeteksi otomatis), lalu isi Week, PIC SCM, PIC AWK, Manpower AWK, Total Manpower, Problem, dan Preventive Action.
 3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
 4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
@@ -226,23 +225,39 @@ Makna label:
 
 ---
 
-## Report HYNC
+## Report HYNC dan SLNC
 
-Halaman **Report** (`#/report`) menghasilkan laporan dengan format:
+Halaman **Report** (`#/report`) adalah satu UI yang sama untuk buyer **HYNC** maupun **SLNC** — tidak ada route atau halaman terpisah per buyer. Buyer terdeteksi otomatis, lalu label di UI dan teks laporan yang dihasilkan menyesuaikan:
 
 ```text
 DAILY PRODUCTION GEOLOGY REPORT
 HPAL Ore Selling SCM — FPP HYNC
 ```
 
-Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Saat ini Report hanya mendukung buyer **HYNC** — ESG dan SLNC belum diimplementasikan (lihat [Limitasi](#limitasi)).
+atau
+
+```text
+DAILY PRODUCTION GEOLOGY REPORT
+HPAL Ore Selling SCM — FPP SLNC
+```
+
+Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Report ESG masih direncanakan untuk versi berikutnya dan belum diimplementasikan (lihat [Limitasi](#limitasi)).
+
+### Deteksi buyer otomatis
+
+Buyer dideteksi dari dua sumber, dan progres ke Step 2 baru diizinkan setelah keduanya cocok:
+
+1. **Teks report sebelumnya** — dicari token `FPP HYNC` atau `FPP SLNC` (case-insensitive, toleran multi-spasi). Bila teks menyebut keduanya sekaligus, dianggap ambigu dan diblokir. Bila tidak ada token yang ditemukan, buyer dianggap belum terdeteksi dan diblokir (tidak pernah default diam-diam ke HYNC).
+2. **File timbangan** — dibaca dari kolom **备注** (header, bukan asumsi posisi kolom tetap): nilai yang diawali `SCHY` berarti HYNC, diawali `SCSL` berarti SLNC. Hanya prefix yang dibandingkan, bukan kode lengkap — beberapa kode berbeda milik buyer yang sama (mis. `SCSL-0000033` dan `SCSL-0000034` dalam satu file) **valid** dan tidak memicu peringatan. File diblokir jika: ada baris data valid dengan `备注` kosong atau berisi nilai yang tidak dikenali, atau file berisi campuran `SCHY` dan `SCSL` sekaligus.
+
+Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tidak valid), aplikasi menampilkan popup informasi yang menjelaskan buyer yang terdeteksi dari masing-masing sumber dan memblokir lanjut ke Step 2 sampai diperbaiki. Sebelum kedua sumber lengkap, label UI diperbarui secara sementara (provisional) dari sumber yang sudah ada.
 
 ### Alur tiga langkah
 
 #### 1. Input
 
-- Teks report shift sebelumnya (wajib — dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama).
-- File Excel timbangan HYNC (wajib).
+- Teks report shift sebelumnya (wajib — dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer).
+- File Excel timbangan (wajib; buyer HYNC atau SLNC, terdeteksi otomatis).
 - Week.
 - PIC SCM.
 - PIC AWK.
@@ -251,7 +266,7 @@ Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama sepe
 - Problem (boleh kosong, tampil sebagai `-` di laporan).
 - Preventive Action (boleh kosong, tampil sebagai `-` di laporan).
 
-Format file yang didukung:
+Format file yang didukung (sama untuk HYNC dan SLNC):
 
 - `.xlsx` atau `.xls`.
 - Sheet yang diutamakan: `过磅明细`.
@@ -262,6 +277,7 @@ Format file yang didukung:
   - `毛重时间`
   - `日期`
   - `规格`
+- Kolom `备注` dibaca untuk deteksi buyer (lihat di atas).
 
 Jika sheet atau header yang dibutuhkan tidak ditemukan, aplikasi menampilkan pesan error yang jelas dan tidak melanjutkan ke langkah berikutnya.
 
@@ -342,7 +358,7 @@ lainnya    → MGLO
 | Perpindahan DT | Menampilkan indikasi perpindahan DT antar dome/class/kontraktor. |
 | Collapsible dome rows | Baris dome per `HGLO`, `MGLO`, dan `LGLO` dapat dibuka/tutup. |
 | Theme mode | Mendukung dark, light, dan auto mode. |
-| Report HYNC | Membuat Daily Production Geology Report untuk buyer HYNC dari file timbangan terpisah. |
+| Report HYNC & SLNC | Membuat Daily Production Geology Report untuk buyer HYNC atau SLNC (terdeteksi otomatis) dari file timbangan terpisah. |
 | Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
 | Settings placeholder | Reserved untuk pengaturan personel, kontraktor, dan lisensi di versi berikutnya. |
 | PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
@@ -354,9 +370,9 @@ lainnya    → MGLO
 Aplikasi mendukung offline mode melalui service worker. Cache app-shell V2.0 mencakup:
 
 - `index.html`, `manifest.webmanifest`, `contractor-assignment.js`.
-- CSS app shell, bottom navigation, Report HYNC, dan Settings (`assets/css/*.css`).
+- CSS app shell, bottom navigation, Report, dan Settings (`assets/css/*.css`).
 - JavaScript app shell dan router (`js/app.js`, `js/router.js`, `js/components/bottom-navigation.js`).
-- JavaScript Report HYNC dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
+- JavaScript Report (profil HYNC dan SLNC berbagi satu modul inti) dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
 - JavaScript halaman Settings placeholder.
 - Icon PWA dan manifest.
 
@@ -370,7 +386,7 @@ Bisa dibuka dari Home Screen/browser tanpa internet
 
 Catatan penting:
 
-- Yang dicache adalah **file aplikasi** (HTML/CSS/JS/icon) — file Excel operasional (timbangan Monitor maupun HYNC) **tidak** diupload atau disimpan oleh service worker; file tetap diproses lokal di browser saat dipilih pengguna.
+- Yang dicache adalah **file aplikasi** (HTML/CSS/JS/icon) — file Excel operasional (timbangan Monitor maupun Report HYNC/SLNC) **tidak** diupload atau disimpan oleh service worker; file tetap diproses lokal di browser saat dipilih pengguna.
 - Sinkronisasi kontraktor via Google Sheet tetap membutuhkan koneksi internet.
 - Perilaku copy ke clipboard bergantung pada izin/permission browser yang sedang digunakan.
 - Load pertama setelah setiap deployment baru tetap membutuhkan koneksi internet.
@@ -386,10 +402,10 @@ Aplikasi ini berjalan di sisi browser.
 
 - File Excel dipilih dari perangkat pengguna.
 - Parsing dan perhitungan file Excel Monitor dilakukan lokal di browser.
-- Parsing Excel timbangan HYNC untuk Report juga dilakukan lokal di browser.
+- Parsing Excel timbangan Report (HYNC maupun SLNC) juga dilakukan lokal di browser.
 - Teks report sebelumnya yang di-paste di halaman Report hanya tersimpan di state halaman/sesi saat ini.
 - Teks laporan hasil Report hanya disalin ke clipboard saat pengguna menekan tombol Copy.
-- Tidak ada backend khusus untuk menerima file Excel Monitor maupun file Excel HYNC.
+- Tidak ada backend khusus untuk menerima file Excel Monitor maupun file Excel Report.
 - Halaman Report tidak menyediakan riwayat laporan permanen di V2.0.
 - Data kontraktor bawaan tersimpan di file aplikasi.
 - Data kontraktor bersama (Monitor) disinkron melalui Google Sheet / Google Apps Script.
@@ -426,11 +442,15 @@ hpal-production-monitor/
 │       │   ├── report-state.js
 │       │   ├── report-utils.js
 │       │   └── profiles/
-│       │       └── hync-profile.js
+│       │       ├── profile-registry.js
+│       │       ├── shared-report-profile.js
+│       │       ├── hync-profile.js
+│       │       └── slnc-profile.js
 │       └── settings/
 │           └── settings-page.js
 ├── docs/
 │   ├── V2.0_ARCHITECTURE_AND_ROADMAP.md
+│   ├── V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md
 │   └── references/
 └── icons/
 ```
@@ -438,11 +458,25 @@ hpal-production-monitor/
 Catatan:
 
 - `docs/references/` berisi referensi implementasi (mis. generator HYNC sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, dan tidak dicache oleh service worker.
-- Report ESG dan SLNC **belum diimplementasikan** di V2.0.
+- Report ESG **belum diimplementasikan**. Report HYNC dan SLNC sudah tersedia sejak v2.1.0.
+- Arsitektur as-built Report HYNC dan SLNC (profile registry, engine bersama, deteksi buyer, popup mismatch) didokumentasikan lengkap di [V2.1 HYNC and SLNC Report Architecture](docs/V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md).
 
 ---
 
 ## Changelog
+
+### v2.1.0 — HYNC + SLNC Report
+
+- Added SLNC as a second Report buyer profile, sharing the same Report UI/route as HYNC (`#/report`) — no separate route or duplicated page per buyer.
+- Added automatic buyer detection from the previous-report text (`FPP HYNC` / `FPP SLNC` token, case-insensitive) and from the workbook's `备注` column (`SCHY` → HYNC, `SCSL` → SLNC prefix match).
+- Added a buyer-resolution state machine (`unknown` / `pendingWorkbook` / `pendingPreviousReport` / `confirmed` / `mismatch` / `invalidWorkbook` / `ambiguousPreviousReport`) gating progression to Step 2.
+- Added an accessible, Report-scoped mismatch/invalid-workbook popup (role="dialog", Escape support, focus management) shown when the previous-report buyer and workbook buyer disagree, or when the workbook's `备注` column is mixed, blank, or unrecognized on a valid row.
+- Confirmed multiple distinct FPP codes for the same buyer in one workbook (e.g. several different `SCSL-xxxxxxx` values) are normal and do not trigger a warning — only buyer identity (the prefix) is validated, never the full code.
+- Extracted the shared parsing/calculation/report-text engine into `js/pages/report/profiles/shared-report-profile.js`, with buyer identity/config in `hync-profile.js` and the new `slnc-profile.js`, selected via `profile-registry.js`. HYNC's output and calculations are unchanged.
+- Extended the 规格 (spec) parser to accept both `DOME ( NI:1.25 )` and `DOME (1.25)` without changing ore-class thresholds or any previously-valid HYNC result.
+- Dynamic, buyer-aware UI labels (eyebrow, subtitle, workbook card title/hint, footnote, generated report header and "Ore Delivered to FPP …" line) with neutral text before a buyer is detected.
+- Reused Monitor's existing DT-normalization logic (`index.html`) so SLNC truck ids resolve against the existing approved contractor mapping instead of a second table.
+- Updated PWA app-shell cache for the new profile modules.
 
 ### v2.0.0 — Three-Page App Shell + HYNC Production Report
 
@@ -530,14 +564,15 @@ Catatan:
 
 ## Limitasi
 
-- Report V2.0 hanya mendukung buyer **HYNC**.
-- Report ESG dan SLNC belum diimplementasikan.
+- Report mendukung buyer **HYNC** dan **SLNC**. Report ESG belum diimplementasikan.
+- Deteksi buyer dari teks report sebelumnya hanya mengenali token `FPP HYNC` / `FPP SLNC` — bukan kode FPP lengkap (teks report sebelumnya tidak memuat kode tersebut).
+- Deteksi buyer dari file timbangan hanya membandingkan prefix kolom `备注` (`SCHY`/`SCSL`), bukan kode lengkap; beberapa kode berbeda milik buyer yang sama dalam satu file dianggap valid.
 - Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah.
-- Parsing Report HYNC bergantung pada header workbook yang sesuai format yang diharapkan.
+- Parsing Report bergantung pada header workbook yang sesuai format yang diharapkan (sama untuk HYNC dan SLNC).
 - Teks report sebelumnya wajib diisi agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif.
 - State Report bersifat sesi/in-memory saja — tidak disimpan permanen.
 - Riwayat laporan tidak disimpan secara permanen.
-- Mapping kontraktor untuk Report HYNC saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor.
+- Mapping kontraktor untuk Report (HYNC dan SLNC) saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor. SLNC truck id dinormalisasi ke format yang sama sebelum dicocokkan (lihat `normalizeDT` di Monitor).
 - Aplikasi bergantung pada struktur Excel yang dikenali parser (Monitor maupun Report).
 - File Excel dengan format kolom/sheet yang berubah jauh bisa gagal dibaca.
 - Offline mode bergantung pada cache browser.
