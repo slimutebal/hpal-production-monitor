@@ -28,12 +28,21 @@
 // here always reads live from personnel-directory-service.js's snapshot,
 // never a locally cached copy.
 //
-// There is no offline write queue yet (Phase 5, explicitly deferred) --
-// every write requires connectivity and fails with a clear message rather
-// than silently queuing. There are no user accounts: every write is
-// attributed to the fixed audit-source label the service module owns
-// (personnel-directory-service.js's `OWNER_WEB_APP` constant), never a
-// real identity.
+// Phase 5 adds an offline write queue (js/services/personnel-write-queue.js):
+// when the device is offline, or a write fails with a genuine
+// network-transport error, Add/Edit/Deactivate/Reactivate enqueue the
+// write instead of failing outright. The queue is a pending-command log
+// only -- it never fabricates a record into personnel-directory-service.js's
+// authoritative snapshot/cache, so a queued add/edit/deactivate never
+// appears as a confirmed server record (in Settings or in Report) until it
+// has actually flushed and been verified through the exact same
+// write-then-resync-then-verify path the online flow already uses. When
+// the network IS available, the online path stays preferred -- writes are
+// never queued first "just in case" (see handleAddSave/handleEditSave/
+// handleDeactivateConfirm/handleReactivate below). There are no user
+// accounts: every write is attributed to the fixed audit-source label the
+// service module owns (personnel-directory-service.js's `OWNER_WEB_APP`
+// constant), never a real identity.
 //
 // Like report-page.js, the DOM is built once into #page-settings and never
 // rebuilt on route change, so Settings -> Report -> Settings navigation
@@ -50,7 +59,26 @@ import {
   updateReportPersonnel,
   setReportPersonnelActive,
 } from '../../services/personnel-directory-service.js';
-import { buildRoleSummaryText, filterPersonnelBySearch } from './settings-personnel.js';
+import {
+  getWriteQueueSnapshot,
+  getWriteQueueSummary,
+  enqueueAddReportPersonnel,
+  enqueueUpdateReportPersonnel,
+  enqueueSetReportPersonnelActive,
+  removeQueueItem,
+  retryQueueItem,
+  flushPersonnelWriteQueue,
+  isWriteQueueFlushInFlight,
+} from '../../services/personnel-write-queue.js';
+import {
+  buildRoleSummaryText,
+  filterPersonnelBySearch,
+  buildOfflineIndicatorText,
+  buildQueueCountText,
+  buildQueueItemViewModel,
+  QUEUE_OFFLINE_SAVED_MESSAGE,
+  QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE,
+} from './settings-personnel.js';
 
 // orgFixed: the role's organization is never user-editable, always this
 // literal value. orgMode ('free-text' | 'sampler-select') only applies
@@ -100,6 +128,16 @@ function describeWriteError(error) {
   return error.message || 'Terjadi kesalahan saat menyimpan.';
 }
 
+// Distinguishes a genuine network/transport failure (the only case that
+// falls back to the offline queue) from every other write outcome. Per the
+// NETWORK FAILURE CLASSIFICATION requirement, application-level errors
+// (VERSION_CONFLICT, DUPLICATE_PERSONNEL, VALIDATION_ERROR, NOT_FOUND, a
+// malformed response, ...) must never be queued -- they are shown to the
+// user immediately via describeWriteError() instead, same as before Phase 5.
+function isNetworkFailure(error) {
+  return !!error && (error.code === 'NETWORK_ERROR' || error.code === 'NETWORK_UNAVAILABLE');
+}
+
 let els = null;
 let syncInFlight = false;
 let writeInFlight = false;
@@ -141,8 +179,25 @@ export function initSettingsPage() {
     if (event.target.id === 'settings-modal-overlay') closeModal();
   });
 
+  els.queueReviewBtn.addEventListener('click', openQueueReviewModal);
+  els.queueModal.closeBtn.addEventListener('click', closeQueueReviewModal);
+  els.queueModal.overlay.addEventListener('click', (event) => {
+    if (event.target.id === 'settings-queue-modal-overlay') closeQueueReviewModal();
+  });
+  els.queueModal.list.addEventListener('click', handleQueueModalListClick);
+
+  window.addEventListener('online', handleNetworkOnline);
+  window.addEventListener('offline', renderOfflineIndicator);
+
   loadCachedPersonnelDirectory();
   renderAll();
+
+  // Auto flush on startup (trigger 2 of AUTO FLUSH): only when already
+  // online AND the queue actually has something pending -- an empty queue
+  // or an offline startup does nothing here.
+  if (navigator.onLine && getWriteQueueSummary().pending > 0) {
+    triggerAutoFlush();
+  }
 }
 
 /* ============================================================
@@ -181,6 +236,14 @@ function buildMarkup() {
           <button type="button" class="settings-btn settings-btn-primary" id="settings-sync-btn">Sync</button>
         </div>
         <p class="settings-sync-message" id="settings-sync-message" role="status" aria-live="polite">Tekan Sync untuk memuat direktori personel.</p>
+        <p class="settings-sync-message settings-sync-message--warn" id="settings-offline-indicator" role="status" aria-live="polite" hidden></p>
+        <div class="settings-queue-status" id="settings-queue-status">
+          <div class="settings-queue-status__text">
+            <span class="settings-queue-status__label">Pending Changes</span>
+            <span class="settings-queue-status__count" id="settings-queue-count">0 pending</span>
+          </div>
+          <button type="button" class="settings-btn settings-btn-secondary settings-btn-small" id="settings-queue-review-btn" hidden>Review</button>
+        </div>
       </section>
 
       <section class="settings-personnel-grid">
@@ -227,6 +290,20 @@ function buildMarkup() {
         </div>
       </div>
     </div>
+
+    <div class="modal-overlay" id="settings-queue-modal-overlay">
+      <div class="modal-box settings-role-modal-box" role="dialog" aria-modal="true" aria-labelledby="settings-queue-modal-title">
+        <div class="settings-role-modal-header">
+          <div>
+            <h3 id="settings-queue-modal-title">Antrean Offline</h3>
+            <p class="settings-role-modal-count" id="settings-queue-modal-count">0 pending</p>
+          </div>
+          <button type="button" class="settings-btn settings-btn-ghost settings-btn-small" id="settings-queue-modal-close" aria-label="Tutup">✕</button>
+        </div>
+        <p class="settings-sync-message" id="settings-queue-modal-message" role="status" aria-live="polite"></p>
+        <ul class="settings-personnel-list" id="settings-queue-modal-list"></ul>
+      </div>
+    </div>
   `;
 }
 
@@ -248,6 +325,16 @@ function collectElements(page) {
     syncTime: page.querySelector('#settings-sync-time'),
     syncTotal: page.querySelector('#settings-sync-total'),
     syncMessage: page.querySelector('#settings-sync-message'),
+    offlineIndicator: page.querySelector('#settings-offline-indicator'),
+    queueCount: page.querySelector('#settings-queue-count'),
+    queueReviewBtn: page.querySelector('#settings-queue-review-btn'),
+    queueModal: {
+      overlay: page.querySelector('#settings-queue-modal-overlay'),
+      count: page.querySelector('#settings-queue-modal-count'),
+      closeBtn: page.querySelector('#settings-queue-modal-close'),
+      message: page.querySelector('#settings-queue-modal-message'),
+      list: page.querySelector('#settings-queue-modal-list'),
+    },
     summaryCounts: Object.fromEntries(ROLE_DEFS.map((d) => [d.role, page.querySelector(`#settings-summary-count-${d.role}`)])),
     manageBtns: [...page.querySelectorAll('.settings-summary-card [data-role]')],
     roleModal: {
@@ -285,6 +372,8 @@ function roleDef(role) {
 function renderAll() {
   renderSummaryCards();
   renderSyncMeta();
+  renderOfflineIndicator();
+  renderQueueStatus();
   // Defensive: the Sync button is unreachable while the role modal covers
   // the page, but if renderAll() is ever called while managedRole is
   // still set (e.g. a future caller), keep the open modal's own list in
@@ -293,6 +382,31 @@ function renderAll() {
     renderRoleModalHeader();
     renderRoleModalList();
   }
+  // Same defensive reasoning for the queue review modal -- if it happens
+  // to be open (e.g. a flush completed while the user was reviewing it),
+  // keep its list current rather than stale.
+  if (els.queueModal.overlay.style.display === 'flex') {
+    renderQueueModal();
+  }
+}
+
+/* ============================================================
+   OFFLINE INDICATOR + QUEUE STATUS (compact, in the Sync Status card)
+============================================================ */
+function renderOfflineIndicator() {
+  const text = buildOfflineIndicatorText(navigator.onLine);
+  if (text) {
+    els.offlineIndicator.textContent = text;
+    els.offlineIndicator.hidden = false;
+  } else {
+    els.offlineIndicator.hidden = true;
+  }
+}
+
+function renderQueueStatus() {
+  const summary = getWriteQueueSummary();
+  els.queueCount.textContent = buildQueueCountText(summary.pending, summary.blocked);
+  els.queueReviewBtn.hidden = summary.total === 0;
 }
 
 function renderSummaryCards() {
@@ -376,6 +490,148 @@ async function handleSyncClick() {
     setSyncMessage(MESSAGES.cacheFallback, 'warn');
   } else {
     setSyncMessage(MESSAGES.noCache, 'error');
+  }
+
+  // AUTO FLUSH trigger 3 (optional): a manual Sync is a natural moment to
+  // also try flushing anything queued, since the user just proved the
+  // device is online. triggerAutoFlush() itself is fully guarded (skips
+  // when offline, when nothing is pending, or when a flush is already in
+  // flight), so this is always safe to call unconditionally.
+  triggerAutoFlush();
+}
+
+/* ============================================================
+   OFFLINE PERSONNEL WRITE QUEUE -- auto flush wiring + the queue review
+   modal (Settings-facing surface for js/services/personnel-write-queue.js).
+   Owns: the 'online' event listener, startup/manual-sync auto-flush,
+   and the review modal's list/Retry/Remove actions. Never edits raw JSON,
+   never talks to the network directly -- every action here calls into
+   personnel-write-queue.js, which in turn only ever calls
+   personnel-directory-service.js's existing write functions.
+============================================================ */
+function handleNetworkOnline() {
+  renderOfflineIndicator();
+  triggerAutoFlush();
+}
+
+// Guarded, safe to call from any trigger point (startup, 'online' event,
+// after a manual Sync): does nothing while offline, while a manual
+// Add/Edit/Deactivate/Reactivate write is in flight, while a flush is
+// already running (personnel-write-queue.js's own single-flight guard
+// would no-op anyway, but checking here avoids a redundant renderAll()),
+// or when the queue has no pending items at all.
+async function triggerAutoFlush() {
+  if (!navigator.onLine || writeInFlight || isWriteQueueFlushInFlight()) return;
+  if (getWriteQueueSummary().pending === 0) return;
+
+  const result = await flushPersonnelWriteQueue();
+  renderAll();
+
+  if (result.blocked > 0) {
+    setSyncMessage(`${result.succeeded} perubahan offline terkirim, ${result.blocked} memerlukan tinjauan (lihat Pending Changes).`, 'warn');
+  } else if (result.succeeded > 0) {
+    setSyncMessage(`${result.succeeded} perubahan offline berhasil dikirim ke Personnel Directory.`, 'ok');
+  }
+  // result.stopped (a network failure mid-flush) intentionally leaves the
+  // current sync message untouched -- the offline indicator/queue count
+  // already reflect the still-pending state, no extra message needed.
+}
+
+function openQueueReviewModal() {
+  renderQueueModal();
+  lastFocusedBeforeModal = document.activeElement;
+  els.queueModal.overlay.style.display = 'flex';
+  document.addEventListener('keydown', handleQueueModalKeydown, true);
+}
+
+function closeQueueReviewModal() {
+  els.queueModal.overlay.style.display = 'none';
+  document.removeEventListener('keydown', handleQueueModalKeydown, true);
+  restoreFocusAfterModal();
+}
+
+function handleQueueModalKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeQueueReviewModal();
+  }
+}
+
+function renderQueueModal() {
+  const snapshot = getWriteQueueSnapshot();
+  const records = getPersonnelDirectorySnapshot().records;
+  els.queueModal.count.textContent = buildQueueCountText(snapshot.pendingCount, snapshot.blockedCount);
+
+  const hasVersionConflict = snapshot.items.some((item) => item.status === 'blocked' && item.lastErrorCode === 'VERSION_CONFLICT');
+  els.queueModal.message.textContent = hasVersionConflict ? QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE : '';
+  els.queueModal.message.className = `settings-sync-message${hasVersionConflict ? ' settings-sync-message--warn' : ''}`;
+
+  if (!snapshot.items.length) {
+    els.queueModal.list.replaceChildren(emptyStateNode('Tidak ada perubahan offline yang tertunda.'));
+    return;
+  }
+
+  els.queueModal.list.replaceChildren(...snapshot.items.map((item) => buildQueueRow(buildQueueItemViewModel(item, records))));
+}
+
+function buildQueueRow(vm) {
+  const li = document.createElement('li');
+  li.className = `settings-personnel-row${vm.status === 'blocked' ? ' settings-personnel-row--inactive' : ''}`;
+
+  const main = document.createElement('div');
+  main.className = 'settings-personnel-row__main';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'settings-personnel-row__name';
+  nameEl.textContent = `${vm.actionLabel} — ${vm.name}`;
+  main.appendChild(nameEl);
+
+  const badge = document.createElement('span');
+  badge.className = `settings-personnel-badge${vm.status === 'blocked' ? ' settings-personnel-badge--inactive' : ''}`;
+  badge.textContent = vm.statusText;
+  main.appendChild(badge);
+
+  const actions = document.createElement('div');
+  actions.className = 'settings-personnel-row__actions';
+
+  if (vm.canRetry) {
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'settings-btn settings-btn-secondary settings-btn-small';
+    retryBtn.textContent = 'Retry';
+    retryBtn.dataset.queueAction = 'retry';
+    retryBtn.dataset.queueId = vm.queueId;
+    actions.appendChild(retryBtn);
+  }
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'settings-btn settings-btn-danger settings-btn-small';
+  removeBtn.textContent = 'Hapus';
+  removeBtn.dataset.queueAction = 'remove';
+  removeBtn.dataset.queueId = vm.queueId;
+  actions.appendChild(removeBtn);
+
+  li.appendChild(main);
+  li.appendChild(actions);
+  return li;
+}
+
+function handleQueueModalListClick(event) {
+  const btn = event.target.closest('button[data-queue-action]');
+  if (!btn) return;
+  const { queueAction, queueId } = btn.dataset;
+
+  if (queueAction === 'remove') {
+    removeQueueItem(queueId);
+    renderQueueModal();
+    renderQueueStatus();
+  } else if (queueAction === 'retry') {
+    if (retryQueueItem(queueId)) {
+      renderQueueModal();
+      renderQueueStatus();
+      triggerAutoFlush();
+    }
   }
 }
 
@@ -740,6 +996,20 @@ async function handleAddSave(def) {
   writeInFlight = true;
   setModalBusy(true);
 
+  // OFFLINE UI BEHAVIOR / ONLINE UI BEHAVIOR: while offline, skip the
+  // network attempt entirely and enqueue directly -- the online path
+  // (write, then fall back to the queue only on a genuine transport
+  // failure) stays the preferred flow whenever the device IS online.
+  if (!navigator.onLine) {
+    enqueueAddReportPersonnel({ role_type: def.role, name, organization });
+    writeInFlight = false;
+    setModalBusy(false);
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    return;
+  }
+
   const result = await addReportPersonnel({ role_type: def.role, name, organization });
 
   writeInFlight = false;
@@ -749,6 +1019,11 @@ async function handleAddSave(def) {
     closeModal();
     renderAll();
     setManagementMessage(`${name} ditambahkan.`, 'ok');
+  } else if (isNetworkFailure(result.error)) {
+    enqueueAddReportPersonnel({ role_type: def.role, name, organization });
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -775,12 +1050,24 @@ async function handleEditSave(def) {
   writeInFlight = true;
   setModalBusy(true);
 
-  const result = await updateReportPersonnel({
+  const updatePayload = {
     id: currentModalRecord.id,
     name,
     organization,
     expected_version: currentModalRecord.version,
-  });
+  };
+
+  if (!navigator.onLine) {
+    enqueueUpdateReportPersonnel(updatePayload);
+    writeInFlight = false;
+    setModalBusy(false);
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    return;
+  }
+
+  const result = await updateReportPersonnel(updatePayload);
 
   writeInFlight = false;
   setModalBusy(false);
@@ -789,6 +1076,11 @@ async function handleEditSave(def) {
     closeModal();
     renderAll();
     setManagementMessage(`${name} diperbarui.`, 'ok');
+  } else if (isNetworkFailure(result.error)) {
+    enqueueUpdateReportPersonnel(updatePayload);
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -801,20 +1093,37 @@ async function handleDeactivateConfirm() {
   writeInFlight = true;
   setModalBusy(true);
 
-  const result = await setReportPersonnelActive({
+  const activePayload = {
     id: currentModalRecord.id,
     active: false,
     expected_version: currentModalRecord.version,
-  });
+  };
+  const name = currentModalRecord.name;
+
+  if (!navigator.onLine) {
+    enqueueSetReportPersonnelActive(activePayload);
+    writeInFlight = false;
+    setModalBusy(false);
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    return;
+  }
+
+  const result = await setReportPersonnelActive(activePayload);
 
   writeInFlight = false;
   setModalBusy(false);
 
   if (result.ok) {
-    const name = currentModalRecord.name;
     closeModal();
     renderAll();
     setManagementMessage(`${name} dinonaktifkan.`, 'ok');
+  } else if (isNetworkFailure(result.error)) {
+    enqueueSetReportPersonnelActive(activePayload);
+    closeModal();
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -830,15 +1139,29 @@ async function handleReactivate(record) {
   if (writeInFlight || syncInFlight) return;
 
   writeInFlight = true;
+
+  const activePayload = { id: record.id, active: true, expected_version: record.version };
+
+  if (!navigator.onLine) {
+    enqueueSetReportPersonnelActive(activePayload);
+    writeInFlight = false;
+    renderAll();
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    return;
+  }
+
   setManagementMessage(`Mengaktifkan kembali ${record.name}...`, 'info');
 
-  const result = await setReportPersonnelActive({ id: record.id, active: true, expected_version: record.version });
+  const result = await setReportPersonnelActive(activePayload);
 
   writeInFlight = false;
   renderAll();
 
   if (result.ok) {
     setManagementMessage(`${record.name} diaktifkan kembali.`, 'ok');
+  } else if (isNetworkFailure(result.error)) {
+    enqueueSetReportPersonnelActive(activePayload);
+    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
   } else {
     setManagementMessage(describeWriteError(result.error), 'error');
   }

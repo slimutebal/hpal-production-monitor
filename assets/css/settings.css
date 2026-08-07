@@ -206,6 +206,42 @@
   color: var(--accent, #38bdf8);
 }
 
+/* Offline write queue (V2.3 Phase 5) -- compact "Pending Changes" row in
+   the Sync Status card, plus the offline indicator paragraph above it
+   (reuses .settings-sync-message/--warn for the indicator, no new color
+   token). The queue REVIEW modal reuses #settings-role-modal-overlay's
+   .settings-role-modal-box/.settings-personnel-row styling as-is (see
+   settings-page.js's buildMarkup()) rather than a third modal skin. */
+#page-settings .settings-queue-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+#page-settings .settings-queue-status__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+#page-settings .settings-queue-status__label {
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+#page-settings .settings-queue-status__count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text, inherit);
+}
+#page-settings .settings-queue-status #settings-queue-review-btn {
+  flex: 0 0 auto;
+}
+
 /* Role summary cards (UI refinement -- summary-first main view). Each
    card shows only the role title, active/inactive counts, and a "Kelola"
    button -- the full personnel list only ever renders inside the role

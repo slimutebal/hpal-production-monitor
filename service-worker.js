@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-compact-personnel-ui';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-personnel-offline-queue';
 const APP_SHELL = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const APP_SHELL = [
   './js/services/contractor-directory-core.js',
   './js/services/contractor-directory-service.js',
   './js/services/personnel-directory-service.js',
+  './js/services/personnel-write-queue.js',
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',
