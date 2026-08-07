@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-period-accumulation';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-compact-personnel-ui';
 const APP_SHELL = [
   './',
   './index.html',
@@ -30,6 +30,7 @@ const APP_SHELL = [
   './js/pages/report/profiles/adapters/esg-format-a-adapter.js',
   './js/pages/report/profiles/adapters/esg-format-b-adapter.js',
   './js/pages/settings/settings-page.js',
+  './js/pages/settings/settings-personnel.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',

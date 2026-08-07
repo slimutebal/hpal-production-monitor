@@ -1,10 +1,13 @@
-/* Settings -- every selector is scoped under #page-settings so this file
-   can never leak into Monitor or Report. Reuses the app's own CSS custom
-   properties (var(--text), var(--accent), var(--glass-border), ...) and
-   the .hync-card visual language from report-hync.css rather than
-   inventing a second styling system (V2.3 Phase 2-3, read-only Personnel
-   Directory -- see docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md
-   section 20). */
+/* Settings -- every selector is scoped under #page-settings (and, for the
+   overlay-based edit/confirm dialog, #settings-modal-overlay, which is
+   appended as a page-level sibling so it can cover the full viewport --
+   see settings-page.js's buildMarkup()) so this file can never leak into
+   Monitor or Report. Reuses the app's own CSS custom properties
+   (var(--text), var(--accent), var(--glass-border), ...) and the
+   .hync-card/.hync-input visual language from report-hync.css rather than
+   inventing a second styling system (V2.3 Phase 4, online Personnel
+   Directory management -- see
+   docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md section 20). */
 
 #page-settings .settings-shell {
   max-width: 640px;
@@ -122,6 +125,65 @@
   outline-offset: 2px;
 }
 
+#page-settings .settings-btn-secondary {
+  background: var(--glass-strong, rgba(255, 255, 255, 0.08));
+  color: var(--text, inherit);
+  box-shadow: none;
+}
+
+#page-settings .settings-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+}
+
+#page-settings .settings-btn-danger {
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: var(--bad, #f87171);
+}
+
+#page-settings .settings-btn-small {
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  min-height: 34px;
+  flex: 0 0 auto;
+}
+
+/* Aktif / Nonaktif / Semua status filter */
+#page-settings .settings-filter {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+#page-settings .settings-filter-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted, #8fa3bd);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#page-settings .settings-filter-btn.is-active {
+  background: var(--accent-chip, var(--accent, #38bdf8));
+  color: var(--btn-text, #07121f);
+}
+
+#page-settings .settings-filter-btn:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+}
+
 /* Status message -- never relies on color alone: the text itself always
    states the outcome ("synchronized" / "failed" / "could not be loaded"),
    color is a secondary reinforcement only. */
@@ -144,17 +206,29 @@
   color: var(--accent, #38bdf8);
 }
 
-/* Personnel cards */
+/* Role summary cards (UI refinement -- summary-first main view). Each
+   card shows only the role title, active/inactive counts, and a "Kelola"
+   button -- the full personnel list only ever renders inside the role
+   management modal (below), never on the main page, so the page stays
+   short on mobile regardless of how many personnel exist. */
 #page-settings .settings-personnel-grid {
   display: grid;
   gap: 14px;
 }
 
-#page-settings .settings-card-count {
-  font-size: 0.75rem;
+#page-settings .settings-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#page-settings .settings-summary-count {
+  font-size: 0.8rem;
   color: var(--muted, #8fa3bd);
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-weight: 600;
+}
+#page-settings .settings-summary-card .settings-btn {
+  align-self: flex-start;
 }
 
 #page-settings .settings-personnel-list {
@@ -163,16 +237,6 @@
   padding: 0;
   display: grid;
   gap: 6px;
-}
-
-#page-settings .settings-personnel-row {
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
-  font-size: 0.85rem;
-  color: var(--text, inherit);
-  overflow-wrap: anywhere;
 }
 
 #page-settings .settings-personnel-group-header {
@@ -195,16 +259,225 @@
   text-align: center;
 }
 
-#page-settings .settings-card-note {
-  font-size: 0.7rem;
-  color: var(--muted, #8fa3bd);
-  margin: 0;
-  line-height: 1.5;
-  font-style: italic;
+/* Shared text/select input, matching #page-report .hync-input */
+#page-settings .settings-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 42px;
+}
+#page-settings .settings-input:focus {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+#page-settings .settings-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#page-settings .settings-personnel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  font-size: 0.85rem;
+  color: var(--text, inherit);
+}
+#page-settings .settings-personnel-row--inactive {
+  opacity: 0.68;
+}
+
+#page-settings .settings-personnel-row__main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+#page-settings .settings-personnel-row__name {
+  font-size: 0.85rem;
+  color: var(--text, inherit);
+}
+
+#page-settings .settings-personnel-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 9px;
+  flex: 0 0 auto;
+}
+#page-settings .settings-personnel-badge--inactive {
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: var(--bad, #f87171);
+}
+
+#page-settings .settings-personnel-row__actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 
 @media (min-width: 640px) {
   #page-settings .settings-personnel-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================================
+   ROLE MANAGEMENT MODAL (UI refinement) -- opened by a summary card's
+   "Kelola" button. Reuses .modal-overlay/.modal-box (index.html) for
+   backdrop positioning/background/safe-area padding, but overrides the
+   box into a flex column so only the personnel list scrolls internally
+   while the header/Add button/search/filter stay visible -- a much
+   taller, list-heavy dialog than the simple Edit/Deactivate box below.
+============================================================ */
+#settings-role-modal-overlay .modal-box {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88vh, 720px);
+}
+
+#page-settings .settings-role-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+#page-settings .settings-role-modal-header h3 {
+  margin: 0 0 4px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text, inherit);
+}
+#page-settings .settings-role-modal-count {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+  font-weight: 600;
+}
+#page-settings #settings-role-modal-close {
+  flex-shrink: 0;
+  padding: 8px 10px;
+  min-height: 36px;
+}
+
+#settings-role-modal-overlay .settings-btn-row,
+#settings-role-modal-overlay #settings-role-modal-search,
+#settings-role-modal-overlay .settings-filter,
+#settings-role-modal-overlay #settings-role-modal-message {
+  flex-shrink: 0;
+}
+#page-settings #settings-role-modal-search {
+  margin-bottom: 10px;
+}
+
+/* Only the list scrolls -- header/Add/search/filter/message all stay in
+   place, per the modal-design requirement that header/footer remain
+   visible for a long, searchable list. */
+#settings-role-modal-overlay #settings-role-modal-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 0;
+  padding-right: 2px;
+}
+
+/* ============================================================
+   EDIT / DEACTIVATE-CONFIRM MODAL
+   Reuses the app's existing .modal-overlay/.modal-box (index.html,
+   originally built for the contractor-assignment modal) for positioning,
+   background, blur, and safe-area padding, rather than a second modal
+   shell -- only the settings-specific inner content below is new.
+============================================================ */
+#settings-modal-overlay h3 {
+  margin: 0 0 14px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text, inherit);
+}
+
+#settings-modal-overlay .settings-form-readonly {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  border-radius: 12px;
+}
+#settings-modal-overlay .settings-form-readonly > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+#settings-modal-overlay .settings-form-readonly > div > span:first-child {
+  color: var(--muted, #8fa3bd);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+}
+#settings-modal-overlay .settings-form-readonly code {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text, inherit);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+#settings-modal-overlay .settings-form-group {
+  margin-bottom: 12px;
+}
+#settings-modal-overlay .settings-form-group label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#settings-modal-overlay .settings-modal-message {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  min-height: 1.1em;
+  margin: 0 0 10px;
+  color: var(--muted, #8fa3bd);
+}
+#settings-modal-overlay .settings-modal-message--error {
+  color: var(--bad, #f87171);
+}
+
+#settings-modal-overlay .settings-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+#settings-modal-overlay .settings-modal-actions .settings-btn {
+  flex: 0 0 auto;
+  min-width: 96px;
+}
+
+@media (max-width: 479px) {
+  #settings-modal-overlay .settings-modal-actions .settings-btn {
+    flex: 1 1 auto;
   }
 }

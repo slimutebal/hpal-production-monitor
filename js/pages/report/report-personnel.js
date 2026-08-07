@@ -290,3 +290,66 @@ export function buildPersonnelOutputLines(records, personnel, buyer) {
     formatOutputLine(`Total Manpower ${samplerOrg}`.trim(), total, orgWidths.totalManpower),
   ];
 }
+
+/* ============================================================
+   COMPACT MULTI-SELECT SELECTOR (UI refinement -- SPV SCM / FRM SCM).
+   Pure, DOM-free: report-page.js's modal wiring calls these to format the
+   compact field summary and manage a "temporary selection" draft that
+   only ever reaches reportState if/when the user presses OK. Independent
+   Sampler and PIC 3rd are unaffected -- they keep their existing small
+   radio-list UI, never routed through any of this.
+============================================================ */
+
+// Compact-field summary text for a SPV/FRM multi-select, given the
+// selected records' display names in the same deterministic order the
+// modal list itself renders (sortRecords). 0 -> a neutral placeholder;
+// 1 -> the single name; 2 -> both names (the field's own CSS truncates
+// with an ellipsis if they don't fit -- this function never measures
+// pixel width); 3+ -> a compact count, which can never overflow.
+export function buildPersonnelSelectionSummary(names) {
+  if (!names || names.length === 0) return 'Belum dipilih';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return names.join(', ');
+  return `${names.length} dipilih`;
+}
+
+// Case-insensitive, trimmed substring match against name only (Report's
+// SPV/FRM modal search is deliberately name-focused -- organization is
+// always the fixed 'SCM' constant for these two roles, so matching it
+// would never usefully discriminate results). A blank/whitespace-only
+// query returns every record unfiltered. Never touches active/selected
+// state -- purely a display-visibility filter over the records array.
+export function filterPersonnelByNameSearch(records, query) {
+  const key = normalizeCompareKey(query);
+  if (!key) return (records || []).slice();
+  return (records || []).filter((r) => normalizeCompareKey(r.name).includes(key));
+}
+
+// Starts a multi-select "draft" from the ids currently stored in
+// reportState -- a plain Set copy, never a reference to the original
+// array, so mutating the draft can never affect reportState until
+// commitMultiSelectDraft() is explicitly called with it.
+export function createMultiSelectDraft(currentIds) {
+  return { selectedIds: new Set(currentIds || []) };
+}
+
+// Returns a NEW draft with `id` present (checked) or absent (unchecked)
+// -- never mutates the draft passed in, so a caller (or test) can compare
+// before/after directly. Set-backed, so toggling the same id "checked"
+// twice can never produce a duplicate.
+export function toggleMultiSelectDraft(draft, id, checked) {
+  const next = new Set(draft.selectedIds);
+  if (checked) next.add(id);
+  else next.delete(id);
+  return { selectedIds: next };
+}
+
+// The ONLY function that turns a draft into a plain id array suitable for
+// reportState.personnel.spvScmIds/frmScmIds -- called exclusively from
+// the modal's OK handler. A draft that is discarded (Cancel, Escape,
+// backdrop click) is simply never passed here, so reportState is
+// mathematically guaranteed to stay untouched by anything that happened
+// inside the modal unless OK was pressed.
+export function commitMultiSelectDraft(draft) {
+  return Array.from(draft.selectedIds);
+}

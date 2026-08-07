@@ -27,6 +27,11 @@ import {
   validatePersonnelSelections,
   buildPersonnelOutputLines,
   sortRecords,
+  buildPersonnelSelectionSummary,
+  filterPersonnelByNameSearch,
+  createMultiSelectDraft,
+  toggleMultiSelectDraft,
+  commitMultiSelectDraft,
 } from '../js/pages/report/report-personnel.js';
 import { reportState, resetReportState } from '../js/pages/report/report-state.js';
 
@@ -644,5 +649,139 @@ describe('Deterministic sorting', () => {
     ];
     const sorted = sortRecords(records);
     assert.deepEqual(sorted.map((r) => r.id), ['a-id', 'z-id']);
+  });
+});
+
+/* ============================================================
+   COMPACT MULTI-SELECT SELECTOR (UI refinement -- SPV SCM / FRM SCM
+   compact field + modal). Task test list items 1-4, 5-10, 11-12.
+============================================================ */
+describe('buildPersonnelSelectionSummary() -- compact field display rule', () => {
+  test('1. 0 selected -> "Belum dipilih"', () => {
+    assert.equal(buildPersonnelSelectionSummary([]), 'Belum dipilih');
+  });
+
+  test('1b. null/undefined names also produce the neutral placeholder', () => {
+    assert.equal(buildPersonnelSelectionSummary(null), 'Belum dipilih');
+    assert.equal(buildPersonnelSelectionSummary(undefined), 'Belum dipilih');
+  });
+
+  test('2. 1 selected -> the person\'s name', () => {
+    assert.equal(buildPersonnelSelectionSummary(['Illofi']), 'Illofi');
+  });
+
+  test('3. 2 selected -> both names, comma-separated', () => {
+    assert.equal(buildPersonnelSelectionSummary(['Hensi', 'Illofi']), 'Hensi, Illofi');
+  });
+
+  test('4. 3+ selected -> "<N> dipilih"', () => {
+    assert.equal(buildPersonnelSelectionSummary(['A', 'B', 'C']), '3 dipilih');
+    assert.equal(buildPersonnelSelectionSummary(['A', 'B', 'C', 'D', 'E']), '5 dipilih');
+  });
+});
+
+describe('filterPersonnelByNameSearch() -- modal search rule', () => {
+  const records = [
+    makeRecord({ id: 'frm-1', role_type: 'FRM_SCM', name: 'Adi Guna' }),
+    makeRecord({ id: 'frm-2', role_type: 'FRM_SCM', name: 'Akmal' }),
+    makeRecord({ id: 'frm-3', role_type: 'FRM_SCM', name: 'Novelesto' }),
+  ];
+
+  test('11. case-insensitive, trimmed, matches by name substring', () => {
+    assert.deepEqual(filterPersonnelByNameSearch(records, '  NOV  ').map((r) => r.id), ['frm-3']);
+    assert.deepEqual(filterPersonnelByNameSearch(records, 'ak').map((r) => r.id), ['frm-2']);
+  });
+
+  test('blank/whitespace-only query returns every record unfiltered', () => {
+    assert.equal(filterPersonnelByNameSearch(records, '').length, 3);
+    assert.equal(filterPersonnelByNameSearch(records, '   ').length, 3);
+  });
+
+  test('no match returns an empty array, never throws', () => {
+    assert.deepEqual(filterPersonnelByNameSearch(records, 'zzz-nomatch'), []);
+  });
+
+  test('12. search never touches selection state -- it only filters the records array', () => {
+    const draft = createMultiSelectDraft(['frm-1', 'frm-2']);
+    filterPersonnelByNameSearch(records, 'nov'); // filters frm-1/frm-2 out of the visible list
+    // The draft (independent of the filtered view) still reports both as selected.
+    assert.equal(draft.selectedIds.has('frm-1'), true);
+    assert.equal(draft.selectedIds.has('frm-2'), true);
+  });
+});
+
+describe('Multi-select draft (temporary selection) -- open/toggle/commit never touch reportState directly', () => {
+  test('5. modal opens with current ids preselected', () => {
+    const draft = createMultiSelectDraft(['spv-illofi', 'spv-yoshita']);
+    assert.equal(draft.selectedIds.has('spv-illofi'), true);
+    assert.equal(draft.selectedIds.has('spv-yoshita'), true);
+    assert.equal(draft.selectedIds.size, 2);
+  });
+
+  test('opening with no current ids starts an empty draft, not a crash', () => {
+    const draft = createMultiSelectDraft([]);
+    assert.equal(draft.selectedIds.size, 0);
+    const draftFromNull = createMultiSelectDraft(null);
+    assert.equal(draftFromNull.selectedIds.size, 0);
+  });
+
+  test('6. checking/unchecking changes only the (temporary) draft, never the original ids array', () => {
+    const originalIds = ['spv-illofi'];
+    const draft = createMultiSelectDraft(originalIds);
+    const afterToggle = toggleMultiSelectDraft(draft, 'spv-yoshita', true);
+
+    assert.deepEqual(originalIds, ['spv-illofi']); // untouched
+    assert.equal(draft.selectedIds.has('spv-yoshita'), false); // the OLD draft object is untouched too (pure function)
+    assert.equal(afterToggle.selectedIds.has('spv-yoshita'), true); // only the NEW draft reflects the toggle
+  });
+
+  test('unchecking removes an id from the draft', () => {
+    const draft = createMultiSelectDraft(['spv-illofi', 'spv-yoshita']);
+    const afterUncheck = toggleMultiSelectDraft(draft, 'spv-yoshita', false);
+    assert.deepEqual(commitMultiSelectDraft(afterUncheck).sort(), ['spv-illofi']);
+  });
+
+  test('7 & 8. Cancel/Escape leave reportState unchanged -- a discarded draft is simply never committed', () => {
+    resetReportState();
+    reportState.personnel.spvScmIds = ['spv-illofi'];
+    const before = reportState.personnel.spvScmIds;
+
+    const draft = createMultiSelectDraft(before);
+    const afterToggle = toggleMultiSelectDraft(draft, 'spv-yoshita', true);
+    void afterToggle; // simulates checking a box inside the modal, then pressing Cancel/Escape: `afterToggle` is simply discarded, never passed to commitMultiSelectDraft()/never assigned back into reportState
+
+    assert.equal(reportState.personnel.spvScmIds, before); // same array reference -- nothing wrote to it
+    assert.deepEqual(reportState.personnel.spvScmIds, ['spv-illofi']);
+  });
+
+  test('9. OK commits the temporary ids into a plain array suitable for reportState', () => {
+    const draft = createMultiSelectDraft(['spv-illofi']);
+    const afterToggle = toggleMultiSelectDraft(draft, 'spv-yoshita', true);
+    const committed = commitMultiSelectDraft(afterToggle);
+
+    assert.deepEqual(committed.sort(), ['spv-illofi', 'spv-yoshita']);
+
+    resetReportState();
+    reportState.personnel.spvScmIds = committed;
+    assert.deepEqual(reportState.personnel.spvScmIds.sort(), ['spv-illofi', 'spv-yoshita']);
+  });
+
+  test('10. duplicate ids cannot occur -- toggling the same id "checked" twice is a no-op the second time', () => {
+    const draft = createMultiSelectDraft([]);
+    const afterFirst = toggleMultiSelectDraft(draft, 'spv-illofi', true);
+    const afterSecond = toggleMultiSelectDraft(afterFirst, 'spv-illofi', true);
+    assert.deepEqual(commitMultiSelectDraft(afterSecond), ['spv-illofi']);
+  });
+});
+
+describe('14. Reset clears SPV/FRM selections (report-state.js)', () => {
+  test('resetReportState() clears personnel.spvScmIds/frmScmIds back to empty arrays', () => {
+    reportState.personnel.spvScmIds = ['spv-illofi', 'spv-yoshita'];
+    reportState.personnel.frmScmIds = ['frm-adi-guna'];
+
+    resetReportState();
+
+    assert.deepEqual(reportState.personnel.spvScmIds, []);
+    assert.deepEqual(reportState.personnel.frmScmIds, []);
   });
 });

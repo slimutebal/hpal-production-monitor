@@ -285,6 +285,147 @@
   margin: 0;
 }
 
+/* Compact SPV SCM / FRM SCM selector fields (UI refinement) -- a
+   button-like field (never free-text) that opens the shared multi-select
+   modal below. Independent Sampler / PIC 3rd keep the plain
+   .hync-personnel-list radio rendering above, unchanged -- their lists
+   are small enough that the always-expanded style stays acceptable. */
+#page-report .hync-personnel-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 44px;
+  cursor: pointer;
+  text-align: left;
+}
+#page-report .hync-personnel-trigger:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+#page-report .hync-personnel-trigger--empty .hync-personnel-trigger-text {
+  color: var(--muted, #8fa3bd);
+}
+/* Never lets a long name (or "Name1, Name2") list overflow the field --
+   the compact field always shows one line, truncated with an ellipsis;
+   3+ selections already collapse to a short "<N> dipilih" count that
+   never needs truncation in practice. */
+#page-report .hync-personnel-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+#page-report .hync-personnel-trigger-arrow {
+  flex-shrink: 0;
+  color: var(--muted, #8fa3bd);
+  font-size: 0.75rem;
+}
+#page-report .hync-personnel-stale-hint {
+  font-size: 0.72rem;
+  color: var(--bad, #f87171);
+  margin: 6px 0 0;
+}
+
+/* Shared SPV SCM / FRM SCM multi-select modal. Reuses
+   .hync-modal-overlay's backdrop (defined below) but needs its own box
+   shape -- header + search + scrollable checkbox list + sticky footer --
+   rather than .hync-modal-box's simple title+paragraphs+single-button
+   shape built for the buyer-mismatch popup. */
+#page-report .hync-personnel-modal-box {
+  background: var(--bg-base, #0a0e1a);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  padding: 16px;
+  max-width: 440px;
+  width: 100%;
+  max-height: min(85vh, 640px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+#page-report .hync-personnel-modal-box h3 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text, inherit);
+  flex-shrink: 0;
+}
+#page-report .hync-personnel-modal-search {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+#page-report .hync-personnel-modal-search input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 42px;
+}
+#page-report .hync-personnel-modal-search input:focus {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+/* Only this list scrolls -- header/search/footer stay put, per the
+   modal-design requirement that header/footer remain visible where
+   practical for a long, searchable list. */
+#page-report .hync-personnel-modal-list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+  padding-right: 2px;
+  margin-bottom: 12px;
+}
+#page-report .hync-personnel-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+#page-report .hync-personnel-modal-count {
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+  font-weight: 600;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+#page-report .hync-personnel-modal-footer .hync-btn-row {
+  margin: 0;
+  flex-shrink: 0;
+}
+@media (max-width: 380px) {
+  /* Very narrow phones (<= 360-380px): stack the count above Cancel/OK
+     instead of squeezing all three onto one row. */
+  #page-report .hync-personnel-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #page-report .hync-personnel-modal-footer .hync-btn-row {
+    width: 100%;
+  }
+}
+
 /* Auto-grow target (see js/pages/report/report-page.js autoGrowTextarea).
    JS sets an explicit inline height on input/paste/reset; resize is
    disabled and the internal scrollbar removed so they don't fight the

@@ -1,19 +1,38 @@
-// Personnel Directory read-sync service (V2.3 Phase 2-3).
+// Personnel Directory read/write-sync service (V2.3 Phase 4).
 //
 // Mirrors contractor-assignment.js's proven Google Apps Script read
 // pattern (plain GET, cache: 'no-store', redirect: 'follow', no custom
 // headers, no mode: 'no-cors') for a second, independent data set: the
 // report_personnel roster (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd).
 // This module never touches contractor-assignment.js or Monitor's
-// contractor state, and it never writes back to the Google Sheet -- V2.3
-// Phase 2-3 is read-only by design (see
-// docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md section 17).
+// contractor state.
+//
+// Online writes (add/edit/deactivate/reactivate) were added in Phase 4 --
+// see docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md sections
+// 16-18. There is deliberately no offline write queue yet (Phase 5,
+// explicitly deferred): every write function below requires connectivity
+// and fails cleanly (never silently queues) when it is not available.
 //
 // Trust boundary: remote/cached data is only ever exposed through the
 // module-scoped `snapshot` once it has passed validatePersonnelResponsePayload()
 // (remote) or the equivalent cache checks (local). A failed validation never
 // touches `snapshot`, so a bad remote response or a corrupted cache can
-// never overwrite a previously good in-memory snapshot.
+// never overwrite a previously good in-memory snapshot. A write's own HTTP
+// response is never treated as authoritative for the cache either -- every
+// successful write is followed by a fresh syncPersonnelDirectory() read
+// (Section 18.1's "re-fetch after write" rule), never a manual cache
+// mutation.
+//
+// CRITICAL INVARIANT (added after a live false-success incident: the POST
+// for addReportPersonnel returned ok:true and the subsequent GET also
+// returned ok:true, so the UI reported success and rendered the new
+// record -- but the row never existed in the actual Google Sheet). A
+// write is reported as successful ONLY when the specific mutation is
+// independently confirmed present in the resynced authoritative records
+// (matched by id, with the fields/version the write claims) -- a
+// non-erroring POST plus a non-erroring GET is NOT sufficient on its own.
+// See verifyRecordAdded/verifyRecordUpdated/verifyRecordActiveState below
+// and their use inside writeAndResync().
 
 const PERSONNEL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbz-MHU0nRMFMVJbS0h_oMPKsmcCCHTlGARD8e7GlmUogVPOqGfVQQOcuajPfgHXL2xqzQ/exec';
 const CACHE_KEY = 'hpal.personnel.v1';
@@ -21,6 +40,14 @@ const CACHE_VERSION = 1;
 const API_VERSION = '1.0.0';
 const SCHEMA_VERSION = 1;
 const FETCH_TIMEOUT_MS = 15000;
+
+// Audit-source label only -- there are no user accounts anywhere in this
+// application (V2.3 architecture doc section 6/29). Every write from this
+// web app is attributed to this single fixed constant so a row's
+// `updated_by` column at least distinguishes "written by the web app"
+// from a manual spreadsheet edit; it must never be presented as an
+// authenticated identity.
+const AUDIT_SOURCE = 'OWNER_WEB_APP';
 
 export const ROLE_TYPES = ['SPV_SCM', 'FRM_SCM', 'SAMPLER', 'PIC_3RD'];
 const SCM_ONLY_ROLES = new Set(['SPV_SCM', 'FRM_SCM']);
@@ -87,17 +114,23 @@ function validateRecordShape(record) {
   return true;
 }
 
-// Accepts only a fully-trusted, active-only record set: every record valid,
-// every id unique, every record active. Used identically for a remote
-// payload's `records` and for a loaded local cache's `records`, so both
-// paths enforce the exact same trust bar.
+// Accepts a fully-trusted record set: every record valid, every id unique.
+// Used identically for a remote payload's `records` and for a loaded local
+// cache's `records`, so both paths enforce the exact same trust bar.
+//
+// Both active and inactive records are accepted here (Phase 4 -- Settings
+// must be able to display deactivated personnel, per the architecture
+// doc's "Active / Inactive Display" requirement). This does NOT weaken
+// Report's own guarantee of consuming active records only: every
+// Report-facing read (getActivePersonnelByRole, getActivePicThirdByOrganization
+// below) independently filters on `active === true` regardless of what
+// the cache itself contains.
 export function validatePersonnelRecords(records) {
   if (!Array.isArray(records)) return { ok: false, error: 'records is not an array' };
 
   const seenIds = new Set();
   for (const record of records) {
     if (!validateRecordShape(record)) return { ok: false, error: 'invalid record shape' };
-    if (record.active !== true) return { ok: false, error: 'inactive record in an active-only set' };
     if (seenIds.has(record.id)) return { ok: false, error: 'duplicate record id' };
     seenIds.add(record.id);
   }
@@ -244,6 +277,14 @@ async function performSync(fetchImpl) {
 
     const url = new URL(PERSONNEL_ENDPOINT);
     url.searchParams.set('action', 'listReportPersonnel');
+    // Always requests the full roster (active + inactive) -- Settings
+    // (Phase 4) must be able to display deactivated personnel behind an
+    // Aktif/Nonaktif/Semua filter, and there is exactly one shared cache
+    // (hpal.personnel.v1), not a separate active-only vs. full fetch.
+    // Report's own accessors still filter to active-only independently
+    // (see getActivePersonnelByRole below), so this never leaks inactive
+    // records into Report's selectors.
+    url.searchParams.set('includeInactive', 'true');
     url.searchParams.set('t', String(Date.now()));
 
     const controller = new AbortController();
@@ -345,4 +386,252 @@ export function getActivePicThirdByOrganization(organization) {
   return snapshot.records
     .filter((record) => record.role_type === 'PIC_3RD' && record.active === true && normalizeCompareKey(record.organization) === key)
     .sort(compareRecords);
+}
+
+// Settings-facing accessor (Phase 4): unlike getActivePersonnelByRole,
+// this can also surface inactive records so the four Settings cards can
+// render an Aktif/Nonaktif/Semua filter. `status` is 'active' | 'inactive'
+// | 'all' (default 'active', matching the architecture doc's required
+// default). Report never calls this -- it only ever calls
+// getActivePersonnelByRole/getActivePicThirdByOrganization above.
+export function getPersonnelByRole(roleType, status = 'active') {
+  return snapshot.records
+    .filter((record) => {
+      if (record.role_type !== roleType) return false;
+      if (status === 'active') return record.active === true;
+      if (status === 'inactive') return record.active === false;
+      return true;
+    })
+    .sort(compareRecords);
+}
+
+/* ============================================================
+   WRITE (Phase 4 -- online add/edit/deactivate/reactivate)
+
+   No offline queue: every function below requires connectivity and
+   returns a structured failure (never queues, never retries blindly) when
+   the network is unavailable or the request fails. Every successful write
+   is followed by a fresh syncPersonnelDirectory() read -- a write's own
+   response is never used to mutate `snapshot` directly (see file header).
+============================================================ */
+
+function isBoolean(value) {
+  return typeof value === 'boolean';
+}
+
+// Posts one write action using the same text/plain;charset=utf-8 body
+// trick contractor-assignment.js's appendListDt action already uses, so
+// the browser never issues a CORS preflight against this endpoint (the
+// architecture doc requires this transport explicitly). Returns a
+// structured { ok, error } result -- never throws, never exposes a raw
+// network/parse error message to the caller. On success, also returns the
+// server's claimed `record` -- this is an ACKNOWLEDGMENT only, never
+// treated as authoritative by itself (see writeAndResync()).
+async function performWrite(fetchImpl, body) {
+  if (typeof fetchImpl !== 'function') {
+    return { ok: false, error: { code: 'NETWORK_UNAVAILABLE', message: 'Network request is not available in this environment.' } };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetchImpl(PERSONNEL_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+  } catch (_) {
+    return { ok: false, error: { code: 'NETWORK_ERROR', message: 'Network request failed.' } };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response || !response.ok) {
+    return { ok: false, error: { code: 'SERVER_ERROR', message: 'Server responded with an error.' } };
+  }
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (_) {
+    return { ok: false, error: { code: 'INVALID_RESPONSE', message: 'Server response was not valid JSON.' } };
+  }
+
+  if (!isPlainObject(payload) || payload.ok !== true) {
+    const serverError = isPlainObject(payload) && isPlainObject(payload.error) ? payload.error : {};
+    return {
+      ok: false,
+      error: {
+        code: isNonEmptyString(serverError.code) ? serverError.code : 'UNKNOWN_ERROR',
+        message: isNonEmptyString(serverError.message) ? serverError.message : 'Write request failed.',
+        currentVersion: isPositiveInteger(serverError.currentVersion) ? serverError.currentVersion : undefined,
+      },
+    };
+  }
+
+  // payload.ok === true is not enough by itself -- a response claiming
+  // success must still name the record it claims to have written, with at
+  // least an id and a version, or there is nothing to verify against the
+  // resync below and the claim is worthless.
+  if (!isPlainObject(payload.record) || !isNonEmptyString(payload.record.id) || !isPositiveInteger(payload.record.version)) {
+    return { ok: false, error: { code: 'INVALID_RESPONSE', message: 'Server response did not include a valid written record.' } };
+  }
+
+  return { ok: true, record: payload.record };
+}
+
+const WRITE_NOT_VISIBLE_MESSAGE = 'Server menerima permintaan, tetapi perubahan belum dapat diverifikasi dari Personnel Directory. Sinkronkan ulang dan periksa Google Sheet.';
+
+// Confirms an addReportPersonnel write is actually observable: the id the
+// server claims to have created must exist in the authoritative resync,
+// active, and matching every field the server itself returned (not merely
+// present under any shape).
+function verifyRecordAdded(resyncedRecords, writtenRecord) {
+  const match = resyncedRecords.find((r) => r.id === writtenRecord.id);
+  if (!match) return false;
+  if (match.active !== true) return false;
+  if (match.version !== writtenRecord.version) return false;
+  if (match.role_type !== writtenRecord.role_type) return false;
+  if (normalizeCompareKey(match.name) !== normalizeCompareKey(writtenRecord.name)) return false;
+  if (normalizeCompareKey(match.organization) !== normalizeCompareKey(writtenRecord.organization)) return false;
+  return true;
+}
+
+// Confirms an updateReportPersonnel write is actually observable: same id,
+// the exact new version the server claims, and the name/organization the
+// server says it wrote.
+function verifyRecordUpdated(resyncedRecords, writtenRecord) {
+  const match = resyncedRecords.find((r) => r.id === writtenRecord.id);
+  if (!match) return false;
+  if (match.version !== writtenRecord.version) return false;
+  if (normalizeCompareKey(match.name) !== normalizeCompareKey(writtenRecord.name)) return false;
+  if (normalizeCompareKey(match.organization) !== normalizeCompareKey(writtenRecord.organization)) return false;
+  return true;
+}
+
+// Confirms a setReportPersonnelActive write is actually observable: same
+// id, the exact new version, and the exact active state the server claims
+// to have set (covers both deactivate and reactivate).
+function verifyRecordActiveState(resyncedRecords, writtenRecord) {
+  const match = resyncedRecords.find((r) => r.id === writtenRecord.id);
+  if (!match) return false;
+  if (match.version !== writtenRecord.version) return false;
+  if (match.active !== writtenRecord.active) return false;
+  return true;
+}
+
+// Shared write-then-verify-then-resync flow. A POST that merely returns
+// ok:true is an ACKNOWLEDGMENT, not proof -- this only reports success once
+// `verifyMutation` confirms the exact written record is independently
+// observable in a fresh, fully-validated GET of the authoritative
+// Personnel Directory. If the write itself fails, no sync is attempted and
+// the existing snapshot is left untouched. If the write is acknowledged but
+// the resync does not confirm it, the resync's real (unmodified) result is
+// still what `snapshot` reflects afterward -- this function never pushes,
+// splices, or otherwise fabricates a record into the cache to make a claim
+// "look" successful.
+async function writeAndResync(fetchImpl, body, verifyMutation) {
+  const writeResult = await performWrite(fetchImpl, body);
+  if (!writeResult.ok) return writeResult;
+
+  logPersonnelDirectory('[Personnel Directory] write response', {
+    action: body.action,
+    ok: true,
+    id: writeResult.record.id,
+    version: writeResult.record.version,
+  });
+
+  const syncResult = await syncPersonnelDirectory({ fetchImpl });
+  if (!syncResult.ok) {
+    return {
+      ok: false,
+      error: {
+        code: 'SYNC_AFTER_WRITE_FAILED',
+        message: 'Write succeeded but refreshing the directory failed. Press Sync to retry.',
+      },
+    };
+  }
+
+  const verified = verifyMutation(syncResult.snapshot.records, writeResult.record);
+
+  logPersonnelDirectory('[Personnel Directory] authoritative resync', {
+    returned: syncResult.snapshot.records.length,
+    foundWrittenId: verified,
+  });
+
+  if (!verified) {
+    return {
+      ok: false,
+      error: { code: 'WRITE_NOT_VISIBLE_AFTER_SYNC', message: WRITE_NOT_VISIBLE_MESSAGE },
+    };
+  }
+
+  return { ok: true, snapshot: syncResult.snapshot };
+}
+
+// Safe, non-sensitive debug logging only -- never the endpoint URL, never
+// the full dataset, never localStorage contents. Best-effort: a
+// console-less environment (some test runners) must never break the write
+// flow over a missing console.
+function logPersonnelDirectory(label, details) {
+  try {
+    if (typeof console !== 'undefined' && typeof console.info === 'function') {
+      console.info(label, details);
+    }
+  } catch (_) {
+    // Ignored -- logging must never be able to fail a write.
+  }
+}
+
+// Creates a new personnel record. `role_type`/`name`/`organization` are
+// the only caller-supplied fields -- id, created_at, updated_at, version,
+// and active are all server-generated (architecture doc, action A).
+export function addReportPersonnel({ role_type, name, organization }, options = {}) {
+  const fetchImpl = options.fetchImpl || getFetch();
+  return writeAndResync(fetchImpl, {
+    action: 'addReportPersonnel',
+    role_type,
+    name: String(name ?? '').trim(),
+    organization: String(organization ?? '').trim(),
+    updated_by: AUDIT_SOURCE,
+    expected_schema_version: SCHEMA_VERSION,
+  }, verifyRecordAdded);
+}
+
+// Edits name/organization on an existing record. role_type, id, and
+// active are immutable through this action (architecture doc, action B) --
+// `expected_version` is required so the server can reject a stale edit as
+// a VERSION_CONFLICT instead of silently overwriting a concurrent change.
+export function updateReportPersonnel({ id, name, organization, expected_version }, options = {}) {
+  const fetchImpl = options.fetchImpl || getFetch();
+  return writeAndResync(fetchImpl, {
+    action: 'updateReportPersonnel',
+    id,
+    name: String(name ?? '').trim(),
+    organization: String(organization ?? '').trim(),
+    expected_version,
+    updated_by: AUDIT_SOURCE,
+  }, verifyRecordUpdated);
+}
+
+// Deactivates (active: false) or reactivates (active: true) a record --
+// never a physical delete (architecture doc, action C). `expected_version`
+// is required for the same optimistic-concurrency reason as
+// updateReportPersonnel above.
+export function setReportPersonnelActive({ id, active, expected_version }, options = {}) {
+  if (!isBoolean(active)) {
+    return Promise.resolve({ ok: false, error: { code: 'VALIDATION_ERROR', message: 'active must be a boolean.' } });
+  }
+  const fetchImpl = options.fetchImpl || getFetch();
+  return writeAndResync(fetchImpl, {
+    action: 'setReportPersonnelActive',
+    id,
+    active,
+    expected_version,
+    updated_by: AUDIT_SOURCE,
+  }, verifyRecordActiveState);
 }

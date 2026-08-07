@@ -46,6 +46,11 @@ import {
   buildPersonnelOutputLines,
   applyBuyerDefaultSamplerToPersonnel,
   overrideSampler,
+  buildPersonnelSelectionSummary,
+  filterPersonnelByNameSearch,
+  createMultiSelectDraft,
+  toggleMultiSelectDraft,
+  commitMultiSelectDraft,
 } from './report-personnel.js';
 
 let els = null; // cached DOM references, populated once in initReportPage()
@@ -170,15 +175,21 @@ function buildShellMarkup() {
 
           <div id="hync-personnel-fields">
             <div class="hync-field">
-              <label class="hync-req">SPV SCM</label>
-              <p class="hync-personnel-count" id="hync-spv-count">0 dipilih</p>
-              <div class="hync-personnel-list" id="hync-spv-list" role="group" aria-label="SPV SCM"></div>
+              <label class="hync-req" id="hync-spv-trigger-label">SPV SCM</label>
+              <button type="button" class="hync-personnel-trigger" id="hync-spv-trigger" aria-haspopup="dialog" aria-labelledby="hync-spv-trigger-label hync-spv-trigger-text">
+                <span class="hync-personnel-trigger-text" id="hync-spv-trigger-text">Belum dipilih</span>
+                <span class="hync-personnel-trigger-arrow" aria-hidden="true">▾</span>
+              </button>
+              <p class="hync-personnel-stale-hint" id="hync-spv-stale-hint" hidden></p>
             </div>
 
             <div class="hync-field">
-              <label class="hync-req">FRM SCM</label>
-              <p class="hync-personnel-count" id="hync-frm-count">0 dipilih</p>
-              <div class="hync-personnel-list" id="hync-frm-list" role="group" aria-label="FRM SCM"></div>
+              <label class="hync-req" id="hync-frm-trigger-label">FRM SCM</label>
+              <button type="button" class="hync-personnel-trigger" id="hync-frm-trigger" aria-haspopup="dialog" aria-labelledby="hync-frm-trigger-label hync-frm-trigger-text">
+                <span class="hync-personnel-trigger-text" id="hync-frm-trigger-text">Belum dipilih</span>
+                <span class="hync-personnel-trigger-arrow" aria-hidden="true">▾</span>
+              </button>
+              <p class="hync-personnel-stale-hint" id="hync-frm-stale-hint" hidden></p>
             </div>
 
             <div class="hync-field">
@@ -267,6 +278,23 @@ function buildShellMarkup() {
         </div>
       </div>
     </div>
+
+    <div class="hync-modal-overlay" id="hync-personnel-modal-overlay" hidden>
+      <div class="hync-personnel-modal-box" role="dialog" aria-modal="true" aria-labelledby="hync-personnel-modal-title">
+        <h3 id="hync-personnel-modal-title">Pilih SPV SCM</h3>
+        <div class="hync-personnel-modal-search">
+          <input type="text" id="hync-personnel-modal-search-input" placeholder="Cari nama..." autocomplete="off">
+        </div>
+        <div class="hync-personnel-modal-list" id="hync-personnel-modal-list" role="group" aria-label="Daftar personel"></div>
+        <div class="hync-personnel-modal-footer">
+          <span class="hync-personnel-modal-count" id="hync-personnel-modal-count">0 dipilih</span>
+          <div class="hync-btn-row">
+            <button type="button" class="hync-btn hync-btn-ghost" id="hync-personnel-modal-cancel">Cancel</button>
+            <button type="button" class="hync-btn hync-btn-primary" id="hync-personnel-modal-ok">OK</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -298,10 +326,12 @@ function collectElements(page) {
     personnelBlocked: byId('hync-personnel-blocked'),
     personnelGotoSettings: byId('hync-personnel-goto-settings'),
     personnelFields: byId('hync-personnel-fields'),
-    spvCount: byId('hync-spv-count'),
-    spvList: byId('hync-spv-list'),
-    frmCount: byId('hync-frm-count'),
-    frmList: byId('hync-frm-list'),
+    spvTrigger: byId('hync-spv-trigger'),
+    spvTriggerText: byId('hync-spv-trigger-text'),
+    spvStaleHint: byId('hync-spv-stale-hint'),
+    frmTrigger: byId('hync-frm-trigger'),
+    frmTriggerText: byId('hync-frm-trigger-text'),
+    frmStaleHint: byId('hync-frm-stale-hint'),
     samplerList: byId('hync-sampler-list'),
     picThirdLabel: byId('hync-pic-third-label'),
     picThirdList: byId('hync-pic-third-list'),
@@ -340,6 +370,14 @@ function collectElements(page) {
     buyerModalTitle: byId('hync-buyer-modal-title'),
     buyerModalBody: byId('hync-buyer-modal-body'),
     buyerModalClose: byId('hync-buyer-modal-close'),
+
+    personnelModalOverlay: byId('hync-personnel-modal-overlay'),
+    personnelModalTitle: byId('hync-personnel-modal-title'),
+    personnelModalSearchInput: byId('hync-personnel-modal-search-input'),
+    personnelModalList: byId('hync-personnel-modal-list'),
+    personnelModalCount: byId('hync-personnel-modal-count'),
+    personnelModalCancel: byId('hync-personnel-modal-cancel'),
+    personnelModalOk: byId('hync-personnel-modal-ok'),
   };
 }
 
@@ -380,12 +418,20 @@ function wireEvents() {
   });
 
   els.personnelGotoSettings.addEventListener('click', () => navigateTo('settings'));
-  els.spvList.addEventListener('change', handleSpvListChange);
-  els.frmList.addEventListener('change', handleFrmListChange);
+  els.spvTrigger.addEventListener('click', () => openPersonnelMultiSelectModal('SPV_SCM'));
+  els.frmTrigger.addEventListener('click', () => openPersonnelMultiSelectModal('FRM_SCM'));
   els.samplerList.addEventListener('change', handleSamplerListChange);
   els.picThirdList.addEventListener('change', handlePicThirdListChange);
   els.mpThird.addEventListener('input', handleManpowerThirdInput);
   els.mpTotal.addEventListener('input', handleTotalManpowerInput);
+
+  els.personnelModalSearchInput.addEventListener('input', handlePersonnelModalSearchInput);
+  els.personnelModalList.addEventListener('change', handlePersonnelModalListChange);
+  els.personnelModalCancel.addEventListener('click', closePersonnelMultiSelectModal);
+  els.personnelModalOk.addEventListener('click', handlePersonnelModalOk);
+  els.personnelModalOverlay.addEventListener('click', (event) => {
+    if (event.target === els.personnelModalOverlay) closePersonnelMultiSelectModal();
+  });
 }
 
 /* ============================================================
@@ -795,8 +841,8 @@ function renderPersonnelSection() {
   els.personnelFields.hidden = !hasDirectory;
   if (!hasDirectory) return;
 
-  renderSpvList();
-  renderFrmList();
+  renderSpvTrigger();
+  renderFrmTrigger();
   renderSamplerList();
   renderPicThirdList();
   renderManpowerLabel();
@@ -827,42 +873,149 @@ function personnelOptionMarkup({ inputType, name, id, value, checked, label, bad
   `;
 }
 
-function renderSpvList() {
-  const active = getActivePersonnelByRole('SPV_SCM');
-  const selected = reportState.personnel.spvScmIds;
+// Compact-field summary + stale-selection hint for SPV SCM / FRM SCM
+// (UI refinement: these two roles no longer render an always-expanded
+// checkbox list directly in the page -- see openPersonnelMultiSelectModal
+// below for the modal that replaces it). Independent Sampler / PIC 3rd
+// keep their existing small radio-list rendering, unchanged, below.
+function renderPersonnelTrigger(role, triggerEl, textEl, staleHintEl, selectedIds) {
+  const active = getActivePersonnelByRole(role);
   const activeIds = new Set(active.map((r) => r.id));
-  const staleCount = selected.filter((id) => !activeIds.has(id)).length;
-  els.spvCount.textContent = `${selected.length} dipilih` + (staleCount ? ` (${staleCount} tidak aktif, periksa kembali)` : '');
+  const selectedActiveNames = sortRecords(active.filter((r) => selectedIds.includes(r.id))).map((r) => r.name);
+  const staleCount = selectedIds.filter((id) => !activeIds.has(id)).length;
 
-  const sorted = sortRecords(active);
-  els.spvList.innerHTML = sorted.length
-    ? sorted.map((r) => personnelOptionMarkup({
-        inputType: 'checkbox',
-        id: `hync-spv-${escapeHtml(r.id)}`,
-        value: r.id,
-        checked: selected.includes(r.id),
-        label: r.name,
-      })).join('')
-    : '<p class="hync-personnel-empty">Tidak ada SPV SCM aktif.</p>';
+  textEl.textContent = buildPersonnelSelectionSummary(selectedActiveNames);
+  triggerEl.classList.toggle('hync-personnel-trigger--empty', selectedIds.length === 0);
+
+  if (staleCount) {
+    staleHintEl.hidden = false;
+    staleHintEl.textContent = `${staleCount} tidak aktif, periksa kembali.`;
+  } else {
+    staleHintEl.hidden = true;
+  }
 }
 
-function renderFrmList() {
-  const active = getActivePersonnelByRole('FRM_SCM');
-  const selected = reportState.personnel.frmScmIds;
-  const activeIds = new Set(active.map((r) => r.id));
-  const staleCount = selected.filter((id) => !activeIds.has(id)).length;
-  els.frmCount.textContent = `${selected.length} dipilih` + (staleCount ? ` (${staleCount} tidak aktif, periksa kembali)` : '');
+function renderSpvTrigger() {
+  renderPersonnelTrigger('SPV_SCM', els.spvTrigger, els.spvTriggerText, els.spvStaleHint, reportState.personnel.spvScmIds);
+}
 
+function renderFrmTrigger() {
+  renderPersonnelTrigger('FRM_SCM', els.frmTrigger, els.frmTriggerText, els.frmStaleHint, reportState.personnel.frmScmIds);
+}
+
+/* ============================================================
+   SPV SCM / FRM SCM MULTI-SELECT MODAL (UI refinement)
+   One reusable modal for both fields. Selection changes inside the modal
+   only ever touch a local "draft" (report-personnel.js's
+   createMultiSelectDraft/toggleMultiSelectDraft, pure and DOM-free) --
+   reportState.personnel.spvScmIds/frmScmIds is written exactly once, by
+   handlePersonnelModalOk(), and never by anything else in this section.
+   Cancel, Escape, and a backdrop click all discard the draft the same
+   way: they simply never call handlePersonnelModalOk().
+============================================================ */
+let personnelModalRole = null; // 'SPV_SCM' | 'FRM_SCM' while the modal is open, else null
+let personnelModalDraft = null;
+let personnelModalSearchQuery = '';
+
+const PERSONNEL_MODAL_TITLE = { SPV_SCM: 'Pilih SPV SCM', FRM_SCM: 'Pilih FRM SCM' };
+
+function openPersonnelMultiSelectModal(role) {
+  const currentIds = role === 'SPV_SCM' ? reportState.personnel.spvScmIds : reportState.personnel.frmScmIds;
+  personnelModalRole = role;
+  personnelModalDraft = createMultiSelectDraft(currentIds);
+  personnelModalSearchQuery = '';
+
+  els.personnelModalTitle.textContent = PERSONNEL_MODAL_TITLE[role];
+  els.personnelModalSearchInput.value = '';
+  renderPersonnelModalList();
+
+  lastFocusedBeforeModal = document.activeElement;
+  els.personnelModalOverlay.hidden = false;
+  document.addEventListener('keydown', handlePersonnelModalKeydown, true);
+  els.personnelModalSearchInput.focus();
+}
+
+// Cancel / Escape / backdrop click all route here -- the draft is simply
+// dropped, reportState is never touched.
+function closePersonnelMultiSelectModal() {
+  if (els.personnelModalOverlay.hidden) return;
+  els.personnelModalOverlay.hidden = true;
+  document.removeEventListener('keydown', handlePersonnelModalKeydown, true);
+  if (lastFocusedBeforeModal && typeof lastFocusedBeforeModal.focus === 'function') {
+    lastFocusedBeforeModal.focus();
+  }
+  lastFocusedBeforeModal = null;
+  personnelModalRole = null;
+  personnelModalDraft = null;
+  personnelModalSearchQuery = '';
+}
+
+function handlePersonnelModalKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closePersonnelMultiSelectModal();
+  }
+  // Tab/Shift+Tab are left to the browser's natural focus order (search
+  // input -> checkbox rows -> Cancel -> OK, all real focusable elements
+  // inside the dialog) -- unlike the single-button buyer popup, this
+  // dialog has several genuinely tabbable controls, so no forced focus
+  // trap is applied beyond Escape.
+}
+
+function renderPersonnelModalList() {
+  const active = getActivePersonnelByRole(personnelModalRole);
   const sorted = sortRecords(active);
-  els.frmList.innerHTML = sorted.length
-    ? sorted.map((r) => personnelOptionMarkup({
+  const filtered = filterPersonnelByNameSearch(sorted, personnelModalSearchQuery);
+
+  els.personnelModalList.innerHTML = filtered.length
+    ? filtered.map((r) => personnelOptionMarkup({
         inputType: 'checkbox',
-        id: `hync-frm-${escapeHtml(r.id)}`,
+        id: `hync-personnel-modal-opt-${escapeHtml(r.id)}`,
         value: r.id,
-        checked: selected.includes(r.id),
+        checked: personnelModalDraft.selectedIds.has(r.id),
         label: r.name,
       })).join('')
-    : '<p class="hync-personnel-empty">Tidak ada FRM SCM aktif.</p>';
+    : '<p class="hync-personnel-empty">Tidak ada personel yang cocok.</p>';
+
+  renderPersonnelModalCount();
+}
+
+function renderPersonnelModalCount() {
+  els.personnelModalCount.textContent = `${personnelModalDraft.selectedIds.size} dipilih`;
+}
+
+function handlePersonnelModalSearchInput() {
+  // Search only changes what is rendered -- personnelModalDraft (the
+  // actual selection) is never touched here, so an already-checked name
+  // that scrolls out of view because of a search term stays checked.
+  personnelModalSearchQuery = els.personnelModalSearchInput.value;
+  renderPersonnelModalList();
+}
+
+function handlePersonnelModalListChange(event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox') return;
+  personnelModalDraft = toggleMultiSelectDraft(personnelModalDraft, input.value, input.checked);
+  input.closest('.hync-personnel-option')?.classList.toggle('hync-personnel-option--selected', input.checked);
+  renderPersonnelModalCount();
+}
+
+function handlePersonnelModalOk() {
+  if (!personnelModalRole || !personnelModalDraft) return;
+  const role = personnelModalRole;
+  const committedIds = commitMultiSelectDraft(personnelModalDraft);
+
+  if (role === 'SPV_SCM') {
+    reportState.personnel.spvScmIds = committedIds;
+  } else {
+    reportState.personnel.frmScmIds = committedIds;
+  }
+  reportState.reportText = '';
+
+  closePersonnelMultiSelectModal();
+
+  if (role === 'SPV_SCM') renderSpvTrigger();
+  else renderFrmTrigger();
 }
 
 function renderSamplerList() {
@@ -930,28 +1083,6 @@ function renderManpowerLabel() {
   const sampler = resolveSelectedPersonnel(snapshot.records, reportState.personnel).sampler;
   els.mpThirdLabel.textContent = sampler ? `Manpower ${sampler.organization}` : 'Manpower Independent Sampler';
   els.mpTotalLabel.textContent = sampler ? `Total Manpower ${sampler.organization}` : 'Total Manpower Independent Sampler';
-}
-
-function toggleArrayValue(array, value, present) {
-  const idx = array.indexOf(value);
-  if (present && idx === -1) array.push(value);
-  if (!present && idx !== -1) array.splice(idx, 1);
-}
-
-function handleSpvListChange(event) {
-  const input = event.target;
-  if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox') return;
-  toggleArrayValue(reportState.personnel.spvScmIds, input.value, input.checked);
-  reportState.reportText = '';
-  renderSpvList();
-}
-
-function handleFrmListChange(event) {
-  const input = event.target;
-  if (!(input instanceof HTMLInputElement) || input.type !== 'checkbox') return;
-  toggleArrayValue(reportState.personnel.frmScmIds, input.value, input.checked);
-  reportState.reportText = '';
-  renderFrmList();
 }
 
 function handleSamplerListChange(event) {
