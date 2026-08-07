@@ -1,5 +1,13 @@
 // V2.0 bottom navigation component. Builds the nav markup once and exposes
 // an update function the router notifies on every route change.
+//
+// V2.3 Phase 7 (Language and Localization): labels come from js/i18n/i18n.js
+// (nav.monitor/nav.report/nav.settings) rather than the literal English
+// words below -- those literals are now only the i18n key's Indonesian/
+// English fallback content lives in js/i18n/locales/*.js, not here. The
+// nav is rebuilt (not just re-labeled) on every locale change so the
+// aria-label and visible text always agree.
+import { t, onLocaleChange } from '../i18n/i18n.js';
 
 // Every icon below uses only <rect>, <line>, <circle>, and <polyline> with
 // comma-separated coordinates — no <path> arc/line command strings — so
@@ -7,7 +15,7 @@
 const NAV_ITEMS = [
   {
     route: 'monitor',
-    label: 'Monitor',
+    labelKey: 'nav.monitor',
     icon:
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<polyline points="3,3 3,21 21,21"/>' +
@@ -16,7 +24,7 @@ const NAV_ITEMS = [
   },
   {
     route: 'report',
-    label: 'Report',
+    labelKey: 'nav.report',
     icon:
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<rect x="5" y="3" width="14" height="18" rx="2"/>' +
@@ -27,7 +35,7 @@ const NAV_ITEMS = [
   },
   {
     route: 'settings',
-    label: 'Settings',
+    labelKey: 'nav.settings',
     icon:
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<line x1="4" y1="6" x2="20" y2="6"/>' +
@@ -40,18 +48,31 @@ const NAV_ITEMS = [
   },
 ];
 
-export function mountBottomNavigation() {
+function renderNavMarkup() {
   const nav = document.getElementById('bottom-navigation');
   if (!nav) return;
 
-  nav.innerHTML = NAV_ITEMS.map(
-    (item) => `
-      <a href="#/${item.route}" class="bottom-nav__item" data-route="${item.route}" aria-label="${item.label}">
+  const activeRoute = nav.querySelector('.bottom-nav__item.is-active')?.dataset.route || null;
+
+  nav.innerHTML = NAV_ITEMS.map((item) => {
+    const label = t(item.labelKey);
+    return `
+      <a href="#/${item.route}" class="bottom-nav__item" data-route="${item.route}" aria-label="${label}">
         <span class="bottom-nav__icon">${item.icon}</span>
-        <span class="bottom-nav__label">${item.label}</span>
+        <span class="bottom-nav__label">${label}</span>
       </a>
-    `
-  ).join('');
+    `;
+  }).join('');
+
+  // A locale change while a route is already active must not visually
+  // drop that route's active/aria-current state just because the whole
+  // nav was rebuilt.
+  if (activeRoute) updateBottomNavigation(activeRoute);
+}
+
+export function mountBottomNavigation() {
+  renderNavMarkup();
+  onLocaleChange(renderNavMarkup);
 }
 
 export function updateBottomNavigation(activeRoute) {

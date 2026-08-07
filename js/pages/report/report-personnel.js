@@ -16,6 +16,7 @@
 // auto-calculated from selected SPV/FRM counts here -- that was wrong and
 // has been removed; this module now only validates both values, it never
 // derives either one).
+import { t } from '../../i18n/i18n.js';
 
 // Buyer -> default sampler organization (Owner-approved, not configurable
 // at runtime). HYNC and SLNC both default to AWK; ESG (both workbook
@@ -156,7 +157,7 @@ export function resolveSelectedPersonnel(records, personnel) {
 // `source` is a personnel-directory-service.js snapshot's `source` field
 // ('none' | 'cached' | 'remote').
 export function getDirectoryAvailabilityError(source) {
-  return source === 'none' ? 'Synchronize Personnel Directory in Settings before creating a Report.' : null;
+  return source === 'none' ? t('report.personnel.directoryUnavailable') : null;
 }
 
 function isValidManpower(value) {
@@ -180,22 +181,22 @@ export function validatePersonnelSelections(records, personnel) {
   const staleSampler = personnel.samplerId != null && !resolved.sampler;
   const stalePic = personnel.picThirdId != null && !resolved.picThird;
 
-  if (resolved.spvScm.length === 0) errors.push('Select at least one SPV SCM.');
-  if (resolved.frmScm.length === 0) errors.push('Select at least one FRM SCM.');
-  if (!resolved.sampler) errors.push('Select an Independent Sampler.');
+  if (resolved.spvScm.length === 0) errors.push(t('report.personnel.selectSpvRequired'));
+  if (resolved.frmScm.length === 0) errors.push(t('report.personnel.selectFrmRequired'));
+  if (!resolved.sampler) errors.push(t('report.personnel.selectSamplerRequired'));
 
   const samplerOrg = resolved.sampler ? resolved.sampler.organization : null;
 
   if (!resolved.picThird) {
-    errors.push(samplerOrg ? `Select a PIC 3rd for ${samplerOrg}.` : 'Select a PIC 3rd.');
+    errors.push(samplerOrg ? t('report.personnel.selectPicForOrg', { organization: samplerOrg }) : t('report.personnel.selectPicRequired'));
   } else if (normalizeCompareKey(resolved.picThird.organization) !== normalizeCompareKey(samplerOrg || '')) {
     // Covers both a genuine organization mismatch and a PIC selected while
     // no sampler is selected at all (samplerOrg null never matches any
     // real organization) -- either way the PIC selection cannot be
     // trusted as compatible yet.
     errors.push(samplerOrg
-      ? `Selected PIC 3rd does not belong to ${samplerOrg} -- select a matching PIC 3rd.`
-      : 'Select an Independent Sampler before selecting a PIC 3rd.');
+      ? t('report.personnel.picMismatchOrg', { organization: samplerOrg })
+      : t('report.personnel.selectSamplerBeforePic'));
   }
 
   // Manpower <org> and Total Manpower are both manual, independent
@@ -206,14 +207,14 @@ export function validatePersonnelSelections(records, personnel) {
   // unless separately approved.
   const manpowerOrgLabel = samplerOrg || 'Independent Sampler';
   if (!isValidManpower(personnel.manpowerThirdParty)) {
-    errors.push(`Enter valid ${manpowerOrgLabel} manpower.`);
+    errors.push(t('report.personnel.enterValidManpower', { organization: manpowerOrgLabel }));
   }
   if (!isValidManpower(personnel.totalManpower)) {
-    errors.push('Enter valid Total Manpower.');
+    errors.push(t('report.personnel.enterValidTotalManpower'));
   }
 
   if (staleSpv || staleFrm || staleSampler || stalePic) {
-    errors.push('A previously selected person is no longer active. Review the personnel selection.');
+    errors.push(t('report.personnel.staleSelectionWarning'));
   }
 
   return errors;
@@ -306,11 +307,18 @@ export function buildPersonnelOutputLines(records, personnel, buyer) {
 // 1 -> the single name; 2 -> both names (the field's own CSS truncates
 // with an ellipsis if they don't fit -- this function never measures
 // pixel width); 3+ -> a compact count, which can never overflow.
+//
+// UI-DISPLAY ONLY -- unlike buildPersonnelOutputLines() below (the actual
+// generated-report-text builder), this is never part of the WhatsApp
+// report output, so it is safe to route through t() (V2.3
+// full-localization pass). names themselves (personnel display names)
+// are never translated, only the surrounding "Belum dipilih"/"{n}
+// dipilih" wording.
 export function buildPersonnelSelectionSummary(names) {
-  if (!names || names.length === 0) return 'Belum dipilih';
+  if (!names || names.length === 0) return t('report.personnel.notSelected');
   if (names.length === 1) return names[0];
   if (names.length === 2) return names.join(', ');
-  return `${names.length} dipilih`;
+  return t('report.personnelModal.selectedCount', { count: names.length });
 }
 
 // Case-insensitive, trimmed substring match against name only (Report's

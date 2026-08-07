@@ -13,6 +13,14 @@
 // project's existing modularity (report-personnel.js's own
 // normalizeCompareKey() is duplicated there rather than imported from a
 // shared location, for the identical reason).
+//
+// V2.3 Phase 7 (Language and Localization): every user-facing string this
+// module returns is now looked up through js/i18n/i18n.js's t() rather
+// than hardcoded Indonesian -- t() itself is DOM-free/pure (see its own
+// header comment), so this file stays independently unit-testable under
+// Node exactly as before (tests/settings-personnel.test.mjs), just with
+// the current locale as an added axis those tests now also cover.
+import { t } from '../../i18n/i18n.js';
 
 // "10 aktif" when there are no inactive records for this role, or
 // "10 aktif · 2 nonaktif" once at least one exists -- never shows
@@ -20,7 +28,9 @@
 // whatever the caller already counted (e.g. via
 // personnel-directory-service.js's getPersonnelByRole()).
 export function buildRoleSummaryText(activeCount, inactiveCount) {
-  return inactiveCount > 0 ? `${activeCount} aktif · ${inactiveCount} nonaktif` : `${activeCount} aktif`;
+  return inactiveCount > 0
+    ? t('settings.role.summaryActiveInactive', { active: activeCount, inactive: inactiveCount })
+    : t('settings.role.summaryActiveOnly', { active: activeCount });
 }
 
 function normalizeSearchKey(value) {
@@ -56,22 +66,22 @@ export function filterPersonnelBySearch(records, query, options = {}) {
    this file.
 ============================================================ */
 
-// Exact literal required when a write is enqueued instead of sent, per the
-// offline-write-queue requirement -- never a server-supplied or
-// locally-rephrased variant.
-export const QUEUE_OFFLINE_SAVED_MESSAGE = 'Perubahan disimpan sebagai antrean offline dan akan dikirim saat koneksi kembali.';
+// Locale-aware replacements for what were, before V2.3 Phase 7, fixed
+// exported string constants (QUEUE_OFFLINE_SAVED_MESSAGE /
+// QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE) -- the earlier offline-queue task
+// required an exact Indonesian literal, which is preserved byte-for-byte
+// as the `id` locale's translation (see js/i18n/locales/id.js), so a
+// caller that never switches language sees no change at all.
+export function buildQueueOfflineSavedMessage() {
+  return t('settings.queue.offlineSavedMessage');
+}
 
-// Exact literal required for a blocked VERSION_CONFLICT item -- distinct
-// from the ONLINE immediate-write VERSION_CONFLICT message
-// (settings-page.js's describeWriteError()), since this one describes a
-// queued item that failed during flush, not a write that just failed.
-export const QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE = 'Data sudah berubah di server. Sinkronkan ulang dan tinjau perubahan offline.';
-
-// Exact literal required for the compact offline indicator.
-export const OFFLINE_INDICATOR_MESSAGE = 'Offline — perubahan akan diantrikan.';
+export function buildQueueVersionConflictReviewMessage() {
+  return t('settings.queue.versionConflictReviewMessage');
+}
 
 export function buildOfflineIndicatorText(isOnline) {
-  return isOnline ? null : OFFLINE_INDICATOR_MESSAGE;
+  return isOnline ? null : t('settings.offlineIndicator');
 }
 
 // "0 pending" (nothing queued or all somehow already flushed), "3 pending"
@@ -81,30 +91,26 @@ export function buildOfflineIndicatorText(isOnline) {
 // only appended when > 0.
 export function buildQueueCountText(pendingCount, blockedCount) {
   const total = (pendingCount || 0) + (blockedCount || 0);
-  if (total === 0) return '0 pending';
-  if (!blockedCount) return `${total} pending`;
-  return `${pendingCount} pending · ${blockedCount} blocked`;
+  if (!blockedCount) return t('settings.queue.countPendingOnly', { total });
+  return t('settings.queue.countPendingBlocked', { pending: pendingCount, blocked: blockedCount });
 }
 
-const QUEUE_ACTION_LABELS = {
-  addReportPersonnel: 'Tambah',
-  updateReportPersonnel: 'Edit',
-};
-
 function queueActionLabel(item) {
-  if (item.action === 'setReportPersonnelActive') return item.payload.active ? 'Aktifkan' : 'Nonaktifkan';
-  return QUEUE_ACTION_LABELS[item.action] || item.action;
+  if (item.action === 'setReportPersonnelActive') return item.payload.active ? t('common.reactivate') : t('common.deactivate');
+  if (item.action === 'addReportPersonnel') return t('common.add');
+  if (item.action === 'updateReportPersonnel') return t('common.edit');
+  return item.action;
 }
 
 // Server error `code` (as stored in a blocked item's lastErrorCode) ->
-// the exact reason text the QUEUE DISPLAY EXAMPLES require (e.g.
-// "Blocked: version conflict"). Falls back to the raw stored message for
-// any other code so a blocked item is never shown with no explanation at
-// all.
+// the exact reason text the QUEUE DISPLAY EXAMPLES require in the default
+// `id` locale (e.g. "Blocked: version conflict"). Falls back to the raw
+// stored message for any other code so a blocked item is never shown with
+// no explanation at all.
 function queueBlockReasonText(item) {
-  if (item.lastErrorCode === 'VERSION_CONFLICT') return 'version conflict';
-  if (item.lastErrorCode === 'DUPLICATE_PERSONNEL') return 'sudah ada personel dengan role/nama/organisasi yang sama';
-  return item.lastError || 'kesalahan tidak diketahui';
+  if (item.lastErrorCode === 'VERSION_CONFLICT') return t('settings.queue.reasonVersionConflict');
+  if (item.lastErrorCode === 'DUPLICATE_PERSONNEL') return t('settings.queue.reasonDuplicate');
+  return item.lastError || t('settings.queue.reasonUnknown');
 }
 
 // Turns one raw queue item (js/services/personnel-write-queue.js's shape)
@@ -142,7 +148,7 @@ export function buildQueueItemViewModel(item, records = []) {
     roleType,
     createdAt: item.createdAt,
     status: item.status,
-    statusText: item.status === 'blocked' ? `Blocked: ${queueBlockReasonText(item)}` : 'Pending',
+    statusText: item.status === 'blocked' ? t('settings.queue.statusBlocked', { reason: queueBlockReasonText(item) }) : t('settings.queue.statusPending'),
     canRetry: item.status === 'blocked',
   };
 }

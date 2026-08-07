@@ -109,11 +109,11 @@ describe('2-4/12. fetchSheetContractors() publishes the shared cache after succe
     assert.doesNotMatch(catchBlock, /publishMonitorContractorDirectory/);
   });
 
-  test('12. the fetch request, endpoint, liveContractorMap building, and error-box status wording are all unchanged from the original implementation', () => {
+  test('12. the fetch request, endpoint, and liveContractorMap building are all unchanged from the original implementation; the error-box status wording is now localized (V2.3 full-localization pass) rather than a hardcoded Indonesian literal', () => {
     assert.match(fnSource, /await fetch\(GOOGLE_SHEET_API_URL, \{ method:'GET' \}\)/);
     assert.match(fnSource, /const map = \{\};/);
     assert.match(fnSource, /liveMapStatus = \{ loaded:false, count: Object\.keys\(liveContractorMap\)\.length/);
-    assert.match(fnSource, /Gagal sinkron ke server/);
+    assert.match(fnSource, /mt\('monitor\.contractorStatus\.syncError',/);
   });
 });
 

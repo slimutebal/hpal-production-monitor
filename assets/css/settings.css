@@ -206,6 +206,22 @@
   color: var(--accent, #38bdf8);
 }
 
+/* Language + Appearance cards (V2.3 Phase 7) -- reuse .settings-card for
+   the shell and the existing .settings-filter/.settings-filter-btn
+   segmented-button pattern (already proven for Aktif/Nonaktif/Semua) for
+   both the two-option Language and three-option Appearance selectors, so
+   no new interactive-control CSS is needed, only the small subtitle
+   style below. */
+#page-settings .settings-card-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+#page-settings .settings-preferences-card .settings-filter {
+  margin-bottom: 0;
+}
+
 /* Offline write queue (V2.3 Phase 5) -- compact "Pending Changes" row in
    the Sync Status card, plus the offline indicator paragraph above it
    (reuses .settings-sync-message/--warn for the indicator, no new color

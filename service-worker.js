@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-personnel-offline-queue';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-full-localization-appearance';
 const APP_SHELL = [
   './',
   './index.html',
@@ -16,6 +16,10 @@ const APP_SHELL = [
   './js/services/contractor-directory-service.js',
   './js/services/personnel-directory-service.js',
   './js/services/personnel-write-queue.js',
+  './js/services/app-preferences-service.js',
+  './js/i18n/i18n.js',
+  './js/i18n/locales/id.js',
+  './js/i18n/locales/en.js',
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',

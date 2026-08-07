@@ -38,6 +38,7 @@ import {
   subscribeContractorDirectoryUpdated,
 } from '../../services/contractor-directory-service.js';
 import { onRouteChange, navigateTo } from '../../router.js';
+import { t, onLocaleChange, translatePage } from '../../i18n/i18n.js';
 import {
   sortRecords,
   resolveSelectedPersonnel,
@@ -62,6 +63,22 @@ export function initReportPage() {
 
   page.innerHTML = buildShellMarkup();
   els = collectElements(page);
+  translatePage(page);
+  onLocaleChange(() => {
+    translatePage(page);
+    // translatePage() only ever touches the static data-i18n-tagged shell
+    // above -- these three labels are intentionally NOT data-i18n-tagged
+    // because they are also data-driven (sampler organization, chosen
+    // file name), so they are refreshed here instead, through the exact
+    // same render functions/guard normal data changes already use, never
+    // by blindly overwriting whatever they currently show.
+    renderPersonnelSection();
+    if (!els.fileDropText.textContent.startsWith('✓')) {
+      els.fileDropText.textContent = t('report.workbook.dropDefaultText');
+    }
+    updateBuyerUI();
+    renderContractorDirectoryStatus();
+  });
   wireEvents();
   loadCachedPersonnelDirectory();
   // Monitor-owned single-sync architecture: Report never fetches
@@ -123,18 +140,18 @@ function buildShellMarkup() {
       </header>
 
       <div class="hync-stepper">
-        <div class="hync-step-pill active" id="hync-pill-1">1 · Input</div>
-        <div class="hync-step-pill" id="hync-pill-2">2 · Area Muat</div>
-        <div class="hync-step-pill" id="hync-pill-3">3 · Hasil</div>
+        <div class="hync-step-pill active" id="hync-pill-1" data-i18n="report.stepper.step1">1 · Input</div>
+        <div class="hync-step-pill" id="hync-pill-2" data-i18n="report.stepper.step2">2 · Area Muat</div>
+        <div class="hync-step-pill" id="hync-pill-3" data-i18n="report.stepper.step3">3 · Hasil</div>
       </div>
 
       <section class="hync-panel active" id="hync-step-1">
         <div class="hync-card">
-          <h2>Teks Report Sebelumnya</h2>
+          <h2 data-i18n="report.prevText.title">Teks Report Sebelumnya</h2>
           <div class="hync-hint" id="hync-prev-text-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).</div>
           <div class="hync-field">
-            <label class="hync-req" for="hync-prev-text" id="hync-prev-text-label">Teks report sebelumnya</label>
-            <textarea id="hync-prev-text" class="hync-textarea hync-mono-area" placeholder="Paste teks report shift sebelumnya di sini..."></textarea>
+            <label class="hync-req" for="hync-prev-text" id="hync-prev-text-label" data-i18n="report.prevText.label">Teks report sebelumnya</label>
+            <textarea id="hync-prev-text" class="hync-textarea hync-mono-area" placeholder="Paste teks report shift sebelumnya di sini..." data-i18n-placeholder="report.prevText.placeholder"></textarea>
           </div>
         </div>
 
@@ -154,14 +171,14 @@ function buildShellMarkup() {
           <p class="hync-contractor-status-lastsync" id="hync-contractor-last-sync" hidden></p>
           <p class="hync-contractor-status-warn" id="hync-contractor-status-warn" hidden>List DT belum disinkronkan dari Monitor.</p>
           <div class="hync-btn-row" id="hync-contractor-goto-monitor-row" hidden>
-            <button type="button" class="hync-btn hync-btn-ghost hync-btn-small" id="hync-contractor-goto-monitor-btn">Buka Monitor</button>
+            <button type="button" class="hync-btn hync-btn-ghost hync-btn-small" id="hync-contractor-goto-monitor-btn" data-i18n="report.workbook.gotoMonitor">Buka Monitor</button>
           </div>
         </div>
 
         <div class="hync-card">
-          <h2>Man Power &amp; Support</h2>
+          <h2 data-i18n="report.manpower.title">Man Power &amp; Support</h2>
           <div class="hync-field">
-            <label id="hync-week-label">Week</label>
+            <label id="hync-week-label" data-i18n="report.week.label">Week</label>
             <div class="hync-week-display" id="hync-week-display" aria-live="polite" aria-labelledby="hync-week-label">
               <span class="hync-week-number" id="hync-week-number">—</span>
               <span class="hync-week-range" id="hync-week-range">Dihitung otomatis dari tanggal file timbangan setelah upload.</span>
@@ -169,13 +186,13 @@ function buildShellMarkup() {
           </div>
 
           <div class="hync-personnel-blocked" id="hync-personnel-blocked" hidden>
-            <p>Personnel Directory belum tersedia di perangkat ini. Sinkronkan Personnel Directory di Settings terlebih dahulu sebelum membuat Report.</p>
-            <button type="button" class="hync-btn hync-btn-ghost" id="hync-personnel-goto-settings">Buka Settings</button>
+            <p data-i18n="report.personnel.blockedMessage">Personnel Directory belum tersedia di perangkat ini. Sinkronkan Personnel Directory di Settings terlebih dahulu sebelum membuat Report.</p>
+            <button type="button" class="hync-btn hync-btn-ghost" id="hync-personnel-goto-settings" data-i18n="report.personnel.gotoSettings">Buka Settings</button>
           </div>
 
           <div id="hync-personnel-fields">
             <div class="hync-field">
-              <label class="hync-req" id="hync-spv-trigger-label">SPV SCM</label>
+              <label class="hync-req" id="hync-spv-trigger-label" data-i18n="report.personnel.spvLabel">SPV SCM</label>
               <button type="button" class="hync-personnel-trigger" id="hync-spv-trigger" aria-haspopup="dialog" aria-labelledby="hync-spv-trigger-label hync-spv-trigger-text">
                 <span class="hync-personnel-trigger-text" id="hync-spv-trigger-text">Belum dipilih</span>
                 <span class="hync-personnel-trigger-arrow" aria-hidden="true">▾</span>
@@ -184,7 +201,7 @@ function buildShellMarkup() {
             </div>
 
             <div class="hync-field">
-              <label class="hync-req" id="hync-frm-trigger-label">FRM SCM</label>
+              <label class="hync-req" id="hync-frm-trigger-label" data-i18n="report.personnel.frmLabel">FRM SCM</label>
               <button type="button" class="hync-personnel-trigger" id="hync-frm-trigger" aria-haspopup="dialog" aria-labelledby="hync-frm-trigger-label hync-frm-trigger-text">
                 <span class="hync-personnel-trigger-text" id="hync-frm-trigger-text">Belum dipilih</span>
                 <span class="hync-personnel-trigger-arrow" aria-hidden="true">▾</span>
@@ -193,7 +210,7 @@ function buildShellMarkup() {
             </div>
 
             <div class="hync-field">
-              <label class="hync-req">Independent Sampler</label>
+              <label class="hync-req" data-i18n="report.personnel.samplerLabel">Independent Sampler</label>
               <div class="hync-personnel-list" id="hync-sampler-list" role="radiogroup" aria-label="Independent Sampler"></div>
             </div>
 
@@ -216,35 +233,35 @@ function buildShellMarkup() {
         </div>
 
         <div class="hync-card">
-          <h2>Problem &amp; Action</h2>
+          <h2 data-i18n="report.problem.title">Problem &amp; Action</h2>
           <div class="hync-field">
-            <label for="hync-problem">Problem <span class="hync-optional">(boleh kosong)</span></label>
-            <textarea id="hync-problem" class="hync-textarea" rows="2" placeholder="Tulis problem jika ada..."></textarea>
+            <label for="hync-problem"><span data-i18n="report.problem.label">Problem</span> <span class="hync-optional" data-i18n="report.problem.optionalHint">(boleh kosong)</span></label>
+            <textarea id="hync-problem" class="hync-textarea" rows="2" placeholder="Tulis problem jika ada..." data-i18n-placeholder="report.problem.placeholder"></textarea>
           </div>
           <div class="hync-field">
-            <label for="hync-action">Preventive Action <span class="hync-optional">(boleh kosong)</span></label>
-            <textarea id="hync-action" class="hync-textarea" rows="2" placeholder="Tulis preventive action jika ada..."></textarea>
+            <label for="hync-action"><span data-i18n="report.action.label">Preventive Action</span> <span class="hync-optional" data-i18n="report.problem.optionalHint">(boleh kosong)</span></label>
+            <textarea id="hync-action" class="hync-textarea" rows="2" placeholder="Tulis preventive action jika ada..." data-i18n-placeholder="report.action.placeholder"></textarea>
           </div>
         </div>
 
         <div id="hync-step1-errors"></div>
 
         <div class="hync-btn-row">
-          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-reset-1">↺ Reset</button>
-          <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-next">Lanjut →</button>
+          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-reset-1" data-i18n="common.reset">↺ Reset</button>
+          <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-next" data-i18n="common.next">Lanjut →</button>
         </div>
       </section>
 
       <section class="hync-panel" id="hync-step-2">
         <div class="hync-card">
-          <h2>Pilih Area Tiap Dome</h2>
-          <div class="hync-hint">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR1 / BR23E / BR23W / DS) untuk tiap dome.</div>
+          <h2 data-i18n="report.step2.title">Pilih Area Tiap Dome</h2>
+          <div class="hync-hint" data-i18n="report.step2.hint">Dome diambil dari data timbangan yang diupload. Pilih salah satu area (BR1 / BR23E / BR23W / DS) untuk tiap dome.</div>
           <div id="hync-dome-list"></div>
         </div>
         <div id="hync-step2-errors"></div>
         <div class="hync-btn-row">
-          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-back-to-1">← Kembali</button>
-          <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-generate">Generate Laporan →</button>
+          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-back-to-1" data-i18n="common.back">← Kembali</button>
+          <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-generate" data-i18n="report.buttons.generate">Generate Laporan →</button>
         </div>
       </section>
 
@@ -252,17 +269,17 @@ function buildShellMarkup() {
         <div class="hync-scale-display" id="hync-scale-display"></div>
         <div id="hync-step3-warnings"></div>
         <div class="hync-card">
-          <h2>Teks Laporan</h2>
+          <h2 data-i18n="report.step3.title">Teks Laporan</h2>
           <div class="hync-hint">Cek dulu sebelum di-copy ke WA Group. Bisa diedit manual langsung di kotak ini kalau perlu.</div>
           <textarea class="hync-output-box" id="hync-output"></textarea>
           <div class="hync-btn-row" style="margin-top:12px;">
-            <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-copy">📋 Copy Laporan</button>
+            <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-copy" data-i18n="report.buttons.copy">📋 Copy Laporan</button>
           </div>
-          <div class="hync-copy-feedback" id="hync-copy-feedback">✓ Tersalin ke clipboard</div>
+          <div class="hync-copy-feedback" id="hync-copy-feedback" data-i18n="report.copy.success">✓ Tersalin ke clipboard</div>
         </div>
         <div class="hync-btn-row">
-          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-back-to-2">← Kembali Pilih Area</button>
-          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-reset-3">↺ Reset</button>
+          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-back-to-2" data-i18n="report.buttons.backToArea">← Kembali Pilih Area</button>
+          <button type="button" class="hync-btn hync-btn-ghost" id="hync-btn-reset-3" data-i18n="common.reset">↺ Reset</button>
         </div>
       </section>
 
@@ -271,10 +288,10 @@ function buildShellMarkup() {
 
     <div class="hync-modal-overlay" id="hync-buyer-modal-overlay" hidden>
       <div class="hync-modal-box" role="dialog" aria-modal="true" aria-labelledby="hync-buyer-modal-title">
-        <h3 id="hync-buyer-modal-title">Buyer tidak sesuai</h3>
+        <h3 id="hync-buyer-modal-title" data-i18n="report.buyerModal.title">Buyer tidak sesuai</h3>
         <div id="hync-buyer-modal-body"></div>
         <div class="hync-btn-row">
-          <button type="button" class="hync-btn hync-btn-primary" id="hync-buyer-modal-close">Tutup</button>
+          <button type="button" class="hync-btn hync-btn-primary" id="hync-buyer-modal-close" data-i18n="common.close">Tutup</button>
         </div>
       </div>
     </div>
@@ -283,14 +300,14 @@ function buildShellMarkup() {
       <div class="hync-personnel-modal-box" role="dialog" aria-modal="true" aria-labelledby="hync-personnel-modal-title">
         <h3 id="hync-personnel-modal-title">Pilih SPV SCM</h3>
         <div class="hync-personnel-modal-search">
-          <input type="text" id="hync-personnel-modal-search-input" placeholder="Cari nama..." autocomplete="off">
+          <input type="text" id="hync-personnel-modal-search-input" placeholder="Cari nama..." data-i18n-placeholder="report.personnelModal.searchPlaceholder" autocomplete="off">
         </div>
         <div class="hync-personnel-modal-list" id="hync-personnel-modal-list" role="group" aria-label="Daftar personel"></div>
         <div class="hync-personnel-modal-footer">
           <span class="hync-personnel-modal-count" id="hync-personnel-modal-count">0 dipilih</span>
           <div class="hync-btn-row">
-            <button type="button" class="hync-btn hync-btn-ghost" id="hync-personnel-modal-cancel">Cancel</button>
-            <button type="button" class="hync-btn hync-btn-primary" id="hync-personnel-modal-ok">OK</button>
+            <button type="button" class="hync-btn hync-btn-ghost" id="hync-personnel-modal-cancel" data-i18n="common.cancel">Cancel</button>
+            <button type="button" class="hync-btn hync-btn-primary" id="hync-personnel-modal-ok" data-i18n="common.ok">OK</button>
           </div>
         </div>
       </div>
@@ -544,40 +561,49 @@ function recomputeBuyerResolution({ openPopupOnNewMismatch }) {
 function buyerGateErrorMessage(status) {
   switch (status) {
     case BUYER_STATUS.UNKNOWN:
-      return 'Buyer belum terdeteksi dari teks report sebelumnya maupun file timbangan.';
+      return t('report.buyerGate.unknown');
     case BUYER_STATUS.PENDING_WORKBOOK:
-      return 'Buyer baru terdeteksi dari teks report sebelumnya — upload file timbangan untuk konfirmasi.';
+      return t('report.buyerGate.pendingWorkbook');
     case BUYER_STATUS.PENDING_PREVIOUS_REPORT:
-      return 'Buyer baru terdeteksi dari file timbangan — lengkapi teks report sebelumnya untuk konfirmasi.';
+      return t('report.buyerGate.pendingPrevReport');
     case BUYER_STATUS.MISMATCH:
-      return 'Buyer teks report sebelumnya dan file timbangan tidak sesuai — lihat detail di popup.';
+      return t('report.buyerGate.mismatch');
     case BUYER_STATUS.INVALID_WORKBOOK:
-      return 'Data buyer pada file timbangan tidak valid — lihat detail di popup.';
+      return t('report.buyerGate.invalidWorkbook');
     case BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT:
-      return 'Teks report sebelumnya menyebutkan lebih dari satu buyer — lihat detail di popup.';
+      return t('report.buyerGate.ambiguousPrevReport');
     default:
-      return 'Buyer belum terkonfirmasi.';
+      return t('report.buyerGate.unconfirmed');
   }
 }
 
 /* ============================================================
    DYNAMIC BUYER LABELS
 ============================================================ */
-const NEUTRAL_LABELS = {
-  eyebrow: 'SCM · HPAL ORE SELLING — FPP',
-  subtitle: 'Generator laporan shift dari data timbangan buyer',
-  workbookTitle: 'Data Timbangan',
-  workbookHint: 'Upload file timbangan dan pastikan buyer sesuai dengan teks report sebelumnya.',
-  footnote: 'Internal use — SCM HPAL Ore Selling',
-};
+// A function, not a static object -- NEUTRAL_LABELS used to be a plain
+// object literal evaluated once at module load, which would have frozen
+// its t() output at whatever locale was active at import time and never
+// updated again on a locale change. neutralLabels() re-evaluates on every
+// call (updateBuyerUI() calls it fresh every render, including on the
+// onLocaleChange subscription below), so it always reflects the current
+// locale.
+function neutralLabels() {
+  return {
+    eyebrow: 'SCM · HPAL ORE SELLING — FPP',
+    subtitle: t('report.neutralLabels.subtitle'),
+    workbookTitle: t('report.workbook.title'),
+    workbookHint: t('report.neutralLabels.workbookHint'),
+    footnote: 'Internal use — SCM HPAL Ore Selling',
+  };
+}
 
 function buyerLabelSet(buyer) {
   const buyerDisplay = getBuyerDisplayLabel(buyer);
   return {
     eyebrow: `SCM · HPAL Ore Selling — FPP ${buyerDisplay}`,
-    subtitle: `Generator laporan shift dari data timbangan ${buyerDisplay}`,
-    workbookTitle: `Data Timbangan (khusus ${buyerDisplay})`,
-    workbookHint: `Upload file timbangan (.xlsx/.xls) sheet 过磅明细 — pastikan ini data milik buyer ${buyerDisplay}, bukan buyer lain.`,
+    subtitle: t('report.buyerLabels.subtitle', { buyer: buyerDisplay }),
+    workbookTitle: t('report.buyerLabels.workbookTitle', { buyer: buyerDisplay }),
+    workbookHint: t('report.buyerLabels.workbookHint', { buyer: buyerDisplay }),
     footnote: `FPP ${buyerDisplay} · Internal use — SCM HPAL Ore Selling`,
   };
 }
@@ -587,19 +613,19 @@ function buyerStatusMessage(status) {
   const wb = getBuyerDisplayLabel(reportState.workbookBuyer);
   switch (status) {
     case BUYER_STATUS.PENDING_WORKBOOK:
-      return `Buyer terdeteksi: ${prev} (dari teks report) — menunggu file timbangan.`;
+      return t('report.buyerStatus.pendingWorkbook', { buyer: prev });
     case BUYER_STATUS.PENDING_PREVIOUS_REPORT:
-      return `Buyer terdeteksi: ${wb} (dari file timbangan) — menunggu teks report sebelumnya.`;
+      return t('report.buyerStatus.pendingPrevReport', { buyer: wb });
     case BUYER_STATUS.CONFIRMED:
-      return `Buyer terkonfirmasi: ${getBuyerDisplayLabel(reportState.resolvedBuyer)}.`;
+      return t('report.buyerStatus.confirmed', { buyer: getBuyerDisplayLabel(reportState.resolvedBuyer) });
     case BUYER_STATUS.MISMATCH:
-      return '⚠ Buyer tidak sesuai — lihat detail.';
+      return t('report.buyerStatus.mismatch');
     case BUYER_STATUS.INVALID_WORKBOOK:
-      return '⚠ Data buyer file timbangan tidak valid — lihat detail.';
+      return t('report.buyerStatus.invalidWorkbook');
     case BUYER_STATUS.AMBIGUOUS_PREVIOUS_REPORT:
-      return '⚠ Teks report sebelumnya menyebutkan lebih dari satu buyer — lihat detail.';
+      return t('report.buyerStatus.ambiguousPrevReport');
     default:
-      return 'Buyer belum terdeteksi';
+      return t('report.buyerStatus.unknown');
   }
 }
 
@@ -613,7 +639,7 @@ function buyerStatusClass(status) {
 function updateBuyerUI() {
   const status = reportState.buyerValidationStatus;
   const provisionalBuyer = reportState.resolvedBuyer || reportState.previousReportBuyer || reportState.workbookBuyer;
-  const labels = provisionalBuyer ? buyerLabelSet(provisionalBuyer) : NEUTRAL_LABELS;
+  const labels = provisionalBuyer ? buyerLabelSet(provisionalBuyer) : neutralLabels();
   const profile = provisionalBuyer ? getProfile(provisionalBuyer) : null;
   const previousReportOptional = !!(profile && profile.previousReportOptional);
 
@@ -628,8 +654,8 @@ function updateBuyerUI() {
   // that accurately rather than always showing "required".
   els.prevTextLabel.classList.toggle('hync-req', !previousReportOptional);
   els.prevTextHint.textContent = previousReportOptional
-    ? 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya), atau kosongkan jika ini laporan pertama / mulai periode akumulasi baru. Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).'
-    : 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).';
+    ? t('report.prevText.hintOptional')
+    : t('report.prevText.hintRequired');
 
   els.buyerStatus.textContent = buyerStatusMessage(status);
   els.buyerStatus.className = 'hync-buyer-status ' + buyerStatusClass(status);
@@ -811,11 +837,11 @@ function renderWeekDisplay() {
     // (parsed.dateMismatch) alone do NOT reach this branch -- see
     // applyWeekFromParsed()'s header comment.
     els.weekNumber.textContent = '—';
-    els.weekRange.textContent = 'Tidak dapat dihitung — tanggal pada file timbangan tidak ditemukan atau tidak valid.';
+    els.weekRange.textContent = t('report.week.uncalculable');
     els.weekDisplay.classList.add('hync-week-display--error');
   } else {
     els.weekNumber.textContent = '—';
-    els.weekRange.textContent = 'Dihitung otomatis dari tanggal file timbangan setelah upload.';
+    els.weekRange.textContent = t('report.week.pendingUpload');
     els.weekDisplay.classList.remove('hync-week-display--error');
   }
 }
@@ -889,7 +915,7 @@ function renderPersonnelTrigger(role, triggerEl, textEl, staleHintEl, selectedId
 
   if (staleCount) {
     staleHintEl.hidden = false;
-    staleHintEl.textContent = `${staleCount} tidak aktif, periksa kembali.`;
+    staleHintEl.textContent = t('report.personnel.staleHint', { count: staleCount });
   } else {
     staleHintEl.hidden = true;
   }
@@ -917,7 +943,12 @@ let personnelModalRole = null; // 'SPV_SCM' | 'FRM_SCM' while the modal is open,
 let personnelModalDraft = null;
 let personnelModalSearchQuery = '';
 
-const PERSONNEL_MODAL_TITLE = { SPV_SCM: 'Pilih SPV SCM', FRM_SCM: 'Pilih FRM SCM' };
+// A function, not a static object -- re-evaluated on every open so it
+// always reflects the current locale (see neutralLabels()'s own header
+// comment above for why a plain object literal would be wrong here).
+function personnelModalTitle(role) {
+  return role === 'SPV_SCM' ? t('report.personnelModal.titleSpv') : t('report.personnelModal.titleFrm');
+}
 
 function openPersonnelMultiSelectModal(role) {
   const currentIds = role === 'SPV_SCM' ? reportState.personnel.spvScmIds : reportState.personnel.frmScmIds;
@@ -925,7 +956,7 @@ function openPersonnelMultiSelectModal(role) {
   personnelModalDraft = createMultiSelectDraft(currentIds);
   personnelModalSearchQuery = '';
 
-  els.personnelModalTitle.textContent = PERSONNEL_MODAL_TITLE[role];
+  els.personnelModalTitle.textContent = personnelModalTitle(role);
   els.personnelModalSearchInput.value = '';
   renderPersonnelModalList();
 
@@ -981,7 +1012,7 @@ function renderPersonnelModalList() {
 }
 
 function renderPersonnelModalCount() {
-  els.personnelModalCount.textContent = `${personnelModalDraft.selectedIds.size} dipilih`;
+  els.personnelModalCount.textContent = t('report.personnelModal.selectedCount', { count: personnelModalDraft.selectedIds.size });
 }
 
 function handlePersonnelModalSearchInput() {
@@ -1037,10 +1068,10 @@ function renderSamplerList() {
           badgeHtml: isDefault ? '<span class="hync-personnel-badge hync-personnel-badge--default">Default buyer</span>' : '',
         });
       }).join('')
-    : '<p class="hync-personnel-empty">Tidak ada Independent Sampler aktif.</p>';
+    : `<p class="hync-personnel-empty">${t('report.personnel.noActiveSamplers')}</p>`;
 
   if (selectedId && !active.some((r) => r.id === selectedId)) {
-    els.samplerList.insertAdjacentHTML('beforeend', '<p class="hync-personnel-empty">Sampler yang sebelumnya dipilih sudah tidak aktif -- pilih ulang.</p>');
+    els.samplerList.insertAdjacentHTML('beforeend', `<p class="hync-personnel-empty">${t('report.personnel.samplerStale')}</p>`);
   }
 }
 
@@ -1055,8 +1086,8 @@ function renderPicThirdList() {
     // text are both forbidden output/label shapes. "PIC Independent
     // Sampler" is only the neutral placeholder shown before any sampler
     // is selected, mirroring the Manpower label's own neutral fallback.
-    els.picThirdLabel.textContent = 'PIC Independent Sampler';
-    els.picThirdList.innerHTML = '<p class="hync-personnel-empty">Pilih Independent Sampler terlebih dahulu.</p>';
+    els.picThirdLabel.textContent = t('report.personnel.picDefaultLabel');
+    els.picThirdList.innerHTML = `<p class="hync-personnel-empty">${t('report.personnel.pickSamplerFirst')}</p>`;
     return;
   }
 
@@ -1071,18 +1102,18 @@ function renderPicThirdList() {
         checked: r.id === selectedId,
         label: r.name,
       })).join('')
-    : `<p class="hync-personnel-empty">Tidak ada PIC 3rd aktif untuk ${escapeHtml(sampler.organization)}.</p>`;
+    : `<p class="hync-personnel-empty">${t('report.personnel.noActivePicThird', { organization: escapeHtml(sampler.organization) })}</p>`;
 
   if (selectedId && !active.some((r) => r.id === selectedId)) {
-    els.picThirdList.insertAdjacentHTML('beforeend', '<p class="hync-personnel-empty">PIC 3rd yang sebelumnya dipilih sudah tidak sesuai/tidak aktif -- pilih ulang.</p>');
+    els.picThirdList.insertAdjacentHTML('beforeend', `<p class="hync-personnel-empty">${t('report.personnel.picThirdStale')}</p>`);
   }
 }
 
 function renderManpowerLabel() {
   const snapshot = getPersonnelDirectorySnapshot();
   const sampler = resolveSelectedPersonnel(snapshot.records, reportState.personnel).sampler;
-  els.mpThirdLabel.textContent = sampler ? `Manpower ${sampler.organization}` : 'Manpower Independent Sampler';
-  els.mpTotalLabel.textContent = sampler ? `Total Manpower ${sampler.organization}` : 'Total Manpower Independent Sampler';
+  els.mpThirdLabel.textContent = sampler ? `Manpower ${sampler.organization}` : t('report.personnel.manpowerDefaultLabel');
+  els.mpTotalLabel.textContent = sampler ? `Total Manpower ${sampler.organization}` : t('report.personnel.totalManpowerDefaultLabel');
 }
 
 function handleSamplerListChange(event) {
@@ -1170,7 +1201,7 @@ function handleFileChange(event) {
       reportState.workbookBuyerIssues = null;
       reportState.workbookFormat = null;
       applyWeekFromParsed(null);
-      renderFileStatus(false, 'Gagal membaca file: ' + err.message);
+      renderFileStatus(false, t('report.file.readError', { message: err.message }));
     }
     recomputeBuyerResolution({ openPopupOnNewMismatch: true });
   };
@@ -1198,21 +1229,21 @@ function renderContractorDirectoryStatus() {
   const hasDirectory = status.source === 'synced' || status.source === 'cached';
 
   if (!hasDirectory) {
-    els.contractorStatus.textContent = 'List DT Monitor: Not available';
+    els.contractorStatus.textContent = t('report.contractor.notAvailable');
     els.contractorStatus.classList.add('hync-contractor-status--warn');
     els.contractorLastSync.hidden = true;
-    els.contractorStatusWarn.textContent = 'List DT belum disinkronkan dari Monitor.';
+    els.contractorStatusWarn.textContent = t('report.contractor.notSynced');
     els.contractorStatusWarn.hidden = false;
     els.contractorGotoMonitorRow.hidden = false;
     return;
   }
 
   const label = status.source === 'synced' ? 'Synced' : 'Cached';
-  els.contractorStatus.textContent = `List DT Monitor: ${label} — ${status.recordCount} records`;
+  els.contractorStatus.textContent = t('report.contractor.status', { label, count: status.recordCount });
   els.contractorStatus.classList.remove('hync-contractor-status--warn');
 
   if (status.fetchedAt) {
-    els.contractorLastSync.textContent = `Last sync: ${formatContractorTimestamp(status.fetchedAt)}`;
+    els.contractorLastSync.textContent = t('report.contractor.lastSync', { timestamp: formatContractorTimestamp(status.fetchedAt) });
     els.contractorLastSync.hidden = false;
   } else {
     els.contractorLastSync.hidden = true;
@@ -1291,15 +1322,15 @@ function goToStep2() {
   const workbookProfile = reportState.workbookBuyer ? getProfile(reportState.workbookBuyer) : null;
   const prevReportRequired = !(workbookProfile && workbookProfile.previousReportOptional);
 
-  if (prevReportRequired && !prevTextRaw.trim()) errors.push('Teks report sebelumnya belum diisi.');
-  if (!reportState.fileParsed) errors.push('File data timbangan belum berhasil diupload/dibaca.');
+  if (prevReportRequired && !prevTextRaw.trim()) errors.push(t('report.validation.prevTextRequired'));
+  if (!reportState.fileParsed) errors.push(t('report.validation.fileNotParsed'));
   // Automatic Week (V2.3 Phase 1): only surfaced once a workbook has
   // actually been parsed -- if no file was uploaded at all, the
   // "File data timbangan belum berhasil diupload/dibaca." error above
   // already explains why Week is empty, so this avoids a redundant second
   // message for the same underlying cause.
   if (reportState.fileParsed && reportState.weekNumber == null) {
-    errors.push('Week tidak dapat dihitung dari tanggal file timbangan — periksa kembali file yang diupload.');
+    errors.push(t('report.validation.weekUncalculable'));
   }
 
   // Shift detection bug fix: classifyShift() (report-utils.js) never
@@ -1310,9 +1341,9 @@ function goToStep2() {
   if (reportState.fileParsed && reportState.parsed && reportState.parsed.shiftLabel == null) {
     const p = reportState.parsed;
     if (p.shiftDayCount > 0 && p.shiftDayCount === p.shiftNightCount) {
-      errors.push(`Shift tidak dapat ditentukan — distribusi jam Day Shift dan Night Shift pada file timbangan sama besar (${p.shiftDayCount} baris masing-masing).`);
+      errors.push(t('report.validation.shiftTie', { count: p.shiftDayCount }));
     } else {
-      errors.push('Shift tidak dapat ditentukan — tidak ada jam timbang yang valid pada file timbangan.');
+      errors.push(t('report.validation.shiftNoValidHours'));
     }
   }
 
@@ -1425,7 +1456,7 @@ function goToStep3() {
   const domes = reportState.parsed.domes;
   const missing = domes.filter((d) => !reportState.domeAreas[d.dome]);
   if (missing.length) {
-    renderAlert(els.step2Errors, [`Pilih area untuk semua dome dulu (${missing.length} belum dipilih, ditandai merah).`]);
+    renderAlert(els.step2Errors, [t('report.step2.missingAreaError', { count: missing.length })]);
     missing.forEach((d) => {
       const idx = domes.findIndex((x) => x.dome === d.dome);
       document.getElementById('hync-dome-row-' + idx)?.classList.add('hync-dome-row--missing');
@@ -1441,7 +1472,7 @@ function goToStep3() {
   // at all (source 'none') -- individual unmatched trucks despite a valid
   // cache remain a non-blocking warning (renderWarnings()), unchanged.
   if (getContractorDirectoryStatus().source === 'none') {
-    renderAlert(els.step2Errors, ['List DT belum disinkronkan dari Monitor. Buka halaman Monitor dan jalankan sinkronisasi List DT sebelum membuat laporan.']);
+    renderAlert(els.step2Errors, [t('report.contractor.stepBlockedMessage')]);
     return;
   }
 
@@ -1502,12 +1533,12 @@ function renderScaleDisplay(parsed) {
 // Date, so a stale/hand-edited Week line never silently looks trustworthy.
 function renderWarnings(parsed, prev) {
   const warns = [];
-  if (parsed.shiftFallback) warns.push('Tidak ada jam timbang valid terbaca — shift otomatis di-set "Day Shift", mohon cek manual.');
-  if (parsed.dateMismatch) warns.push('Ada lebih dari 1 tanggal berbeda di dalam file timbangan ini — dipakai tanggal dari baris pertama.');
-  if (parsed.unmatchedTrucks.length) warns.push(`${parsed.unmatchedTrucks.length} no. truck tidak ditemukan di List_DT (dianggap "TIDAK DIKENALI"): ${parsed.unmatchedTrucks.join(', ')}`);
+  if (parsed.shiftFallback) warns.push(t('report.warning.shiftFallback'));
+  if (parsed.dateMismatch) warns.push(t('report.warning.dateMismatch'));
+  if (parsed.unmatchedTrucks.length) warns.push(t('report.warning.unmatchedTrucks', { count: parsed.unmatchedTrucks.length, trucks: parsed.unmatchedTrucks.join(', ') }));
   const weekMismatch = prev ? findPreviousWeekMismatch(prev.date, prev.week) : null;
   if (weekMismatch) {
-    warns.push(`Week pada teks report sebelumnya (${weekMismatch.displayedWeek}) tidak sesuai dengan ISO week dari tanggalnya (${weekMismatch.calculatedWeek}) — tanggal report sebelumnya tetap dipakai sebagai acuan periode WTD, bukan angka Week yang tertulis.`);
+    warns.push(t('report.warning.weekMismatch', { displayedWeek: weekMismatch.displayedWeek, calculatedWeek: weekMismatch.calculatedWeek }));
   }
   els.step3Warnings.innerHTML = warns.length
     ? `<div class="hync-warn-box">${warns.map((w) => '⚠ ' + escapeHtml(w)).join('<br>')}</div>`
@@ -1541,7 +1572,7 @@ async function copyOutput() {
 }
 
 function showCopyFeedback(ok) {
-  els.copyFeedback.textContent = ok ? '✓ Tersalin ke clipboard' : '✗ Gagal menyalin otomatis, silakan copy manual dari kotak di atas';
+  els.copyFeedback.textContent = ok ? t('report.copy.success') : t('report.copy.failure');
   els.copyFeedback.classList.toggle('hync-copy-feedback--error', !ok);
   els.copyFeedback.style.display = 'block';
   window.setTimeout(() => {
@@ -1566,7 +1597,7 @@ function handleResetClick() {
   els.problem.value = '';
   els.action.value = '';
   els.fileInput.value = '';
-  els.fileDropText.textContent = 'Klik untuk upload file timbangan (.xlsx/.xls)';
+  els.fileDropText.textContent = t('report.workbook.dropDefaultText');
   els.fileStatus.className = 'hync-file-status';
   els.fileStatus.textContent = '';
   els.step1Errors.innerHTML = '';

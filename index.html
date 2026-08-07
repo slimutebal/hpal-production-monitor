@@ -365,26 +365,26 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 <div class="header-row">
   <h1>HPAL Production Monitor</h1>
-  <div class="theme-toggle" id="themeToggle" role="group" aria-label="Pilih tema tampilan">
-    <button type="button" data-theme-choice="auto"  title="Ikuti sistem">◐</button>
-    <button type="button" data-theme-choice="light" title="Mode terang">☀</button>
-    <button type="button" data-theme-choice="dark"  title="Mode gelap">☾</button>
+  <div class="theme-toggle" id="themeToggle" role="group" aria-label="Pilih tema tampilan" data-i18n-aria-label="monitor.themeToggle.groupLabel">
+    <button type="button" data-theme-choice="auto"  title="Ikuti sistem" data-i18n-title="monitor.themeToggle.auto">◐</button>
+    <button type="button" data-theme-choice="light" title="Mode terang" data-i18n-title="monitor.themeToggle.light">☀</button>
+    <button type="button" data-theme-choice="dark"  title="Mode gelap" data-i18n-title="monitor.themeToggle.dark">☾</button>
   </div>
 </div>
-<div class="sub">Upload data timbangan untuk lihat ritase per dome, kontraktor &amp; deteksi perpindahan DT</div>
+<div class="sub" data-i18n="monitor.header.subtitle">Upload data timbangan untuk lihat ritase per dome, kontraktor &amp; deteksi perpindahan DT</div>
 
 <div class="upload-row">
 <!-- SETUP KONTRAKTOR -->
 <div class="card" id="setupCard">
   <div class="card-head">
-    <h2>👷 Data Kontraktor (List DT)</h2>
+    <h2 data-i18n="monitor.contractorCard.title">👷 Data Kontraktor (List DT)</h2>
   </div>
   <div id="contractorStatus"></div>
   <label id="contractorUploadZone" for="contractorFileInput" class="upload-zone small" style="margin-top:10px; display:block;">
     <p style="font-size:1.4rem; margin:0;">📁</p>
-    <p><strong>Tap untuk upload List_DT.xlsx</strong></p>
-    <p>Kolom: DT ID &amp; Contractor — disimpan otomatis, tidak perlu upload ulang</p>
-    <span class="btn" style="display:inline-block; margin-top:8px;">📂 Pilih File Excel</span>
+    <p><strong data-i18n="monitor.contractorUpload.tapText">Tap untuk upload List_DT.xlsx</strong></p>
+    <p data-i18n="monitor.contractorUpload.hint">Kolom: DT ID &amp; Contractor — disimpan otomatis, tidak perlu upload ulang</p>
+    <span class="btn" style="display:inline-block; margin-top:8px;" data-i18n="monitor.upload.selectFileButton">📂 Pilih File Excel</span>
     <input type="file" id="contractorFileInput"
            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
   </label>
@@ -392,12 +392,12 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 <!-- UPLOAD TIMBANGAN -->
 <div class="card">
-  <div class="card-head"><h2>📦 Data Timbangan</h2></div>
+  <div class="card-head"><h2 data-i18n="monitor.weighbridgeCard.title">📦 Data Timbangan</h2></div>
   <label class="upload-zone" id="dropZone" for="fileInput" style="display:block;">
     <p style="font-size:1.6rem; margin:0;">📁</p>
-    <p><strong>Tap untuk pilih file</strong> atau drag &amp; drop</p>
-    <p>Format .xlsx — sheet pertama: 过磅明细</p>
-    <span class="btn" style="display:inline-block; margin-top:8px;">📂 Pilih File Excel</span>
+    <p><strong data-i18n="monitor.weighbridgeUpload.tapText">Tap untuk pilih file</strong> <span data-i18n="monitor.weighbridgeUpload.dragDropSuffix">atau drag &amp; drop</span></p>
+    <p data-i18n="monitor.weighbridgeUpload.formatHint">Format .xlsx — sheet pertama: 过磅明细</p>
+    <span class="btn" style="display:inline-block; margin-top:8px;" data-i18n="monitor.upload.selectFileButton">📂 Pilih File Excel</span>
     <input type="file" id="fileInput"
            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
   </label>
@@ -409,23 +409,23 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 <div id="contractorModalOverlay" class="modal-overlay">
   <div class="modal-box">
     <div class="card-head">
-      <h2>➕ Update Kontraktor</h2>
-      <button class="btn ghost" id="btnCloseModal" type="button">✕</button>
+      <h2 data-i18n="monitor.contractorModal.title">➕ Update Kontraktor</h2>
+      <button class="btn ghost" id="btnCloseModal" type="button" aria-label="Tutup" data-i18n-aria-label="monitor.contractorModal.closeAriaLabel">✕</button>
     </div>
     <div class="modal-field">
-      <label for="modalDtInput">No DT</label>
-      <input type="text" id="modalDtInput" placeholder="Contoh: SCM-LIM 982" autocomplete="off">
+      <label for="modalDtInput" data-i18n="monitor.contractorModal.dtLabel">No DT</label>
+      <input type="text" id="modalDtInput" placeholder="Contoh: SCM-LIM 982" data-i18n-placeholder="monitor.contractorModal.dtPlaceholder" autocomplete="off">
     </div>
     <div class="modal-field">
-      <label for="modalContractorInput">Nama Kontraktor</label>
-      <input type="text" id="modalContractorInput" placeholder="Contoh: MRP" autocomplete="off">
+      <label for="modalContractorInput" data-i18n="monitor.contractorModal.contractorLabel">Nama Kontraktor</label>
+      <input type="text" id="modalContractorInput" placeholder="Contoh: MRP" data-i18n-placeholder="monitor.contractorModal.contractorPlaceholder" autocomplete="off">
     </div>
     <div id="modalMsg"></div>
     <div class="row" style="margin-top:10px;">
-      <button class="btn" id="btnSubmitContractor" type="button">💾 Simpan</button>
-      <button class="btn ghost" id="btnCloseModal2" type="button">Selesai</button>
+      <button class="btn" id="btnSubmitContractor" type="button" data-i18n="monitor.contractorModal.saveButton">💾 Simpan</button>
+      <button class="btn ghost" id="btnCloseModal2" type="button" data-i18n="monitor.contractorModal.doneButton">Selesai</button>
     </div>
-    <div class="info-text" style="margin-top:10px;">Data langsung berlaku di HP ini. Kalau ada koneksi internet, otomatis tersinkron ke server pusat dan berlaku untuk semua pengguna.</div>
+    <div class="info-text" style="margin-top:10px;" data-i18n="monitor.contractorModal.infoText">Data langsung berlaku di HP ini. Kalau ada koneksi internet, otomatis tersinkron ke server pusat dan berlaku untuk semua pengguna.</div>
     <div id="modalSessionLog" style="margin-top:10px;"></div>
   </div>
 </div>
@@ -433,10 +433,27 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 <div id="output"></div>
 
 <script>
-/* ---------------- THEME CONTROLLER (dark / light / auto) ---------------- */
-const THEME_STORAGE_KEY = 'hpal_theme_pref_v1';
+/* ---------------- THEME CONTROLLER (dark / light / auto) ----------------
+   V2.3 Phase 7 (Appearance): this block used to read/write its choice
+   through a `window.storage` API that does not exist in a real browser
+   (it silently fell through to an in-memory-only fallback on every real
+   deployment, so the choice never actually survived a reload -- see the
+   old `saveThemeChoice`/`loadThemeChoice` before this change). It now
+   reads/writes the exact same shared preferences key
+   js/services/app-preferences-service.js owns (`hpal.preferences.v1`,
+   plain localStorage, `{schemaVersion,locale,appearance}`), and updates
+   only the `appearance` field (a read-modify-write, so it never touches
+   whatever `locale` value the module side has already written) -- this is
+   "unify the current theme behavior... so all of them read from and
+   respond to the same single resolved theme state" (architecture section
+   13.2) in practice, without rewriting this classic (non-module) script
+   into an ES module. Cross-boundary sync with Settings' Appearance card
+   (a real ES module, cannot be imported here) happens through the shared
+   storage key plus the `hpal:preferences-changed` window CustomEvent both
+   sides dispatch/listen for. */
+const PREFERENCES_STORAGE_KEY = 'hpal.preferences.v1';
+const PREFERENCES_SCHEMA_VERSION = 1;
 let themeChoice = 'auto'; // 'auto' | 'light' | 'dark' — user's selected mode
-let themeMemory = null;    // in-memory fallback kalau window.storage tidak tersedia
 
 const systemDarkMQ = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
@@ -462,24 +479,33 @@ function applyTheme(choice){
   if(window._niChartData) renderNIChart();
 }
 
-async function saveThemeChoice(choice){
+function loadPreferences(){
   try{
-    if(window.storage && window.storage.set){
-      await window.storage.set(THEME_STORAGE_KEY, choice, false);
-      return;
+    const raw = window.localStorage && window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && parsed.schemaVersion === PREFERENCES_SCHEMA_VERSION
+        && (parsed.appearance === 'dark' || parsed.appearance === 'light' || parsed.appearance === 'auto')
+        && (parsed.locale === 'id' || parsed.locale === 'en')){
+        return parsed;
+      }
     }
-  }catch(e){ /* fall through to in-memory */ }
-  themeMemory = choice; // sesi ini saja kalau storage tidak tersedia
+  }catch(e){ /* corrupted/unavailable storage -- fall through to defaults below */ }
+  return { schemaVersion: PREFERENCES_SCHEMA_VERSION, locale: 'id', appearance: 'auto' };
 }
 
-async function loadThemeChoice(){
+// Read-modify-write: only ever changes `appearance`, so a `locale` value
+// already persisted by js/i18n/i18n.js (an ES module, running separately)
+// is never overwritten by this classic script.
+function saveThemeChoice(choice){
+  const prefs = loadPreferences();
+  prefs.appearance = choice;
   try{
-    if(window.storage && window.storage.get){
-      const res = await window.storage.get(THEME_STORAGE_KEY, false);
-      if(res && res.value) return res.value;
-    }
-  }catch(e){ /* belum ada / storage tidak tersedia */ }
-  return themeMemory || 'auto';
+    window.localStorage && window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(prefs));
+  }catch(e){ /* best-effort only -- a save failure must never block applying the theme */ }
+  try{
+    window.dispatchEvent(new CustomEvent('hpal:preferences-changed', { detail: prefs }));
+  }catch(e){ /* ignored -- notifying Settings' Appearance card is best-effort */ }
 }
 
 function initThemeToggle(){
@@ -496,11 +522,18 @@ function initThemeToggle(){
     if(systemDarkMQ.addEventListener) systemDarkMQ.addEventListener('change', handler);
     else if(systemDarkMQ.addListener) systemDarkMQ.addListener(handler); // fallback Safari lama
   }
+  // Settings' Appearance card (js/pages/settings/settings-page.js, an ES
+  // module) dispatches this same event on every change -- keeps this
+  // toggle's active state and the chart's redraw in sync without a reload,
+  // even though the two sides can never `import` each other directly.
+  window.addEventListener('hpal:preferences-changed', (event) => {
+    const appearance = event && event.detail && event.detail.appearance;
+    if(appearance && appearance !== themeChoice) applyTheme(appearance);
+  });
 }
 
-(async function initTheme(){
-  const saved = await loadThemeChoice();
-  applyTheme(saved);
+(function initTheme(){
+  applyTheme(loadPreferences().appearance);
   initThemeToggle();
 })();
 
@@ -529,13 +562,25 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Monitor-local alias for the window.i18n bridge js/app.js installs
+// (V2.3 full-localization pass) -- degrades to returning the raw key
+// (never throws, never blanks) in the theoretical case a dynamic message
+// fires before the module script has run, which in practice cannot
+// happen: every call site below is inside a user-triggered event handler
+// (file select, button click), never Monitor's own synchronous initial
+// script execution, and js/app.js's module always finishes before the
+// page becomes interactive.
+function mt(key, vars){
+  return (window.i18n && typeof window.i18n.t === 'function') ? window.i18n.t(key, vars) : key;
+}
+
 /* ---------------- ROBUST FILE READER (iOS-compatible) ---------------- */
 // Reads an Excel file and returns a parsed XLSX workbook via callbacks.
 // Uses file.arrayBuffer() when available, falls back to FileReader.readAsArrayBuffer
 // (older iOS Safari versions only support the FileReader path).
 function readExcelFile(file, onSuccess, onError){
   if(typeof XLSX === 'undefined'){
-    const msg = 'Library XLSX tidak termuat di halaman ini — parsing dibatalkan';
+    const msg = mt('monitor.upload.xlsxNotLoadedError');
     onError(new Error(msg));
     return;
   }
@@ -628,27 +673,27 @@ function renderContractorStatus(){
 
   let sourceBadge;
   if(liveMapStatus.loaded){
-    sourceBadge = `<span class="pill good">✅ ${totalCount} unit DT (tersambung ke server pusat)</span>`;
+    sourceBadge = `<span class="pill good">${mt('monitor.contractorStatus.syncedBadge', {count: totalCount})}</span>`;
   } else if(liveMapStatus.error){
-    sourceBadge = `<span class="pill warn">⚠ ${totalCount} unit DT (offline — pakai data tersimpan)</span>`;
+    sourceBadge = `<span class="pill warn">${mt('monitor.contractorStatus.offlineBadge', {count: totalCount})}</span>`;
   } else {
-    sourceBadge = `<span class="pill">${totalCount} unit DT (menyinkron...)</span>`;
+    sourceBadge = `<span class="pill">${mt('monitor.contractorStatus.syncingBadge', {count: totalCount})}</span>`;
   }
 
   const personalBadge = personalActive
-    ? `<span class="pill">📄 override lokal: ${escapeHtml(contractorData.filename || '')}</span>`
+    ? `<span class="pill">${mt('monitor.contractorStatus.localOverrideBadge', {filename: escapeHtml(contractorData.filename || '')})}</span>`
     : '';
 
   const pendingBadge = pendingQueue.length > 0
-    ? `<span class="pill warn">⏳ ${pendingQueue.length} entri belum sinkron</span>`
+    ? `<span class="pill warn">${mt('monitor.contractorStatus.pendingBadge', {count: pendingQueue.length})}</span>`
     : '';
 
   contractorStatus.innerHTML = `
     <div class="row">${sourceBadge}${personalBadge}${pendingBadge}</div>
     <div class="row" style="margin-top:8px;">
-      <button class="btn" id="btnAddContractor">➕ Update Kontraktor</button>
-      <button class="btn ghost" id="btnSyncNow">🔄 Sinkron Sekarang</button>
-      <button class="btn ghost" id="btnUpdateContractorFile">📄 Update via File Excel</button>
+      <button class="btn" id="btnAddContractor">${mt('monitor.contractorStatus.addButton')}</button>
+      <button class="btn ghost" id="btnSyncNow">${mt('monitor.contractorStatus.syncNowButton')}</button>
+      <button class="btn ghost" id="btnUpdateContractorFile">${mt('monitor.contractorStatus.updateFileButton')}</button>
     </div>`;
 
   contractorUploadZone.style.display = 'none';
@@ -666,12 +711,12 @@ contractorFileInput.addEventListener('change', e => {
 });
 
 function handleContractorFile(file){
-  contractorStatus.innerHTML = `<div class="filename">⏳ Membaca ${escapeHtml(file.name)}...</div>`;
+  contractorStatus.innerHTML = `<div class="filename">${mt('monitor.status.readingFile', {filename: escapeHtml(file.name)})}</div>`;
   readExcelFile(file, async (wb) => {
     try{
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-      if(rows.length === 0) throw new Error('File kosong');
+      if(rows.length === 0) throw new Error(mt('monitor.upload.emptyFileError'));
 
       const headers = Object.keys(rows[0]);
       const idCol = headers.find(h => /dt/i.test(h)) || headers[0];
@@ -692,10 +737,10 @@ function handleContractorFile(file){
       publishMonitorContractorDirectory('monitor-local-override');
       renderContractorStatus();
     }catch(err){
-      contractorStatus.innerHTML = `<div class="error-box">Gagal membaca file kontraktor: ${escapeHtml(err.message)}</div>`;
+      contractorStatus.innerHTML = `<div class="error-box">${mt('monitor.status.contractorFileReadError', {message: escapeHtml(err.message)})}</div>`;
     }
   }, (err) => {
-    contractorStatus.innerHTML = `<div class="error-box">Gagal membaca file kontraktor: ${escapeHtml(err.message)}</div>`;
+    contractorStatus.innerHTML = `<div class="error-box">${mt('monitor.status.contractorFileReadError', {message: escapeHtml(err.message)})}</div>`;
   });
 }
 
@@ -710,10 +755,25 @@ function normalizeDT(dt){
   return s;
 }
 
+// 'Tidak terdaftar' is a STABLE internal sentinel, never translated here --
+// it is compared against verbatim elsewhere (the dome-group
+// contractorLabel filter below) and must stay locale-independent so that
+// comparison keeps working regardless of the active UI language.
+// displayContractor() below is the one place this sentinel is translated,
+// applied only at final render, never at the point of comparison/storage.
+const NOT_REGISTERED_CONTRACTOR = 'Tidak terdaftar';
+
 function getContractor(dt){
   const map = getEffectiveContractorMap();
   const raw = String(dt).trim();
-  return map[raw] || map[normalizeDT(raw)] || 'Tidak terdaftar';
+  return map[raw] || map[normalizeDT(raw)] || NOT_REGISTERED_CONTRACTOR;
+}
+
+// Presentation-only translation of getContractor()'s sentinel fallback --
+// never call this on a value that will later be compared/stored, only on
+// a value about to be rendered into HTML.
+function displayContractor(contractor){
+  return contractor === NOT_REGISTERED_CONTRACTOR ? mt('monitor.contractor.notRegistered') : contractor;
 }
 
 /* ---------------- SINKRONISASI GOOGLE SHEET (data kontraktor bersama) ---------------- */
@@ -744,7 +804,7 @@ async function fetchSheetContractors(isManualTrigger){
     renderContractorStatus();
     if(isManualTrigger){
       contractorStatus.insertAdjacentHTML('beforeend',
-        `<div class="error-box" style="margin-top:8px;">Gagal sinkron ke server: ${escapeHtml(err.message)}. Memakai data tersimpan.</div>`);
+        `<div class="error-box" style="margin-top:8px;">${mt('monitor.contractorStatus.syncError', {message: escapeHtml(err.message)})}</div>`);
     }
   }
 }
@@ -759,7 +819,7 @@ async function postContractorUpdate(dtId, contractor){
   });
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const result = await res.json();
-  if(!result.ok) throw new Error(result.error || 'Server menolak data');
+  if(!result.ok) throw new Error(result.error || mt('monitor.contractorModal.serverRejectedError'));
   return result;
 }
 
@@ -832,7 +892,7 @@ async function submitContractorEntry(){
   const contractor = contractorInput.value.trim();
 
   if(!dtId || !contractor){
-    msgEl.innerHTML = `<div class="error-box">No DT dan Nama Kontraktor wajib diisi.</div>`;
+    msgEl.innerHTML = `<div class="error-box">${mt('monitor.contractorModal.requiredFieldsError')}</div>`;
     return;
   }
 
@@ -844,10 +904,10 @@ async function submitContractorEntry(){
   publishMonitorContractorDirectory('monitor-manual-entry');
   renderContractorStatus();
 
-  let statusIcon = '⏳', statusText = 'menunggu koneksi';
+  let statusIcon = '⏳', statusText = mt('monitor.contractorModal.pendingStatus');
   try{
     await postContractorUpdate(dtId, contractor);
-    statusIcon = '✅'; statusText = 'tersinkron ke server';
+    statusIcon = '✅'; statusText = mt('monitor.contractorModal.syncedStatus');
   }catch(err){
     pendingQueue.push({ dtId, contractor, queuedAt: new Date().toISOString() });
     await savePendingQueue();
@@ -882,7 +942,7 @@ fileInput.addEventListener('change', e=>{
 });
 
 function handleFile(file){
-  fileStatus.innerHTML = `<div class="filename">⏳ Membaca ${escapeHtml(file.name)}...</div>`;
+  fileStatus.innerHTML = `<div class="filename">${mt('monitor.status.readingFile', {filename: escapeHtml(file.name)})}</div>`;
   readExcelFile(file, (wb) => {
     try{
       // Auto-detect format:
@@ -901,14 +961,14 @@ function handleFile(file){
         formatLabel = 'HYNC/SLNC';
       }
 
-      fileStatus.innerHTML = `<div class="filename">✅ ${escapeHtml(file.name)} — ${formatLabel} — sheet "${escapeHtml(sheetName)}" — ${rows.length} baris</div>`;
+      fileStatus.innerHTML = `<div class="filename">${mt('monitor.status.fileReadSuccess', {filename: escapeHtml(file.name), formatLabel, sheetName: escapeHtml(sheetName), rowCount: rows.length})}</div>`;
       const buyer = detectBuyer(rows, isESG);
       processData(rows, buyer);
     }catch(err){
-      output.innerHTML = `<div class="error-box">Gagal membaca file: ${escapeHtml(err.message)}</div>`;
+      output.innerHTML = `<div class="error-box">${mt('monitor.status.fileReadError', {message: escapeHtml(err.message)})}</div>`;
     }
   }, (err) => {
-    output.innerHTML = `<div class="error-box">Gagal membaca file: ${escapeHtml(err.message)}</div>`;
+    output.innerHTML = `<div class="error-box">${mt('monitor.status.fileReadError', {message: escapeHtml(err.message)})}</div>`;
   });
 }
 
@@ -1030,8 +1090,16 @@ function detectShift(rows, colWaktu){
   return dayCount >= nightCount ? 'Day Shift' : 'Night Shift';
 }
 
+// Cached only so a locale change can safely re-run processData() to
+// re-translate its rendered output's static labels -- never read for any
+// calculation, and never a substitute for the actual uploaded file.
+let lastProcessedRows = null;
+let lastProcessedBuyer = null;
+
 function processData(rows, buyer){
   buyer = buyer || 'HYNC';
+  lastProcessedRows = rows;
+  lastProcessedBuyer = buyer;
   const COL = {
     serial: '流水号', dt: '车号', netto: '净重',
     waktuIsi: '毛重时间', tanggal: '日期', sellingCode: '备注', spec: '规格'
@@ -1058,7 +1126,7 @@ function processData(rows, buyer){
   }).filter(r => r.dt);
 
   if(records.length === 0){
-    output.innerHTML = `<div class="error-box">Tidak ada baris valid ditemukan. Cek nama kolom di file (流水号, 车号, 净重, 毛重时间, 日期, 备注, 规格).</div>`;
+    output.innerHTML = `<div class="error-box">${mt('monitor.upload.noValidRowsError')}</div>`;
     return;
   }
 
@@ -1067,7 +1135,7 @@ function processData(rows, buyer){
   // Group by Dome
   const byDome = {};
   records.forEach(r => {
-    const dome = r.dome || '(Tanpa Dome)';
+    const dome = r.dome || mt('monitor.results.noDomeLabel');
     if(!byDome[dome]) byDome[dome] = {};
     if(!byDome[dome][r.dt]) byDome[dome][r.dt] = [];
     byDome[dome][r.dt].push(r);
@@ -1076,7 +1144,7 @@ function processData(rows, buyer){
   // DT -> domes (for movement detection display in per-dome section)
   const dtDomes = {};
   records.forEach(r => {
-    const dome = r.dome || '(Tanpa Dome)';
+    const dome = r.dome || mt('monitor.results.noDomeLabel');
     if(!dtDomes[r.dt]) dtDomes[r.dt] = new Set();
     dtDomes[r.dt].add(dome);
   });
@@ -1107,10 +1175,10 @@ function processData(rows, buyer){
       const tb = b.waktuIsiDate ? b.waktuIsiDate.getTime() : b.idx;
       return ta - tb;
     });
-    const domeAwal = sorted[0].dome || '(Tanpa Dome)';
+    const domeAwal = sorted[0].dome || mt('monitor.results.noDomeLabel');
     let currentDome = domeAwal;
     sorted.forEach((r, i) => {
-      const dome = r.dome || '(Tanpa Dome)';
+      const dome = r.dome || mt('monitor.results.noDomeLabel');
       if(i > 0 && dome !== currentDome){
         moveRows.push({
           contractor: getContractor(dt),
@@ -1142,7 +1210,7 @@ function processData(rows, buyer){
   // Group records by Dome, classify each dome's ore class from its grade
   const domeStats = {};
   records.forEach(r => {
-    const dome = r.dome || '(Tanpa Dome)';
+    const dome = r.dome || mt('monitor.results.noDomeLabel');
     if(!domeStats[dome]){
       domeStats[dome] = { dome, grade: null, hourCounts: {}, hourTonase: {}, contractors: new Set() };
       hourBuckets.forEach(h => { domeStats[dome].hourCounts[h] = 0; domeStats[dome].hourTonase[h] = 0; });
@@ -1160,8 +1228,8 @@ function processData(rows, buyer){
     g.oreClass = classifyOre(g.grade);
     g.total = hourBuckets.reduce((s,h) => s + g.hourCounts[h], 0);
     g.totalTonase = hourBuckets.reduce((s,h) => s + g.hourTonase[h], 0);
-    g.contractorLabel = Array.from(g.contractors).filter(c => c && c !== 'Tidak terdaftar' && c !== 'Belum ada data').join(', ')
-                       || Array.from(g.contractors).join(', '); // fallback kalau semua unmatched
+    g.contractorLabel = Array.from(g.contractors).filter(c => c && c !== NOT_REGISTERED_CONTRACTOR && c !== 'Belum ada data').map(displayContractor).join(', ')
+                       || Array.from(g.contractors).map(displayContractor).join(', '); // fallback kalau semua unmatched
   });
 
   const domesByClass = { HGLO: [], MGLO: [], LGLO: [] };
@@ -1199,24 +1267,24 @@ function processData(rows, buyer){
       <div class="buyer-label">Buyer</div>
       <div class="buyer-name" style="color:${bColor};">${buyerIcons[buyer]||'📦'} ${buyer}</div>
     </div>
-    <span class="buyer-badge" style="background:${bColor};">Data Timbangan Ore</span>
+    <span class="buyer-badge" style="background:${bColor};">${mt('monitor.results.oreBadge')}</span>
   </div>`;
 
   // Header info: Tanggal & Shift
   html += `
   <div class="card">
     <div class="header-info">
-      <div class="info-box"><div class="lbl">Tanggal</div><div class="val">${escapeHtml(tanggal)}</div></div>
+      <div class="info-box"><div class="lbl">${mt('monitor.results.dateLabel')}</div><div class="val">${escapeHtml(tanggal)}</div></div>
       <div class="info-box"><div class="lbl">Shift</div><div class="val">${shift === 'Day Shift' ? '☀️' : '🌙'} ${shift}</div></div>
     </div>
     <div class="stat-grid" style="margin-top:10px;">
-      <div class="stat"><div class="num">${totalRitase}</div><div class="lbl">Total Ritase</div></div>
-      <div class="stat"><div class="num">${totalDome}</div><div class="lbl">Jumlah Dome</div></div>
-      <div class="stat"><div class="num">${totalDT}</div><div class="lbl">Unit DT</div></div>
-      <div class="stat"><div class="num">${fmtTon(totalTonase)}</div><div class="lbl">Total Tonase (Ton)</div></div>
-      <div class="stat"><div class="num">${kadarNI.toFixed(2)}</div><div class="lbl">Kadar NI</div></div>
+      <div class="stat"><div class="num">${totalRitase}</div><div class="lbl">${mt('monitor.results.totalRitaseLabel')}</div></div>
+      <div class="stat"><div class="num">${totalDome}</div><div class="lbl">${mt('monitor.results.domeCountLabel')}</div></div>
+      <div class="stat"><div class="num">${totalDT}</div><div class="lbl">${mt('monitor.results.dtUnitLabel')}</div></div>
+      <div class="stat"><div class="num">${fmtTon(totalTonase)}</div><div class="lbl">${mt('monitor.results.totalTonaseLabel')}</div></div>
+      <div class="stat"><div class="num">${kadarNI.toFixed(2)}</div><div class="lbl">${mt('monitor.results.niGradeLabel')}</div></div>
     </div>
-    ${invalidSpecCount > 0 ? `<div style="margin-top:10px;" class="row"><span class="pill warn">⚠ ${invalidSpecCount} baris format 规格 tidak standar (dipecah secara fallback)</span></div>` : ''}
+    ${invalidSpecCount > 0 ? `<div style="margin-top:10px;" class="row"><span class="pill warn">${mt('monitor.results.invalidSpecWarning', {count: invalidSpecCount})}</span></div>` : ''}
   </div>`;
 
   // ---- NI Analysis Chart + Cause Table ----  (dihitung dulu sebelum render)
@@ -1256,14 +1324,14 @@ function processData(rows, buyer){
       if(lgloUp > 5) reasons.push(`↑ LGLO +${lgloUp.toFixed(0)}%`);
       if(mgloUp > 5) reasons.push(`↑ MGLO +${mgloUp.toFixed(0)}%`);
       if(hgloDown > 5) reasons.push(`↓ HGLO -${hgloDown.toFixed(0)}%`);
-      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
+      return reasons.length ? reasons.join(', ') : mt('monitor.results.mixChangedSmall');
     } else {
       const hgloUp = diffs.find(d => d.cls === 'HGLO')?.diff ?? 0;
       const lgloDown = -(diffs.find(d => d.cls === 'LGLO')?.diff ?? 0);
       const reasons = [];
       if(hgloUp > 5) reasons.push(`↑ HGLO +${hgloUp.toFixed(0)}%`);
       if(lgloDown > 5) reasons.push(`↓ LGLO -${lgloDown.toFixed(0)}%`);
-      return reasons.length ? reasons.join(', ') : 'Mix berubah kecil';
+      return reasons.length ? reasons.join(', ') : mt('monitor.results.mixChangedSmall');
     }
   }
 
@@ -1280,7 +1348,7 @@ function processData(rows, buyer){
 
   // 📈 Render NI chart DULU
   html += `
-  <div class="section-title">📈 Analisis NI per Jam</div>
+  <div class="section-title">${mt('monitor.results.niAnalysisTitle')}</div>
   <div class="card" style="padding:14px;">
     <div id="niChartWrap" style="position:relative; width:100%; height:300px;">
       <canvas id="niChart"></canvas>
@@ -1294,8 +1362,8 @@ function processData(rows, buyer){
       <table>
         <thead>
           <tr>
-            <th>Jam</th><th>HGLO (T)</th><th>MGLO (T)</th><th>LGLO (T)</th>
-            <th>Total (T)</th><th>NI</th><th style="text-align:center;">ΔNI (base ${niBase.toFixed(2)})</th><th>Mix H/M/L %</th><th>Indikasi</th>
+            <th>${mt('monitor.results.hourHeader')}</th><th>HGLO (T)</th><th>MGLO (T)</th><th>LGLO (T)</th>
+            <th>Total (T)</th><th>NI</th><th style="text-align:center;">ΔNI (base ${niBase.toFixed(2)})</th><th>Mix H/M/L %</th><th>${mt('monitor.results.indicationHeader')}</th>
           </tr>
         </thead>
         <tbody>
@@ -1329,7 +1397,7 @@ function processData(rows, buyer){
   </div>`;
 
   // ⛏ Tabel Komposisi DT per Ore Class (setelah NI chart)
-  html += `<div class="section-title">⛏ Komposisi DT per Ore Class</div>`;
+  html += `<div class="section-title">${mt('monitor.results.dtCompositionTitle')}</div>`;
   html += `<div class="card" style="padding:0; overflow:hidden;">
     <div class="table-wrap">
       <table>
@@ -1345,14 +1413,14 @@ function processData(rows, buyer){
           return rowsHtml;
         }).join('')}
         <tr><td colspan="${hourBuckets.length + 2}" class="divider-row"></td></tr>
-        <tr><td colspan="${hourBuckets.length + 2}" class="caption-row">Rekap Tonase &amp; Grade per Jam</td></tr>
+        <tr><td colspan="${hourBuckets.length + 2}" class="caption-row">${mt('monitor.results.tonaseGradeRecapCaption')}</td></tr>
         <tr class="ore-row"><td><strong>TOTAL</strong></td>${hourBuckets.map(h => `<td>${grandHourCount[h] || ''}</td>`).join('')}<td><strong>${totalRitase}</strong></td></tr>
         ${oreClasses.map(cls => {
           const total = classTotalTonase(cls);
           if(total === 0) return '';
           return `<tr><td>${cls}</td>${hourBuckets.map(h => { const v = classHourTonase(cls,h); return `<td>${v ? fmtTon(v) : ''}</td>`; }).join('')}<td><strong>${fmtTon(total)}</strong></td></tr>`;
         }).join('')}
-        <tr class="ore-row"><td><strong>TONASE</strong></td>${hourBuckets.map(h => `<td>${grandHourTonase[h] ? fmtTon(grandHourTonase[h]) : ''}</td>`).join('')}<td><strong>${fmtTon(totalTonase)}</strong></td></tr>
+        <tr class="ore-row"><td><strong>${mt('monitor.results.tonaseRowLabel')}</strong></td>${hourBuckets.map(h => `<td>${grandHourTonase[h] ? fmtTon(grandHourTonase[h]) : ''}</td>`).join('')}<td><strong>${fmtTon(totalTonase)}</strong></td></tr>
         <tr class="ore-row"><td><strong>Grade</strong></td>${hourBuckets.map(h => { const g = grandHourTonase[h] > 0 ? (grandHourGradeTonase[h] / grandHourTonase[h]) : null; return `<td>${g !== null ? g.toFixed(2) : ''}</td>`; }).join('')}<td><strong>${kadarNI.toFixed(2)}</strong></td></tr>
         </tbody>
       </table>
@@ -1379,14 +1447,14 @@ function processData(rows, buyer){
   resumeGroups.sort((a, b) => a.contractor.localeCompare(b.contractor) || a.earliest.localeCompare(b.earliest));
 
   // 📋 Tabel Resume Perpindahan per Kontraktor (ditampilkan LEBIH DULU)
-  html += `<div class="section-title">📋 Resume Perpindahan per Kontraktor</div>`;
+  html += `<div class="section-title">${mt('monitor.results.contractorMoveResumeTitle')}</div>`;
   if(moveRows.length === 0){
-    html += `<div class="card"><div class="empty">✓ Tidak ada DT yang pindah dome pada data ini</div></div>`;
+    html += `<div class="card"><div class="empty">${mt('monitor.results.noDtMovedMessage')}</div></div>`;
   } else {
     html += `<div class="card" style="padding:0; overflow:hidden;">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Contractor</th><th>DT Pindah</th><th>Perpindahan</th><th>Jam</th></tr></thead>
+          <thead><tr><th>Contractor</th><th>${mt('monitor.results.dtMovedHeader')}</th><th>${mt('monitor.results.movementHeader')}</th><th>${mt('monitor.results.hourHeader')}</th></tr></thead>
           <tbody>
           ${(() => {
             let rowsHtml = '';
@@ -1398,7 +1466,7 @@ function processData(rows, buyer){
               for (let k = i; k < j; k++) {
                 const g = resumeGroups[k];
                 rowsHtml += `<tr>`;
-                if (k === i) rowsHtml += `<td rowspan="${span}"><strong>${escapeHtml(g.contractor)}</strong></td>`;
+                if (k === i) rowsHtml += `<td rowspan="${span}"><strong>${escapeHtml(displayContractor(g.contractor))}</strong></td>`;
                 rowsHtml += `<td>${g.count} DT</td>`;
                 rowsHtml += `<td>${escapeHtml(g.fromDome)} → ${escapeHtml(g.toDome)}</td>`;
                 rowsHtml += `<td>${escapeHtml(g.jamLabel)}</td>`;
@@ -1415,21 +1483,21 @@ function processData(rows, buyer){
   }
 
   // 🔁 Tabel Perpindahan DT (ditampilkan SETELAH Resume)
-  html += `<div class="section-title" style="margin-top:14px;">🔁 Perpindahan DT</div>`;
+  html += `<div class="section-title" style="margin-top:14px;">${mt('monitor.results.dtMovementTitle')}</div>`;
   if(moveRows.length === 0){
-    html += `<div class="card"><div class="empty">✓ Tidak ada DT yang pindah dome pada data ini</div></div>`;
+    html += `<div class="card"><div class="empty">${mt('monitor.results.noDtMovedMessage')}</div></div>`;
   } else {
     html += `<div class="card" style="padding:0; overflow:hidden;">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Contractor</th><th>No DT</th><th>Dome Awal</th><th>Pindah Dome</th><th>Keterangan</th></tr></thead>
+          <thead><tr><th>Contractor</th><th>${mt('monitor.results.dtNumberHeader')}</th><th>${mt('monitor.results.startDomeHeader')}</th><th>${mt('monitor.results.movedToDomeHeader')}</th><th>${mt('monitor.results.notesHeader')}</th></tr></thead>
           <tbody>
           ${moveRows.map(m => `<tr class="move-row">
-            <td>${escapeHtml(m.contractor)}</td>
+            <td>${escapeHtml(displayContractor(m.contractor))}</td>
             <td><strong>${escapeHtml(m.dt)}</strong></td>
             <td><span class="pill">${escapeHtml(m.domeAwal)}</span></td>
             <td><span class="pill bad">${escapeHtml(m.pindahDome)}</span></td>
-            <td>Ritase ke-${m.ritaseKe}, pukul ${escapeHtml(m.jam)}</td>
+            <td>${mt('monitor.results.ritaseAtLabel', {n: m.ritaseKe, time: escapeHtml(m.jam)})}</td>
           </tr>`).join('')}
           </tbody>
         </table>
@@ -1438,7 +1506,7 @@ function processData(rows, buyer){
   }
 
   // Per-Dome detail
-  html += `<div class="section-title">📦 Detail per Kelompok Dome</div>`;
+  html += `<div class="section-title">${mt('monitor.results.domeDetailTitle')}</div>`;
   const sortedDomes = Object.keys(byDome).sort();
   sortedDomes.forEach(dome => {
     const dtMap = byDome[dome];
@@ -1450,15 +1518,15 @@ function processData(rows, buyer){
     <details>
       <summary>
         <span>📍 ${escapeHtml(dome)} ${sampleGrade !== null ? `<span class="pill" style="margin-left:6px;">NI: ${sampleGrade}</span>` : ''}</span>
-        <span class="badge">${dtList.length} DT · ${ritaseTotal} ritase</span>
+        <span class="badge">${mt('monitor.results.dtRitaseBadge', {dtCount: dtList.length, ritaseCount: ritaseTotal})}</span>
       </summary>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>No DT</th><th>Contractor</th><th>Ritase</th><th>Status</th></tr></thead>
+          <thead><tr><th>${mt('monitor.results.dtNumberHeader')}</th><th>Contractor</th><th>Ritase</th><th>Status</th></tr></thead>
           <tbody>
           ${dtList.map(dt => {
             const moved = dtDomes[dt].size > 1;
-            return `<tr><td>${escapeHtml(dt)}</td><td>${escapeHtml(getContractor(dt))}</td><td>${dtMap[dt].length}</td><td>${moved ? '<span class="tag-move">🔁 PINDAH</span>' : '—'}</td></tr>`;
+            return `<tr><td>${escapeHtml(dt)}</td><td>${escapeHtml(displayContractor(getContractor(dt)))}</td><td>${dtMap[dt].length}</td><td>${moved ? `<span class="tag-move">${mt('monitor.results.movedTag')}</span>` : '—'}</td></tr>`;
           }).join('')}
           </tbody>
         </table>
@@ -1469,15 +1537,15 @@ function processData(rows, buyer){
   // Raw detail
   html += `
   <details style="margin-top:6px;">
-    <summary><span>🧾 Lihat Semua Baris Mentah (${records.length})</span><span class="badge">detail</span></summary>
+    <summary><span>${mt('monitor.results.viewRawRowsSummary', {count: records.length})}</span><span class="badge">detail</span></summary>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Serial</th><th>No DT</th><th>Contractor</th><th>Dome</th><th>NI</th><th>Netto</th><th>Waktu Isi</th><th>Selling Code</th></tr></thead>
+        <thead><tr><th>Serial</th><th>${mt('monitor.results.dtNumberHeader')}</th><th>Contractor</th><th>Dome</th><th>NI</th><th>${mt('monitor.results.nettoHeader')}</th><th>${mt('monitor.results.fillTimeHeader')}</th><th>Selling Code</th></tr></thead>
         <tbody>
         ${records.map(r => `<tr>
           <td>${escapeHtml(r.serial)}</td>
           <td>${escapeHtml(r.dt)}</td>
-          <td>${escapeHtml(getContractor(r.dt))}</td>
+          <td>${escapeHtml(displayContractor(getContractor(r.dt)))}</td>
           <td>${escapeHtml(r.dome)}</td>
           <td>${r.grade !== null ? r.grade : '-'}</td>
           <td>${r.netto}</td>
@@ -1512,7 +1580,7 @@ function renderNIChart(){
   if(!d) return;
   const canvas = document.getElementById('niChart');
   if(!canvas) return;
-  if(typeof Chart === 'undefined'){ canvas.parentElement.innerHTML = '<div class="empty" style="color:var(--bad)">Chart.js tidak termuat</div>'; return; }
+  if(typeof Chart === 'undefined'){ canvas.parentElement.innerHTML = `<div class="empty" style="color:var(--bad)">${mt('monitor.chart.notLoadedError')}</div>`; return; }
 
   // Hancurkan instance lama kalau ada (re-upload / re-render)
   const existing = Chart.getChart(canvas);
@@ -1666,13 +1734,13 @@ function renderNIChart(){
           border:{color:chartColors.axisLine}
         },
         yTon:{type:'linear', position:'left', stacked:true,
-          title:{display:true, text:'Tonase (T)', color:chartColors.axisText, font:{size:10}},
+          title:{display:true, text:mt('monitor.results.tonaseAxisLabel'), color:chartColors.axisText, font:{size:10}},
           ticks:{color:chartColors.axisText, font:{size:10}},
           grid:{color:chartColors.gridLine},
           border:{display:false}},
         yNI:{type:'linear', position:'right',
           min: Math.max(0, niMin - niPad), max: niMax + niPad,
-          title:{display:true, text:'Kadar NI', color:chartColors.lineGrad[0], font:{size:10}},
+          title:{display:true, text:mt('monitor.results.niGradeLabel'), color:chartColors.lineGrad[0], font:{size:10}},
           ticks:{color:chartColors.lineGrad[0], font:{size:10}, callback:v => v.toFixed(2)},
           grid:{drawOnChartArea:false},
           border:{display:false}}
@@ -1728,6 +1796,30 @@ function renderNIChart(){
 document.getElementById('btnCloseModal').addEventListener('click', closeContractorModal);
 document.getElementById('btnCloseModal2').addEventListener('click', closeContractorModal);
 document.getElementById('btnSubmitContractor').addEventListener('click', submitContractorEntry);
+
+/* ---------------- LOCALE CHANGE RE-RENDER (V2.3 full-localization pass) ----------------
+   window.i18n (js/app.js's bridge) does not exist yet at this point --
+   this classic script runs during HTML parsing, before js/app.js's
+   module script (module scripts always execute after parsing completes,
+   per the HTML spec) -- so the subscription itself is registered inside
+   a DOMContentLoaded listener, which fires only after every
+   module/deferred script has already run and window.i18n is guaranteed
+   to exist. translatePage() (called separately, from js/app.js) already
+   re-translates every data-i18n-tagged static element in this document,
+   including Monitor's own -- this listener only re-renders the DYNAMIC,
+   data-driven HTML translatePage() cannot reach (the contractor status
+   card and the uploaded-file results view), and only if there is
+   something currently rendered to re-render; it never fabricates or
+   re-fetches data, and never touches contractorData/liveContractorMap/
+   lastProcessedRows themselves -- purely a re-render of already-known
+   state in the newly active language. */
+document.addEventListener('DOMContentLoaded', () => {
+  if(!window.i18n || typeof window.i18n.onLocaleChange !== 'function') return;
+  window.i18n.onLocaleChange(() => {
+    renderContractorStatus();
+    if(lastProcessedRows) processData(lastProcessedRows, lastProcessedBuyer);
+  });
+});
 document.getElementById('contractorModalOverlay').addEventListener('click', (e) => {
   if(e.target.id === 'contractorModalOverlay') closeContractorModal(); // tap area luar box = tutup
 });

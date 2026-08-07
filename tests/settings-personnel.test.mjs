@@ -11,7 +11,7 @@
 // to the manual regression checklist, same as report-page.js's own
 // rendering exclusion in tests/report-personnel.test.mjs.
 
-import { test, describe } from 'node:test';
+import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -20,9 +20,18 @@ import {
   buildOfflineIndicatorText,
   buildQueueCountText,
   buildQueueItemViewModel,
-  OFFLINE_INDICATOR_MESSAGE,
-  QUEUE_OFFLINE_SAVED_MESSAGE,
+  buildQueueOfflineSavedMessage,
+  buildQueueVersionConflictReviewMessage,
 } from '../js/pages/settings/settings-personnel.js';
+import { setLocale, DEFAULT_LOCALE } from '../js/i18n/i18n.js';
+
+// This file's assertions are Indonesian-locale-specific (matching the
+// literal Indonesian text these functions have always returned) unless a
+// test explicitly switches locale -- resetting to the default locale
+// before every test keeps that assumption true regardless of test order.
+beforeEach(() => {
+  setLocale(DEFAULT_LOCALE);
+});
 
 describe('buildRoleSummaryText() -- role summary card text (task items 2-3)', () => {
   test('2. active count only, no inactive records', () => {
@@ -40,6 +49,12 @@ describe('buildRoleSummaryText() -- role summary card text (task items 2-3)', ()
   test('never shows "0 nonaktif"', () => {
     assert.equal(buildRoleSummaryText(5, 0), '5 aktif');
     assert.doesNotMatch(buildRoleSummaryText(5, 0), /nonaktif/);
+  });
+
+  test('en locale: returns the English translation', () => {
+    setLocale('en');
+    assert.equal(buildRoleSummaryText(3, 0), '3 active');
+    assert.equal(buildRoleSummaryText(10, 2), '10 active · 2 inactive');
   });
 });
 
@@ -88,15 +103,26 @@ describe('buildOfflineIndicatorText() -- compact offline indicator', () => {
     assert.equal(buildOfflineIndicatorText(true), null);
   });
 
-  test('offline: returns the exact required literal', () => {
-    assert.equal(buildOfflineIndicatorText(false), OFFLINE_INDICATOR_MESSAGE);
+  test('offline (id locale): returns the exact required literal', () => {
     assert.equal(buildOfflineIndicatorText(false), 'Offline — perubahan akan diantrikan.');
+  });
+
+  test('offline (en locale): returns the English translation', () => {
+    setLocale('en');
+    assert.equal(buildOfflineIndicatorText(false), 'Offline — changes will be queued.');
   });
 });
 
-describe('QUEUE_OFFLINE_SAVED_MESSAGE -- exact required literal', () => {
-  test('matches the required Indonesian text exactly', () => {
-    assert.equal(QUEUE_OFFLINE_SAVED_MESSAGE, 'Perubahan disimpan sebagai antrean offline dan akan dikirim saat koneksi kembali.');
+describe('buildQueueOfflineSavedMessage() / buildQueueVersionConflictReviewMessage() -- required literals', () => {
+  test('id locale matches the originally required Indonesian text exactly', () => {
+    assert.equal(buildQueueOfflineSavedMessage(), 'Perubahan disimpan sebagai antrean offline dan akan dikirim saat koneksi kembali.');
+    assert.equal(buildQueueVersionConflictReviewMessage(), 'Data sudah berubah di server. Sinkronkan ulang dan tinjau perubahan offline.');
+  });
+
+  test('en locale returns the English translation', () => {
+    setLocale('en');
+    assert.equal(buildQueueOfflineSavedMessage(), 'Your change was saved to the offline queue and will be sent once the connection returns.');
+    assert.equal(buildQueueVersionConflictReviewMessage(), 'The data has changed on the server. Sync again and review the offline change.');
   });
 });
 
@@ -142,8 +168,14 @@ describe('buildQueueItemViewModel() -- queue review modal row data', () => {
     assert.equal(vm.name, 'Budi');
     assert.equal(vm.organization, 'SCM');
     assert.equal(vm.roleType, 'SPV_SCM');
-    assert.equal(vm.statusText, 'Pending');
+    assert.equal(vm.statusText, 'Tertunda');
     assert.equal(vm.canRetry, false);
+  });
+
+  test('a pending item shows the English status text once the locale is English', () => {
+    setLocale('en');
+    const item = makeQueueItem({ status: 'pending' });
+    assert.equal(buildQueueItemViewModel(item, []).statusText, 'Pending');
   });
 
   test('updateReportPersonnel: action label "Edit", name/organization from payload (new values)', () => {

@@ -34,6 +34,14 @@ import {
   commitMultiSelectDraft,
 } from '../js/pages/report/report-personnel.js';
 import { reportState, resetReportState } from '../js/pages/report/report-state.js';
+import { t } from '../js/i18n/i18n.js';
+
+// validatePersonnelSelections()/getDirectoryAvailabilityError() now return
+// localized text (V2.3 full-localization pass; default locale is
+// Indonesian) -- expected values below are built from the same t() keys
+// the source uses, so these tests assert on MEANING (the right key fired)
+// rather than duplicating literal wording that could drift from the
+// locale catalogs.
 
 /* ============================================================
    FIXTURES
@@ -238,97 +246,97 @@ describe('validatePersonnelSelections -- blocking rules', () => {
   test('13. selected inactive/missing SPV id is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ spvScmIds: ['spv-inactive'] }));
-    assert.ok(errors.includes('Select at least one SPV SCM.'));
-    assert.ok(errors.includes('A previously selected person is no longer active. Review the personnel selection.'));
+    assert.ok(errors.includes(t('report.personnel.selectSpvRequired')));
+    assert.ok(errors.includes(t('report.personnel.staleSelectionWarning')));
   });
 
   test('13b. selected missing (unknown) id is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ picThirdId: 'pic-does-not-exist' }));
-    assert.ok(errors.includes('A previously selected person is no longer active. Review the personnel selection.'));
+    assert.ok(errors.includes(t('report.personnel.staleSelectionWarning')));
   });
 
   test('14. wrong-role selected id is blocking (e.g. an FRM id stored as samplerId)', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ samplerId: 'frm-adi-guna' }));
-    assert.ok(errors.includes('Select an Independent Sampler.'));
-    assert.ok(errors.includes('A previously selected person is no longer active. Review the personnel selection.'));
+    assert.ok(errors.includes(t('report.personnel.selectSamplerRequired')));
+    assert.ok(errors.includes(t('report.personnel.staleSelectionWarning')));
   });
 
   test('15. PIC organization mismatch with the selected sampler is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ samplerId: 'sampler-atq', picThirdId: 'pic-awk' }));
-    assert.ok(errors.some((e) => e.includes('does not belong to ATQ')));
+    assert.ok(errors.includes(t('report.personnel.picMismatchOrg', { organization: 'ATQ' })));
   });
 
   test('16. missing SPV is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ spvScmIds: [] }));
-    assert.ok(errors.includes('Select at least one SPV SCM.'));
+    assert.ok(errors.includes(t('report.personnel.selectSpvRequired')));
   });
 
   test('17. missing FRM is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ frmScmIds: [] }));
-    assert.ok(errors.includes('Select at least one FRM SCM.'));
+    assert.ok(errors.includes(t('report.personnel.selectFrmRequired')));
   });
 
   test('18. missing sampler is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ samplerId: null, samplerSource: null, picThirdId: null }));
-    assert.ok(errors.includes('Select an Independent Sampler.'));
+    assert.ok(errors.includes(t('report.personnel.selectSamplerRequired')));
     // Without a resolved sampler, the PIC message falls back to the
     // generic (non-organization-specific) wording.
-    assert.ok(errors.includes('Select a PIC 3rd.'));
+    assert.ok(errors.includes(t('report.personnel.selectPicRequired')));
   });
 
   test('18b. a PIC selected while no sampler is selected is also blocking (cannot verify compatibility)', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ samplerId: null, samplerSource: null, picThirdId: 'pic-awk' }));
-    assert.ok(errors.includes('Select an Independent Sampler.'));
-    assert.ok(errors.includes('Select an Independent Sampler before selecting a PIC 3rd.'));
+    assert.ok(errors.includes(t('report.personnel.selectSamplerRequired')));
+    assert.ok(errors.includes(t('report.personnel.selectSamplerBeforePic')));
   });
 
   test('19. missing PIC is blocking, with the sampler organization named', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ picThirdId: null }));
-    assert.ok(errors.includes('Select a PIC 3rd for AWK.'));
+    assert.ok(errors.includes(t('report.personnel.selectPicForOrg', { organization: 'AWK' })));
   });
 
   test('20. invalid (non-numeric) manpowerThirdParty is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: null }));
-    assert.ok(errors.includes('Enter valid AWK manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
   });
 
   test('21. negative manpowerThirdParty is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: -1 }));
-    assert.ok(errors.includes('Enter valid AWK manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
   });
 
   test('22. decimal manpowerThirdParty is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: 5.5 }));
-    assert.ok(errors.includes('Enter valid AWK manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
   });
 
   test('missing totalManpower is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ totalManpower: null }));
-    assert.ok(errors.includes('Enter valid Total Manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('negative totalManpower is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ totalManpower: -1 }));
-    assert.ok(errors.includes('Enter valid Total Manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('decimal totalManpower is blocking', () => {
     const records = buildDirectory();
     const errors = validatePersonnelSelections(records, validPersonnel({ totalManpower: 21.5 }));
-    assert.ok(errors.includes('Enter valid Total Manpower.'));
+    assert.ok(errors.includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('a fully valid selection produces zero errors', () => {
@@ -439,20 +447,20 @@ describe('Manpower fields are manual and independent of personnel selection', ()
 
   test('12. decimal values are rejected for both fields', () => {
     const records = buildDirectory();
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: 20.5 })).some((e) => e.includes('AWK manpower')));
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: 22.5 })).some((e) => e.includes('Total Manpower')));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: 20.5 })).includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: 22.5 })).includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('13. negative values are rejected for both fields', () => {
     const records = buildDirectory();
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: -5 })).some((e) => e.includes('AWK manpower')));
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: -5 })).some((e) => e.includes('Total Manpower')));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: -5 })).includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: -5 })).includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('14. missing values are rejected for both fields', () => {
     const records = buildDirectory();
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: null })).some((e) => e.includes('AWK manpower')));
-    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: null })).some((e) => e.includes('Total Manpower')));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ manpowerThirdParty: null })).includes(t('report.personnel.enterValidManpower', { organization: 'AWK' })));
+    assert.ok(validatePersonnelSelections(records, validPersonnel({ totalManpower: null })).includes(t('report.personnel.enterValidTotalManpower')));
   });
 
   test('16. reset clears both manual manpower fields', () => {
@@ -617,7 +625,7 @@ describe('31. Reset clears all personnel state', () => {
 ============================================================ */
 describe('33. No/corrupted directory snapshot blocks Report', () => {
   test('source "none" produces a blocking, specific error', () => {
-    assert.equal(getDirectoryAvailabilityError('none'), 'Synchronize Personnel Directory in Settings before creating a Report.');
+    assert.equal(getDirectoryAvailabilityError('none'), t('report.personnel.directoryUnavailable'));
   });
 
   test('source "cached" or "remote" does not block on availability alone', () => {

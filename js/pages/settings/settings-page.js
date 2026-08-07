@@ -76,9 +76,11 @@ import {
   buildOfflineIndicatorText,
   buildQueueCountText,
   buildQueueItemViewModel,
-  QUEUE_OFFLINE_SAVED_MESSAGE,
-  QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE,
+  buildQueueOfflineSavedMessage,
+  buildQueueVersionConflictReviewMessage,
 } from './settings-personnel.js';
+import { getPreferences, setAppearance, VALID_LOCALES, VALID_APPEARANCES } from '../../services/app-preferences-service.js';
+import { t, setLocale as applyLocale, onLocaleChange, translatePage } from '../../i18n/i18n.js';
 
 // orgFixed: the role's organization is never user-editable, always this
 // literal value. orgMode ('free-text' | 'sampler-select') only applies
@@ -102,30 +104,33 @@ const ROLE_DEFS = [
 
 const DEFAULT_STATUS = 'active';
 
+// Functions, not a static object -- so each is re-evaluated in the
+// current locale at the point of use (a plain object literal would freeze
+// its value at whatever locale was active at module load time).
 const MESSAGES = {
-  success: 'Personnel directory synchronized.',
-  cacheFallback: 'Synchronization failed. Showing the last saved personnel directory.',
-  noCache: 'Personnel directory could not be loaded. Check the connection and try again.',
+  success: () => t('settings.sync.successMessage'),
+  cacheFallback: () => t('settings.sync.cacheFallbackMessage'),
+  noCache: () => t('settings.sync.noCacheMessage'),
 };
 
 // Server error `code` -> user-facing message. VERSION_CONFLICT's message
 // is the exact literal the architecture doc requires, never a
 // server-supplied variant.
 function describeWriteError(error) {
-  if (!error) return 'Terjadi kesalahan. Coba lagi.';
-  if (error.code === 'VERSION_CONFLICT') return 'Data sudah berubah di server. Sinkronkan ulang sebelum mencoba lagi.';
-  if (error.code === 'DUPLICATE_PERSONNEL') return 'Personel dengan role, nama, dan organisasi yang sama sudah aktif di direktori.';
-  if (error.code === 'NOT_FOUND') return 'Data tidak ditemukan di server. Sinkronkan ulang direktori.';
-  if (error.code === 'VALIDATION_ERROR') return error.message || 'Data tidak valid.';
-  if (error.code === 'NETWORK_UNAVAILABLE' || error.code === 'NETWORK_ERROR') return 'Tidak ada koneksi jaringan. Coba lagi saat online.';
+  if (!error) return t('errors.personnel.default');
+  if (error.code === 'VERSION_CONFLICT') return t('errors.personnel.VERSION_CONFLICT');
+  if (error.code === 'DUPLICATE_PERSONNEL') return t('errors.personnel.DUPLICATE_PERSONNEL');
+  if (error.code === 'NOT_FOUND') return t('errors.personnel.NOT_FOUND');
+  if (error.code === 'VALIDATION_ERROR') return error.message || t('errors.personnel.VALIDATION_ERROR');
+  if (error.code === 'NETWORK_UNAVAILABLE' || error.code === 'NETWORK_ERROR') return t('errors.personnel.NETWORK');
   // The server acknowledged the write, but the record it claims to have
   // written could not be independently confirmed in the authoritative
   // resync -- never presented as success (see personnel-directory-service.js's
   // writeAndResync()/verifyRecord*()).
   if (error.code === 'WRITE_NOT_VISIBLE_AFTER_SYNC') {
-    return 'Server menerima permintaan, tetapi perubahan belum dapat diverifikasi dari Personnel Directory. Sinkronkan ulang dan periksa Google Sheet.';
+    return t('errors.personnel.WRITE_NOT_VISIBLE_AFTER_SYNC');
   }
-  return error.message || 'Terjadi kesalahan saat menyimpan.';
+  return error.message || t('errors.personnel.genericFallback');
 }
 
 // Distinguishes a genuine network/transport failure (the only case that
@@ -162,6 +167,18 @@ export function initSettingsPage() {
   page.innerHTML = buildMarkup();
   els = collectElements(page);
 
+  els.languageBtns.forEach((btn) => btn.addEventListener('click', () => handleLanguageChange(btn.dataset.locale)));
+  els.appearanceBtns.forEach((btn) => btn.addEventListener('click', () => handleAppearanceChange(btn.dataset.appearance)));
+  onLocaleChange(() => {
+    translatePage(page);
+    renderPreferenceCards();
+    // Re-render whatever dynamic (non data-i18n) text is currently on
+    // screen so a locale switch doesn't leave those strings behind in the
+    // old language -- translatePage() above only ever touches static
+    // data-i18n-tagged markup.
+    renderAll();
+  });
+
   els.syncBtn.addEventListener('click', handleSyncClick);
   els.manageBtns.forEach((btn) => btn.addEventListener('click', () => openRoleManagementModal(btn.dataset.role)));
 
@@ -189,6 +206,18 @@ export function initSettingsPage() {
   window.addEventListener('online', handleNetworkOnline);
   window.addEventListener('offline', renderOfflineIndicator);
 
+  // Monitor's own theme toggle (index.html's classic, non-module inline
+  // script) cannot `import` app-preferences-service.js, so it dispatches
+  // this same raw window event directly on every change instead -- this
+  // keeps the Appearance card's active-button state in sync whenever the
+  // user changes theme from Monitor, not only from this card. (When this
+  // card itself is the origin, handleAppearanceChange() already calls
+  // renderPreferenceCards() directly -- this listener firing too for that
+  // case is redundant but harmless.)
+  window.addEventListener('hpal:preferences-changed', renderPreferenceCards);
+
+  translatePage(page);
+  renderPreferenceCards();
   loadCachedPersonnelDirectory();
   renderAll();
 
@@ -207,42 +236,61 @@ function buildMarkup() {
   return `
     <div class="settings-shell">
       <header class="settings-header">
-        <div class="settings-eyebrow">SETTINGS</div>
+        <div class="settings-eyebrow" data-i18n="settings.eyebrow">SETTINGS</div>
         <h1 class="settings-title">Personnel Directory</h1>
-        <p class="settings-subtitle">Direktori SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd -- disinkron dari Google Sheet. Tekan Kelola pada tiap role untuk menambah, edit, nonaktifkan, atau aktifkan kembali personel.</p>
+        <p class="settings-subtitle" data-i18n="settings.subtitle">Direktori SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd -- disinkron dari Google Sheet. Tekan Kelola pada tiap role untuk menambah, edit, nonaktifkan, atau aktifkan kembali personel.</p>
       </header>
 
+      <section class="settings-card settings-preferences-card" aria-labelledby="settings-language-title">
+        <h2 id="settings-language-title" data-i18n="settings.language.title">Bahasa</h2>
+        <p class="settings-card-subtitle" data-i18n="settings.language.subtitle"></p>
+        <div class="settings-filter" role="group" aria-label="Pilih bahasa" data-i18n-aria-label="settings.language.groupLabel" id="settings-language-filter">
+          <button type="button" class="settings-filter-btn" data-locale="id" data-i18n="settings.language.id">Bahasa Indonesia</button>
+          <button type="button" class="settings-filter-btn" data-locale="en" data-i18n="settings.language.en">English</button>
+        </div>
+      </section>
+
+      <section class="settings-card settings-preferences-card" aria-labelledby="settings-appearance-title">
+        <h2 id="settings-appearance-title" data-i18n="settings.appearance.title">Tampilan</h2>
+        <p class="settings-card-subtitle" data-i18n="settings.appearance.subtitle"></p>
+        <div class="settings-filter" role="group" aria-label="Pilih tampilan" data-i18n-aria-label="settings.appearance.groupLabel" id="settings-appearance-filter">
+          <button type="button" class="settings-filter-btn" data-appearance="dark" data-i18n="settings.appearance.dark">Gelap</button>
+          <button type="button" class="settings-filter-btn" data-appearance="light" data-i18n="settings.appearance.light">Terang</button>
+          <button type="button" class="settings-filter-btn" data-appearance="auto" data-i18n="settings.appearance.auto">Otomatis</button>
+        </div>
+      </section>
+
       <section class="settings-card settings-sync-card" aria-labelledby="settings-sync-title">
-        <h2 id="settings-sync-title">Sync Status</h2>
+        <h2 id="settings-sync-title" data-i18n="settings.sync.title">Sync Status</h2>
         <dl class="settings-sync-meta">
           <div class="settings-sync-meta__row">
-            <dt>Status</dt>
+            <dt data-i18n="settings.sync.statusLabel">Status</dt>
             <dd id="settings-sync-status">-</dd>
           </div>
           <div class="settings-sync-meta__row">
-            <dt>Sumber</dt>
+            <dt data-i18n="settings.sync.sourceLabel">Sumber</dt>
             <dd id="settings-sync-source">-</dd>
           </div>
           <div class="settings-sync-meta__row">
-            <dt>Terakhir sinkron</dt>
+            <dt data-i18n="settings.sync.lastSyncLabel">Terakhir sinkron</dt>
             <dd id="settings-sync-time">-</dd>
           </div>
           <div class="settings-sync-meta__row">
-            <dt>Total personel</dt>
+            <dt data-i18n="settings.sync.totalLabel">Total personel</dt>
             <dd id="settings-sync-total">0</dd>
           </div>
         </dl>
         <div class="settings-btn-row">
-          <button type="button" class="settings-btn settings-btn-primary" id="settings-sync-btn">Sync</button>
+          <button type="button" class="settings-btn settings-btn-primary" id="settings-sync-btn" data-i18n="common.sync">Sync</button>
         </div>
-        <p class="settings-sync-message" id="settings-sync-message" role="status" aria-live="polite">Tekan Sync untuk memuat direktori personel.</p>
+        <p class="settings-sync-message" id="settings-sync-message" role="status" aria-live="polite" data-i18n="settings.sync.defaultMessage">Tekan Sync untuk memuat direktori personel.</p>
         <p class="settings-sync-message settings-sync-message--warn" id="settings-offline-indicator" role="status" aria-live="polite" hidden></p>
         <div class="settings-queue-status" id="settings-queue-status">
           <div class="settings-queue-status__text">
-            <span class="settings-queue-status__label">Pending Changes</span>
+            <span class="settings-queue-status__label" data-i18n="settings.queue.pendingLabel">Pending Changes</span>
             <span class="settings-queue-status__count" id="settings-queue-count">0 pending</span>
           </div>
-          <button type="button" class="settings-btn settings-btn-secondary settings-btn-small" id="settings-queue-review-btn" hidden>Review</button>
+          <button type="button" class="settings-btn settings-btn-secondary settings-btn-small" id="settings-queue-review-btn" hidden data-i18n="settings.queue.reviewButton">Review</button>
         </div>
       </section>
 
@@ -258,19 +306,19 @@ function buildMarkup() {
             <h3 id="settings-role-modal-title">Role</h3>
             <p class="settings-role-modal-count" id="settings-role-modal-count">0 aktif</p>
           </div>
-          <button type="button" class="settings-btn settings-btn-ghost settings-btn-small" id="settings-role-modal-close" aria-label="Tutup">✕</button>
+          <button type="button" class="settings-btn settings-btn-ghost settings-btn-small" id="settings-role-modal-close" aria-label="Tutup" data-i18n-aria-label="common.close">✕</button>
         </div>
 
         <div class="settings-btn-row">
-          <button type="button" class="settings-btn settings-btn-primary" id="settings-role-modal-add-btn">+ Tambah Personel</button>
+          <button type="button" class="settings-btn settings-btn-primary" id="settings-role-modal-add-btn" data-i18n="settings.role.addButton">+ Tambah Personel</button>
         </div>
 
-        <input type="text" class="settings-input" id="settings-role-modal-search" placeholder="Cari nama..." autocomplete="off">
+        <input type="text" class="settings-input" id="settings-role-modal-search" placeholder="Cari nama..." data-i18n-placeholder="settings.role.searchPlaceholder" autocomplete="off">
 
         <div class="settings-filter" role="group" aria-label="Filter status personel">
-          <button type="button" class="settings-filter-btn is-active" data-status="active">Aktif</button>
-          <button type="button" class="settings-filter-btn" data-status="inactive">Nonaktif</button>
-          <button type="button" class="settings-filter-btn" data-status="all">Semua</button>
+          <button type="button" class="settings-filter-btn is-active" data-status="active" data-i18n="common.filterActive">Aktif</button>
+          <button type="button" class="settings-filter-btn" data-status="inactive" data-i18n="common.filterInactive">Nonaktif</button>
+          <button type="button" class="settings-filter-btn" data-status="all" data-i18n="common.filterAll">Semua</button>
         </div>
 
         <p class="settings-sync-message" id="settings-role-modal-message" role="status" aria-live="polite"></p>
@@ -285,8 +333,8 @@ function buildMarkup() {
         <div id="settings-modal-body"></div>
         <p class="settings-modal-message" id="settings-modal-message" role="alert"></p>
         <div class="settings-modal-actions">
-          <button type="button" class="settings-btn settings-btn-ghost" id="settings-modal-cancel">Batal</button>
-          <button type="button" class="settings-btn settings-btn-primary" id="settings-modal-confirm">Simpan</button>
+          <button type="button" class="settings-btn settings-btn-ghost" id="settings-modal-cancel" data-i18n="settings.modal.cancel">Batal</button>
+          <button type="button" class="settings-btn settings-btn-primary" id="settings-modal-confirm" data-i18n="settings.modal.confirm">Simpan</button>
         </div>
       </div>
     </div>
@@ -295,10 +343,10 @@ function buildMarkup() {
       <div class="modal-box settings-role-modal-box" role="dialog" aria-modal="true" aria-labelledby="settings-queue-modal-title">
         <div class="settings-role-modal-header">
           <div>
-            <h3 id="settings-queue-modal-title">Antrean Offline</h3>
+            <h3 id="settings-queue-modal-title" data-i18n="settings.queue.modalTitle">Antrean Offline</h3>
             <p class="settings-role-modal-count" id="settings-queue-modal-count">0 pending</p>
           </div>
-          <button type="button" class="settings-btn settings-btn-ghost settings-btn-small" id="settings-queue-modal-close" aria-label="Tutup">✕</button>
+          <button type="button" class="settings-btn settings-btn-ghost settings-btn-small" id="settings-queue-modal-close" aria-label="Tutup" data-i18n-aria-label="common.close">✕</button>
         </div>
         <p class="settings-sync-message" id="settings-queue-modal-message" role="status" aria-live="polite"></p>
         <ul class="settings-personnel-list" id="settings-queue-modal-list"></ul>
@@ -312,13 +360,15 @@ function buildRoleSummaryCardMarkup(def) {
     <article class="settings-card settings-summary-card" id="settings-summary-${def.role}">
       <h2>${def.title}</h2>
       <p class="settings-summary-count" id="settings-summary-count-${def.role}">No data loaded</p>
-      <button type="button" class="settings-btn settings-btn-primary settings-btn-small" data-role="${def.role}">Kelola</button>
+      <button type="button" class="settings-btn settings-btn-primary settings-btn-small" data-role="${def.role}" data-i18n="settings.role.manageButton">Kelola</button>
     </article>
   `;
 }
 
 function collectElements(page) {
   return {
+    languageBtns: [...page.querySelectorAll('#settings-language-filter .settings-filter-btn')],
+    appearanceBtns: [...page.querySelectorAll('#settings-appearance-filter .settings-filter-btn')],
     syncBtn: page.querySelector('#settings-sync-btn'),
     syncStatus: page.querySelector('#settings-sync-status'),
     syncSource: page.querySelector('#settings-sync-source'),
@@ -388,6 +438,37 @@ function renderAll() {
   if (els.queueModal.overlay.style.display === 'flex') {
     renderQueueModal();
   }
+}
+
+/* ============================================================
+   LANGUAGE + APPEARANCE CARDS (V2.3 Phase 7). Two independent segmented
+   button groups reusing the existing .settings-filter/.settings-filter-btn
+   pattern (Aktif/Nonaktif/Semua) rather than inventing a second control
+   style. Language persists+applies through i18n.js's setLocale() (which
+   itself persists via app-preferences-service.js and re-translates the
+   page); Appearance persists+applies directly through
+   app-preferences-service.js's setAppearance() (there is no separate
+   "appearance i18n" layer -- the theme is not language-dependent).
+============================================================ */
+function handleLanguageChange(locale) {
+  if (!VALID_LOCALES.includes(locale)) return;
+  // i18n.js's setLocale() already persists via app-preferences-service.js
+  // internally and re-translates the page -- see this file's own
+  // onLocaleChange() subscriber (registered in initSettingsPage()) for
+  // what runs after this.
+  applyLocale(locale);
+}
+
+function handleAppearanceChange(appearance) {
+  if (!VALID_APPEARANCES.includes(appearance)) return;
+  setAppearance(appearance);
+  renderPreferenceCards();
+}
+
+function renderPreferenceCards() {
+  const prefs = getPreferences();
+  els.languageBtns.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.locale === prefs.locale));
+  els.appearanceBtns.forEach((btn) => btn.classList.toggle('is-active', btn.dataset.appearance === prefs.appearance));
 }
 
 /* ============================================================
@@ -485,11 +566,11 @@ async function handleSyncClick() {
   renderAll();
 
   if (result.ok) {
-    setSyncMessage(MESSAGES.success, 'ok');
+    setSyncMessage(MESSAGES.success(), 'ok');
   } else if (result.snapshot.records.length > 0) {
-    setSyncMessage(MESSAGES.cacheFallback, 'warn');
+    setSyncMessage(MESSAGES.cacheFallback(), 'warn');
   } else {
-    setSyncMessage(MESSAGES.noCache, 'error');
+    setSyncMessage(MESSAGES.noCache(), 'error');
   }
 
   // AUTO FLUSH trigger 3 (optional): a manual Sync is a natural moment to
@@ -563,11 +644,11 @@ function renderQueueModal() {
   els.queueModal.count.textContent = buildQueueCountText(snapshot.pendingCount, snapshot.blockedCount);
 
   const hasVersionConflict = snapshot.items.some((item) => item.status === 'blocked' && item.lastErrorCode === 'VERSION_CONFLICT');
-  els.queueModal.message.textContent = hasVersionConflict ? QUEUE_VERSION_CONFLICT_REVIEW_MESSAGE : '';
+  els.queueModal.message.textContent = hasVersionConflict ? buildQueueVersionConflictReviewMessage() : '';
   els.queueModal.message.className = `settings-sync-message${hasVersionConflict ? ' settings-sync-message--warn' : ''}`;
 
   if (!snapshot.items.length) {
-    els.queueModal.list.replaceChildren(emptyStateNode('Tidak ada perubahan offline yang tertunda.'));
+    els.queueModal.list.replaceChildren(emptyStateNode(t('settings.queue.emptyMessage')));
     return;
   }
 
@@ -702,7 +783,7 @@ function renderRoleModalList() {
   const snapshot = getPersonnelDirectorySnapshot();
 
   if (snapshot.source === 'none') {
-    els.roleModal.list.replaceChildren(emptyStateNode('Belum ada data. Sinkronkan direktori terlebih dahulu.'));
+    els.roleModal.list.replaceChildren(emptyStateNode(t('settings.role.noDirectoryYet')));
     return;
   }
 
@@ -725,10 +806,10 @@ function renderRoleModalList() {
 }
 
 function buildManagementEmptyMessage(title, status, query) {
-  if (query.trim()) return `Tidak ada ${title} yang cocok dengan pencarian.`;
-  if (status === 'active') return `Tidak ada ${title} aktif.`;
-  if (status === 'inactive') return `Tidak ada ${title} nonaktif.`;
-  return `Belum ada ${title}.`;
+  if (query.trim()) return t('settings.role.emptyNoMatch', { title });
+  if (status === 'active') return t('settings.role.emptyNoActive', { title });
+  if (status === 'inactive') return t('settings.role.emptyNoInactive', { title });
+  return t('settings.role.emptyNone', { title });
 }
 
 // getPersonnelByRole() sorts by organization first, so consecutive
@@ -766,7 +847,7 @@ function buildPersonRow(record) {
   if (!record.active) {
     const badge = document.createElement('span');
     badge.className = 'settings-personnel-badge settings-personnel-badge--inactive';
-    badge.textContent = 'Nonaktif';
+    badge.textContent = t('settings.role.inactiveBadge');
     main.appendChild(badge);
   }
 
@@ -786,7 +867,7 @@ function buildPersonRow(record) {
   toggleBtn.className = record.active
     ? 'settings-btn settings-btn-danger settings-btn-small'
     : 'settings-btn settings-btn-secondary settings-btn-small';
-  toggleBtn.textContent = record.active ? 'Nonaktifkan' : 'Aktifkan';
+  toggleBtn.textContent = record.active ? t('common.deactivate') : t('common.reactivate');
   toggleBtn.dataset.action = record.active ? 'deactivate' : 'reactivate';
   toggleBtn.dataset.id = record.id;
   actions.appendChild(toggleBtn);
@@ -843,11 +924,11 @@ function setManagementMessage(text, type) {
 function openAddModal(def) {
   hideRoleManagementModal();
 
-  els.modal.title.textContent = `Tambah ${def.title}`;
+  els.modal.title.textContent = t('settings.modal.addTitle', { title: def.title });
   els.modal.body.innerHTML = buildPersonnelFormMarkup(def, 'add');
   populatePersonnelForm(null, def, 'add');
   els.modal.message.textContent = '';
-  els.modal.confirmBtn.textContent = 'Tambah';
+  els.modal.confirmBtn.textContent = t('common.add');
   els.modal.confirmBtn.className = 'settings-btn settings-btn-primary';
   modalConfirmHandler = () => handleAddSave(def);
   showModal();
@@ -858,11 +939,11 @@ function openEditModal(record) {
   currentModalRecord = record;
   const def = roleDef(record.role_type);
 
-  els.modal.title.textContent = `Edit ${def.title}`;
+  els.modal.title.textContent = t('settings.modal.editTitle', { title: def.title });
   els.modal.body.innerHTML = buildPersonnelFormMarkup(def, 'edit');
   populatePersonnelForm(record, def, 'edit');
   els.modal.message.textContent = '';
-  els.modal.confirmBtn.textContent = 'Simpan';
+  els.modal.confirmBtn.textContent = t('common.save');
   els.modal.confirmBtn.className = 'settings-btn settings-btn-primary';
   modalConfirmHandler = () => handleEditSave(def);
   showModal();
@@ -872,13 +953,13 @@ function openDeactivateConfirm(record) {
   hideRoleManagementModal();
   currentModalRecord = record;
 
-  els.modal.title.textContent = 'Nonaktifkan Personel';
+  els.modal.title.textContent = t('settings.modal.deactivateTitle');
   els.modal.body.replaceChildren();
   const p = document.createElement('p');
-  p.textContent = `Nonaktifkan ${record.name} dari Personnel Directory?`;
+  p.textContent = t('settings.modal.deactivateConfirm', { name: record.name });
   els.modal.body.appendChild(p);
   els.modal.message.textContent = '';
-  els.modal.confirmBtn.textContent = 'Nonaktifkan';
+  els.modal.confirmBtn.textContent = t('common.deactivate');
   els.modal.confirmBtn.className = 'settings-btn settings-btn-danger';
   modalConfirmHandler = handleDeactivateConfirm;
   showModal();
@@ -890,16 +971,16 @@ function openDeactivateConfirm(record) {
 function buildPersonnelFormMarkup(def, mode) {
   const orgFieldMarkup = def.orgFixed
     ? `<div class="settings-form-group">
-         <label>Organisasi</label>
+         <label>${t('settings.form.organizationLabel')}</label>
          <input class="settings-input" name="organization" disabled />
        </div>`
     : def.orgMode === 'sampler-select'
       ? `<div class="settings-form-group">
-           <label for="settings-form-organization">Organisasi (Sampler)</label>
+           <label for="settings-form-organization">${t('settings.form.organizationSamplerLabel')}</label>
            <select class="settings-input" id="settings-form-organization" name="organization"></select>
          </div>`
       : `<div class="settings-form-group">
-           <label for="settings-form-organization">Organisasi</label>
+           <label for="settings-form-organization">${t('settings.form.organizationLabel')}</label>
            <input class="settings-input" id="settings-form-organization" name="organization" />
          </div>`;
 
@@ -907,14 +988,14 @@ function buildPersonnelFormMarkup(def, mode) {
     ? `<div class="settings-form-readonly">
          <div><span>Role</span><strong>${def.title}</strong></div>
          <div><span>ID</span><code id="settings-form-id"></code></div>
-         <div><span>Versi</span><span id="settings-form-version"></span></div>
+         <div><span>${t('settings.form.versionLabel')}</span><span id="settings-form-version"></span></div>
        </div>`
     : '';
 
   return `
     ${readonlyBlock}
     <div class="settings-form-group">
-      <label for="settings-form-name">Nama</label>
+      <label for="settings-form-name">${t('settings.form.nameLabel')}</label>
       <input class="settings-input" id="settings-form-name" name="name" required />
     </div>
     ${orgFieldMarkup}
@@ -950,7 +1031,7 @@ function populatePersonnelForm(record, def, mode) {
   if (mode === 'add') {
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = orgs.length ? 'Pilih Sampler' : 'Tidak ada Sampler aktif';
+    placeholder.textContent = orgs.length ? t('settings.form.pickSamplerPlaceholder') : t('settings.form.noActiveSamplerPlaceholder');
     placeholder.disabled = true;
     placeholder.selected = true;
     orgField.insertBefore(placeholder, orgField.firstChild);
@@ -968,7 +1049,7 @@ function populatePersonnelForm(record, def, mode) {
   if (!matchedActiveOrg) {
     const opt = document.createElement('option');
     opt.value = record.organization;
-    opt.textContent = `${record.organization} (tidak aktif)`;
+    opt.textContent = t('settings.form.inactiveOrgSuffix', { organization: record.organization });
     orgField.appendChild(opt);
   }
   orgField.value = matchedActiveOrg || record.organization;
@@ -979,7 +1060,7 @@ async function handleAddSave(def) {
 
   const name = els.modal.body.querySelector('[name="name"]').value.trim();
   if (!name) {
-    els.modal.message.textContent = 'Nama wajib diisi.';
+    els.modal.message.textContent = t('settings.form.nameRequired');
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
     return;
   }
@@ -987,8 +1068,8 @@ async function handleAddSave(def) {
   const organization = def.orgFixed ? def.orgFixed : els.modal.body.querySelector('[name="organization"]').value.trim();
   if (!organization) {
     els.modal.message.textContent = def.orgMode === 'sampler-select'
-      ? 'Pilih Independent Sampler aktif terlebih dahulu.'
-      : 'Organisasi wajib diisi.';
+      ? t('settings.form.pickActiveSamplerFirst')
+      : t('settings.form.organizationRequired');
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
     return;
   }
@@ -1006,7 +1087,7 @@ async function handleAddSave(def) {
     setModalBusy(false);
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
     return;
   }
 
@@ -1018,12 +1099,12 @@ async function handleAddSave(def) {
   if (result.ok) {
     closeModal();
     renderAll();
-    setManagementMessage(`${name} ditambahkan.`, 'ok');
+    setManagementMessage(t('settings.role.addedMessage', { name }), 'ok');
   } else if (isNetworkFailure(result.error)) {
     enqueueAddReportPersonnel({ role_type: def.role, name, organization });
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -1035,14 +1116,14 @@ async function handleEditSave(def) {
 
   const name = els.modal.body.querySelector('[name="name"]').value.trim();
   if (!name) {
-    els.modal.message.textContent = 'Nama wajib diisi.';
+    els.modal.message.textContent = t('settings.form.nameRequired');
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
     return;
   }
 
   const organization = def.orgFixed ? def.orgFixed : els.modal.body.querySelector('[name="organization"]').value.trim();
   if (!organization) {
-    els.modal.message.textContent = 'Organisasi wajib diisi.';
+    els.modal.message.textContent = t('settings.form.organizationRequired');
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
     return;
   }
@@ -1063,7 +1144,7 @@ async function handleEditSave(def) {
     setModalBusy(false);
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
     return;
   }
 
@@ -1075,12 +1156,12 @@ async function handleEditSave(def) {
   if (result.ok) {
     closeModal();
     renderAll();
-    setManagementMessage(`${name} diperbarui.`, 'ok');
+    setManagementMessage(t('settings.role.updatedMessage', { name }), 'ok');
   } else if (isNetworkFailure(result.error)) {
     enqueueUpdateReportPersonnel(updatePayload);
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -1106,7 +1187,7 @@ async function handleDeactivateConfirm() {
     setModalBusy(false);
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
     return;
   }
 
@@ -1118,12 +1199,12 @@ async function handleDeactivateConfirm() {
   if (result.ok) {
     closeModal();
     renderAll();
-    setManagementMessage(`${name} dinonaktifkan.`, 'ok');
+    setManagementMessage(t('settings.role.deactivatedMessage', { name }), 'ok');
   } else if (isNetworkFailure(result.error)) {
     enqueueSetReportPersonnelActive(activePayload);
     closeModal();
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
   } else {
     els.modal.message.textContent = describeWriteError(result.error);
     els.modal.message.className = 'settings-modal-message settings-modal-message--error';
@@ -1146,11 +1227,11 @@ async function handleReactivate(record) {
     enqueueSetReportPersonnelActive(activePayload);
     writeInFlight = false;
     renderAll();
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
     return;
   }
 
-  setManagementMessage(`Mengaktifkan kembali ${record.name}...`, 'info');
+  setManagementMessage(t('settings.role.reactivatingMessage', { name: record.name }), 'info');
 
   const result = await setReportPersonnelActive(activePayload);
 
@@ -1158,10 +1239,10 @@ async function handleReactivate(record) {
   renderAll();
 
   if (result.ok) {
-    setManagementMessage(`${record.name} diaktifkan kembali.`, 'ok');
+    setManagementMessage(t('settings.role.reactivatedMessage', { name: record.name }), 'ok');
   } else if (isNetworkFailure(result.error)) {
     enqueueSetReportPersonnelActive(activePayload);
-    setManagementMessage(QUEUE_OFFLINE_SAVED_MESSAGE, 'info');
+    setManagementMessage(buildQueueOfflineSavedMessage(), 'info');
   } else {
     setManagementMessage(describeWriteError(result.error), 'error');
   }
