@@ -22,6 +22,20 @@ export const BUYER_SLNC = 'SLNC';
 export const BUYER_ESG = 'ESG';
 export const SUPPORTED_BUYERS = [BUYER_HYNC, BUYER_SLNC, BUYER_ESG];
 
+// User-visible display label for a buyer id. Internal identity (BUYER_ESG,
+// workbookBuyer/resolvedBuyer values, ESG_FORMAT_A/B, esg-profile.js) stays
+// 'ESG' everywhere -- this mapping is the one seam where the Report UI and
+// generated report text show the Owner-approved "EIEB" naming instead,
+// matching Monitor's own existing buyer label for the same workbook shape
+// (index.html's detectBuyer() already returns 'EIEB', not 'ESG').
+const BUYER_DISPLAY_LABEL = {
+  [BUYER_ESG]: 'EIEB',
+};
+
+export function getBuyerDisplayLabel(buyer) {
+  return BUYER_DISPLAY_LABEL[buyer] || buyer;
+}
+
 // Source of truth for "which 备注 prefix means which buyer". Each profile
 // module (hync-profile.js / slnc-profile.js) also declares its own prefix
 // constant for readability at the profile-definition site; if a prefix ever
@@ -67,15 +81,20 @@ export function buyerFromRemark(rawValue) {
 
 // Classifies the previous-shift report text by looking for the buyer
 // token actually present in that text ("FPP HYNC" / "FPP SLNC" /
-// "FPP ESG"), never an exact FPP/shipment code -- the previous report text
-// never contains that code, only the buyer name. Any two (or more) tokens
-// present at once is ambiguous and blocks, same as the original HYNC/SLNC
-// rule; never silently defaults to any buyer.
+// "FPP ESG" or "FPP EIEB"), never an exact FPP/shipment code -- the
+// previous report text never contains that code, only the buyer name. Any
+// two (or more) tokens present at once is ambiguous and blocks, same as
+// the original HYNC/SLNC rule; never silently defaults to any buyer.
+// Both "FPP ESG" and "FPP EIEB" resolve to the one internal BUYER_ESG
+// identity: this Report module now only ever *generates* "FPP EIEB" (the
+// approved user-visible naming, see getBuyerDisplayLabel), but a pasted
+// previous report may still be one generated before this wording change
+// and legitimately say "FPP ESG" -- both must keep resolving correctly.
 export function buyerFromPrevText(text) {
   const raw = String(text || '');
   const hasHync = /FPP\s+HYNC/i.test(raw);
   const hasSlnc = /FPP\s+SLNC/i.test(raw);
-  const hasEsg = /FPP\s+ESG/i.test(raw);
+  const hasEsg = /FPP\s+(ESG|EIEB)/i.test(raw);
   const matchCount = [hasHync, hasSlnc, hasEsg].filter(Boolean).length;
   if (matchCount > 1) return { status: 'ambiguous' };
   if (hasHync) return { status: 'ok', buyer: BUYER_HYNC };

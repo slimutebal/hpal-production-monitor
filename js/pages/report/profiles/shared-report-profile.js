@@ -9,10 +9,10 @@
 // This module must never import hync-profile.js or slnc-profile.js (that
 // would create an import cycle, since those two import this module).
 
-import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible, classifyShift } from '../report-utils.js';
+import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible, classifyShift, deriveAccumulationResets, accumulatePeriodValue } from '../report-utils.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
-import { lookupContractor } from '../../../services/contractor-directory-service.js';
-import { buyerFromRemark } from './profile-registry.js';
+import { lookupContractor, canonicalDtId } from '../../../services/contractor-directory-service.js';
+import { buyerFromRemark, getBuyerDisplayLabel } from './profile-registry.js';
 
 export const SHEET_NAME = '过磅明细';
 export const REQUIRED_HEADERS = ['流水号', '车号', '净重', '毛重时间', '日期', '规格'];
@@ -34,6 +34,27 @@ const CONTRACTOR_ALIAS = {
   HILLCON: 'PMS',
 };
 
+// Exact literal column widths for the contractor-breakdown lines in the
+// generated WhatsApp report text ("<name>...: <count> Trucks"), confirmed
+// against the Owner-approved HYNC/SLNC (PMS/MRP) and EIEB (TII/REAL)
+// examples. These are hand-tuned per contractor name, not one generic
+// padEnd formula (PMS/MRP both align at 34, but TII at 37 and REAL at 33
+// -- genuinely different widths), so unlisted contractor names fall back
+// to the pre-existing generic width instead of guessing a new literal.
+const CONTRACTOR_LINE_WIDTH = { PMS: 34, MRP: 34, TII: 37, REAL: 33 };
+const DEFAULT_CONTRACTOR_LINE_WIDTH = 20;
+
+// "Number of Truck[.]" line: HYNC/SLNC keep the trailing period and a
+// 25-column width; the internal ESG buyer (displayed as EIEB) drops the
+// period and uses a 24-column width -- both Owner-approved literal
+// examples, not derived from one shared rule.
+const NUMBER_OF_TRUCK_LINE = {
+  HYNC: { label: 'Number of Truck.', width: 25 },
+  SLNC: { label: 'Number of Truck.', width: 25 },
+  ESG: { label: 'Number of Truck', width: 24 },
+};
+const DEFAULT_NUMBER_OF_TRUCK_LINE = NUMBER_OF_TRUCK_LINE.HYNC;
+
 // SLNC DT id normalization, mirrored from Monitor's own normalizeDT()
 // (index.html) rather than re-derived: "SCM LIM 982 DT" -> "SCM-LIM 982".
 // Applied only as a fallback after a raw lookup fails, so real HYNC ids
@@ -46,26 +67,40 @@ function normalizeSlncDt(dt) {
   return s;
 }
 
-// Contractor directory drift fix: the shared, synced contractor directory
-// (contractor-directory-service.js -- same List DT data Monitor's own sync
-// keeps current) is always consulted first, so a DT added or corrected
-// through Monitor's existing sync flow is recognized here without
-// touching this file's own logic. contractor-adapter.js's static
-// HYNC_DT_LIST remains the fallback for ids the synced directory has no
-// match for (either because it hasn't been synced yet, or because the id
-// isn't SCM-prefixed -- see contractor-directory-service.js's header
-// comment on why non-SCM ids never appear in the synced key space). SLNC
-// is not given a second, separately-maintained static table -- only a
-// normalization fallback in front of the same read-only static lookup,
-// per the task's explicit "do not create a second contractor table"
-// instruction. A synced match always wins over the static fallback, and
-// only one of the two is ever consulted per truck -- never both merged
-// under different names for the same DT.
+// Monitor-owned single-sync architecture: the shared, Monitor-synced
+// contractor directory (contractor-directory-service.js, reading
+// hpal.contractors.v1 -- the one and only List DT sync in the
+// application, owned by contractor-assignment.js) is always consulted
+// first, so a DT added or corrected through Monitor's sync is recognized
+// here without touching this file's own logic.
+//
+// For an SCM-shaped id (canonicalDtId(carNo) non-empty -- i.e. the
+// "SCM-HLG"/"SCM-LIM" family this synced directory actually covers), the
+// Monitor-synced directory is the SOLE authoritative source: no static
+// fallback is consulted, even though contractor-adapter.js's static
+// HYNC_DT_LIST happens to also contain many SCM-LIM entries -- those are
+// a stale, hand-copied snapshot (see that file's own header comment) and
+// must never silently stand in for a live Monitor sync once that sync is
+// the approved source of truth for this id family. An SCM-shaped id with
+// no synced match is unmatched, not silently guessed from static data.
+//
+// contractor-adapter.js's static table remains the fallback only for ids
+// genuinely outside the SCM-shaped family (ADT/MIM/STM/legacy DT-prefixed
+// units), which canonicalDtId() never resolves to a key at all -- those
+// were never part of the synced directory's key space in the first
+// place. SLNC is not given a second, separately-maintained static table
+// -- only a normalization fallback in front of the same read-only static
+// lookup, per the task's explicit "do not create a second contractor
+// table" instruction.
+//
 // Exported (like parseFlexibleDate() above) so tests can exercise the real
 // HYNC/SLNC contractor-resolution precedence directly, without needing a
 // full XLSX workbook fixture -- see tests/report-contractor-sync.test.mjs.
 export function resolveContractor(carNo) {
-  return lookupContractor(carNo) || lookupHyncContractor(carNo) || lookupHyncContractor(normalizeSlncDt(carNo));
+  const synced = lookupContractor(carNo);
+  if (synced) return synced;
+  if (canonicalDtId(carNo)) return null; // SCM-shaped: Monitor-synced directory is authoritative, no static fallback
+  return lookupHyncContractor(carNo) || lookupHyncContractor(normalizeSlncDt(carNo));
 }
 
 /* ============================================================
@@ -74,7 +109,7 @@ export function resolveContractor(carNo) {
 export function parsePrevText(raw) {
   const text = cleanInvisible(raw);
   const errors = [];
-  const out = { date: null, daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 }, ytd: { ton: 0, rit: 0 } };
+  const out = { date: null, week: null, daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 }, ytd: { ton: 0, rit: 0 } };
 
   const dateMatch = text.match(/Date\s*:\s*([^\n\r]+)/i);
   if (!dateMatch) {
@@ -83,6 +118,13 @@ export function parsePrevText(raw) {
     out.date = parseDateID(dateMatch[1].trim());
     if (!out.date) errors.push(`Tidak bisa membaca format tanggal: "${dateMatch[1].trim()}"`);
   }
+
+  // Week is parsed for validation/display consistency only (see
+  // report-utils.js's findPreviousWeekMismatch()) -- it never decides
+  // period resets and its absence is never an error; the previous report's
+  // own Date remains the sole canonical period source.
+  const weekMatch = text.match(/Week\s*:\s*(\d+)/i);
+  out.week = weekMatch ? parseInt(weekMatch[1], 10) : null;
 
   function grab(label) {
     const re = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt\\s*\\[\\s*([\\d.,]+)\\s*Rit', 'i');
@@ -367,22 +409,41 @@ export function buildFileSummary(parsed) {
 /* ============================================================
    DAILY / WTD / MTD / YTD CALCULATION
 ============================================================ */
-// Day Shift is always the first shift of an operational day -> always
-// resets. Night Shift continues the same day's Day Shift -> accumulates,
-// but only if the previous report's date actually matches the file's date
-// (otherwise treat the previous Daily figure as stale and reset too).
+// Bug fix (period-aware accumulation): WTD/MTD/YTD used to accumulate
+// unconditionally (`prev.X + current`) with no period-boundary check at
+// all, so a new ISO week/month/year never reset them -- only Daily had a
+// reset rule. Each of the four buckets is now period-scoped independently
+// (see report-utils.js's deriveAccumulationResets(), reused unchanged by
+// every buyer profile via this one shared function):
+//   - Daily: unchanged, pre-existing rule -- Day Shift is always the first
+//     shift of an operational day and always resets; Night Shift continues
+//     the same day's Day Shift only if the previous report's date actually
+//     matches the file's date (otherwise the previous Daily figure is
+//     stale and resets too). Deliberately NOT swapped for the generic
+//     resetDaily from deriveAccumulationResets(), which does not know
+//     about shiftLabel.
+//   - WTD: resets on any ISO week OR ISO week-year change.
+//   - MTD: resets on any calendar month or year change.
+//   - YTD: resets on any calendar year change.
+// A missing/invalid previous date (e.g. the ESG empty-previous-report
+// case) makes every one of these comparisons false, so every bucket
+// naturally resets to the current On Shift alone -- never a literal 0
+// unless On Shift itself is 0 (accumulatePeriodValue()'s own rule).
 export function calculateTotals({ parsed, prev }) {
-  const isNightContinuation = parsed.shiftLabel === 'Night Shift' && sameDate(prev && prev.date, parsed.fileDate);
-  const dailyTon = isNightContinuation ? (prev.daily.ton + parsed.onShiftTon) : parsed.onShiftTon;
-  const dailyRit = isNightContinuation ? (prev.daily.rit + parsed.onShiftRit) : parsed.onShiftRit;
-  const wtdTon = prev.wtd.ton + parsed.onShiftTon;
-  const wtdRit = prev.wtd.rit + parsed.onShiftRit;
-  const mtdTon = prev.mtd.ton + parsed.onShiftTon;
-  const mtdRit = prev.mtd.rit + parsed.onShiftRit;
-  const ytdTon = prev.ytd.ton + parsed.onShiftTon;
-  const ytdRit = prev.ytd.rit + parsed.onShiftRit;
+  const prevDate = prev && prev.date;
+  const resets = deriveAccumulationResets(prevDate, parsed.fileDate);
 
-  return { isNightContinuation, dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit, ytdTon, ytdRit };
+  const isNightContinuation = parsed.shiftLabel === 'Night Shift' && sameDate(prevDate, parsed.fileDate);
+  const dailyTon = accumulatePeriodValue(prev.daily.ton, parsed.onShiftTon, isNightContinuation);
+  const dailyRit = accumulatePeriodValue(prev.daily.rit, parsed.onShiftRit, isNightContinuation);
+  const wtdTon = accumulatePeriodValue(prev.wtd.ton, parsed.onShiftTon, !resets.resetWtd);
+  const wtdRit = accumulatePeriodValue(prev.wtd.rit, parsed.onShiftRit, !resets.resetWtd);
+  const mtdTon = accumulatePeriodValue(prev.mtd.ton, parsed.onShiftTon, !resets.resetMtd);
+  const mtdRit = accumulatePeriodValue(prev.mtd.rit, parsed.onShiftRit, !resets.resetMtd);
+  const ytdTon = accumulatePeriodValue(prev.ytd.ton, parsed.onShiftTon, !resets.resetYtd);
+  const ytdRit = accumulatePeriodValue(prev.ytd.rit, parsed.onShiftRit, !resets.resetYtd);
+
+  return { isNightContinuation, periodResets: resets, dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit, ytdTon, ytdRit };
 }
 
 /* ============================================================
@@ -404,22 +465,25 @@ export function calculateTotals({ parsed, prev }) {
 // places the lines the caller hands it, exactly like it already treats
 // `weekNumber` as a pre-computed value rather than deriving it itself.
 export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, weekNumber, personnelLines }) {
+  const buyerDisplay = getBuyerDisplayLabel(buyer);
+  const numberOfTruckLine = NUMBER_OF_TRUCK_LINE[buyer] || DEFAULT_NUMBER_OF_TRUCK_LINE;
   const lines = [];
   lines.push('*DAILY PRODUCTION GEOLOGY REPORT*');
   lines.push('');
-  lines.push(`*HPAL Ore Selling SCM - FPP ${buyer}*`);
+  lines.push(`*HPAL Ore Selling SCM - FPP ${buyerDisplay}*`);
   lines.push(`*Date    : ${parsed.fileDate ? formatDateID(parsed.fileDate) : '-'}*`);
   lines.push(`*Week  : ${weekNumber}*`);
   lines.push(`*Shift    : ${parsed.shiftLabel}*`);
   lines.push('');
   lines.push('Man Power and Support');
   (personnelLines || []).forEach((line) => lines.push(line));
-  lines.push(`Number of Truck : ${parsed.totalDT} DT + ${parsed.totalADT} ADT`);
+  lines.push(`${numberOfTruckLine.label.padEnd(numberOfTruckLine.width, ' ')}: ${parsed.totalDT} DT + ${parsed.totalADT} ADT`);
   parsed.contractorCounts.forEach(([name, count]) => {
-    lines.push(`${name.padEnd(20, ' ')}: ${count} Trucks`);
+    const width = CONTRACTOR_LINE_WIDTH[name] || DEFAULT_CONTRACTOR_LINE_WIDTH;
+    lines.push(`${name.padEnd(width, ' ')}: ${count} Trucks`);
   });
   if (parsed.totalADT > 0) {
-    lines.push(`${'ADT'.padEnd(20, ' ')}: ${parsed.totalADT} Trucks`);
+    lines.push(`${'ADT'.padEnd(DEFAULT_CONTRACTOR_LINE_WIDTH, ' ')}: ${parsed.totalADT} Trucks`);
   }
   lines.push('');
   lines.push('Loading Point');
@@ -431,7 +495,7 @@ export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, week
       lines.push('');
     }
   });
-  lines.push(`A. Ore Delivered to FPP ${buyer}`);
+  lines.push(`A. Ore Delivered to FPP ${buyerDisplay}`);
   lines.push(`On Shift    : ${fmtTon(parsed.onShiftTon)} wmt [ ${fmtRit(parsed.onShiftRit)} Rit ]`);
   lines.push(`Daily         : ${fmtTon(totals.dailyTon)} wmt [ ${fmtRit(totals.dailyRit)} Rit ]`);
   lines.push(`WTD         : ${fmtTon(totals.wtdTon)} wmt [ ${fmtRit(totals.wtdRit)} Rit ]`);

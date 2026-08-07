@@ -90,12 +90,26 @@
   // (`{dtId|dt_id|"DT ID", contractor|Contractor}`) or an
   // already-canonical cache's `records` (which round-trip through the
   // same validator unchanged, since `dtId`/`normalizedKey` survive
-  // re-canonicalization identically). Fail-closed: any single malformed
-  // row, or two rows whose normalized ids collide with different
-  // contractor names, rejects the *whole* set -- a bad remote response or
-  // corrupted cache can never partially overwrite a previously good
-  // snapshot. Two rows colliding with the *same* contractor name are a
-  // harmless, deterministic duplicate and are merged into one record.
+  // re-canonicalization identically).
+  //
+  // The real List DT response is a mixed spreadsheet export: supported
+  // SCM-HLG/SCM-LIM rows sit alongside ADT/MIM/legacy-DT-prefixed rows
+  // (never SCM-shaped, so canonicalDtId() returns "" for them -- they are
+  // not part of this shared cache's concern at all, see
+  // validateAndNormalizeRow()'s SCM-only shape check) and occasional
+  // blank spreadsheet rows. A single unsupported or blank row must never
+  // reject the *entire* response -- that would make the shared cache
+  // effectively impossible to populate from a real sheet. Unsupported/
+  // blank/malformed rows are silently skipped; only two conditions still
+  // reject the whole update:
+  //   1. two accepted (SCM-shaped) rows whose normalized ids collide with
+  //      *different* contractor names -- a genuine data-integrity
+  //      conflict, never silently resolved by picking one;
+  //   2. zero rows were accepted at all -- an entirely blank/unsupported
+  //      response must never silently replace a previously good cache
+  //      with an empty one.
+  // Two rows colliding with the *same* contractor name are a harmless,
+  // deterministic duplicate and are merged into one record.
   function validateContractorRows(rawRows) {
     if (!Array.isArray(rawRows)) return { ok: false, error: 'records is not an array' };
 
@@ -103,7 +117,7 @@
     var order = [];
     for (var i = 0; i < rawRows.length; i++) {
       var row = validateAndNormalizeRow(rawRows[i]);
-      if (!row) return { ok: false, error: 'invalid record shape' };
+      if (!row) continue; // unsupported/blank/malformed row -- skipped, not fatal
       var existing = byKey[row.normalizedKey];
       if (existing && existing.contractor !== row.contractor) {
         return { ok: false, error: 'conflicting contractor for ' + row.normalizedKey };
@@ -111,6 +125,8 @@
       if (!existing) order.push(row.normalizedKey);
       byKey[row.normalizedKey] = row;
     }
+
+    if (order.length === 0) return { ok: false, error: 'no valid SCM records found' };
 
     return { ok: true, records: order.map(function (key) { return byKey[key]; }) };
   }

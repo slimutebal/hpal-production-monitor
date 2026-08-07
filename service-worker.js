@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-shared-contractor-cache-bridge';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-period-accumulation';
 const APP_SHELL = [
   './',
   './index.html',

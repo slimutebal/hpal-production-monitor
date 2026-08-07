@@ -27,8 +27,9 @@ import { ESG_WORKBOOK_FORMAT, detectEsgWorkbookFormat } from './esg-workbook-det
 import { parseEsgFormatA } from './adapters/esg-format-a-adapter.js';
 import { parseEsgFormatB } from './adapters/esg-format-b-adapter.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
-import { lookupContractor } from '../../../services/contractor-directory-service.js';
+import { lookupContractor, canonicalDtId } from '../../../services/contractor-directory-service.js';
 import { formatDateID, fmtTon, classifyShift } from '../report-utils.js';
+import { getBuyerDisplayLabel } from './profile-registry.js';
 
 export { ESG_WORKBOOK_FORMAT };
 
@@ -70,19 +71,26 @@ function normalizeEsgVehicleNo(vehicleNo) {
   return s;
 }
 
-// Contractor directory drift fix: consult the shared, synced contractor
-// directory (contractor-directory-service.js) before either static
-// fallback lookup -- this is the confirmed root cause of ESG DT units
-// going unrecognized despite being present in Monitor's synced List DT.
-// See shared-report-profile.js's resolveContractor() for the full
-// precedence rationale (synced -> static raw -> static normalized), which
-// this mirrors exactly for ESG's own normalizeEsgVehicleNo() fallback.
+// Monitor-owned single-sync architecture: consult the shared,
+// Monitor-synced contractor directory (contractor-directory-service.js,
+// reading hpal.contractors.v1) before any static fallback lookup. For an
+// SCM-shaped id (canonicalDtId(vehicleNo) non-empty), that synced
+// directory is the SOLE authoritative source -- no static fallback, even
+// though contractor-adapter.js's static table happens to also contain
+// many SCM-LIM entries (a stale, hand-copied snapshot, not a live
+// source). See shared-report-profile.js's resolveContractor() for the
+// full precedence rationale, which this mirrors exactly for ESG's own
+// normalizeEsgVehicleNo() fallback (used only for genuinely non-SCM-shaped
+// legacy ids).
 // Exported so tests can exercise ESG's real contractor-resolution
 // precedence directly (covers both Format A and Format B, which converge
 // on this same function after their own Phase 1/2 row normalization) --
 // see tests/report-contractor-sync.test.mjs.
 export function resolveEsgContractor(vehicleNo) {
-  return lookupContractor(vehicleNo) || lookupHyncContractor(vehicleNo) || lookupHyncContractor(normalizeEsgVehicleNo(vehicleNo));
+  const synced = lookupContractor(vehicleNo);
+  if (synced) return synced;
+  if (canonicalDtId(vehicleNo)) return null; // SCM-shaped: Monitor-synced directory is authoritative, no static fallback
+  return lookupHyncContractor(vehicleNo) || lookupHyncContractor(normalizeEsgVehicleNo(vehicleNo));
 }
 
 // Truck count is based on unique normalized vehicle units (one entry per
@@ -318,9 +326,10 @@ export function parseEsgWorkbook(workbook) {
 // function instead of buildFileSummary whenever parsed.workbookFormat is
 // set (i.e. the workbook was parsed by the ESG path).
 export function buildEsgFileSummary(parsed) {
-  const formatLabel = parsed.workbookFormat === ESG_WORKBOOK_FORMAT.ESG_FORMAT_A ? 'ESG Format A' : 'ESG Format B';
+  const buyerDisplay = getBuyerDisplayLabel(ESG_BUYER);
+  const formatLabel = parsed.workbookFormat === ESG_WORKBOOK_FORMAT.ESG_FORMAT_A ? `${buyerDisplay} Format A` : `${buyerDisplay} Format B`;
   let s = 'File berhasil dibaca\n';
-  s += `Buyer: ${ESG_BUYER}\n`;
+  s += `Buyer: ${buyerDisplay}\n`;
   s += `Format: ${formatLabel}\n`;
   s += `Sheet: ${parsed.sheetName}\n`;
   s += `Tanggal: ${parsed.fileDate ? formatDateID(parsed.fileDate) : '-'}\n`;

@@ -586,6 +586,41 @@ function getEffectiveContractorMap(){
   return { ...EMBEDDED_CONTRACTOR_MAP, ...liveContractorMap, ...personalOverride };
 }
 
+// Shared contractor-directory cache bridge (Report integration).
+// Publishes the exact effective contractor map Monitor itself uses right
+// now (embedded fallback + live Google Sheet + personal/local override,
+// in the same precedence getEffectiveContractorMap() already applies)
+// into the shared, read-only hpal.contractors.v1 cache Report consumes,
+// and notifies any listener that fresh data is available. This is the
+// ONLY approved Monitor change for the Report integration -- it never
+// touches contractorData/liveContractorMap/liveMapStatus or any Monitor
+// UI, and is a no-op (Monitor behavior identical either way) if the
+// shared core global is ever absent (e.g. index.html's <script> tag for
+// it was removed). window.HPALContractorDirectoryCore's own writer
+// already skips unsupported/non-SCM-shaped ids (ADT/MIM/legacy-DT-prefixed
+// units never canonicalize to a key) -- only supported SCM-HLG/SCM-LIM
+// records ever reach the shared cache; those legacy units keep relying on
+// Report's own existing static fallback (contractor-adapter.js),
+// unchanged. Called after every Monitor operation that can change the
+// effective map: a successful fetchSheetContractors() sync (startup,
+// manual "Sinkron Sekarang", and the automatic online-retry all funnel
+// through that one function), a manual contractor Excel upload
+// (handleContractorFile()), a manual single-entry update
+// (submitContractorEntry()), and a successful offline-queue flush
+// (flushPendingQueue()).
+function publishMonitorContractorDirectory(source){
+  if(typeof window === 'undefined' || !window.HPALContractorDirectoryCore) return null;
+
+  const effectiveMap = getEffectiveContractorMap();
+  const records = Object.entries(effectiveMap).map(([dtId, contractor]) => ({ dtId, contractor }));
+
+  const cache = window.HPALContractorDirectoryCore.writeSharedContractorCache(records, { source: source || 'monitor-sync' });
+  if(cache){
+    window.HPALContractorDirectoryCore.dispatchDirectoryUpdated(cache, window);
+  }
+  return cache;
+}
+
 function renderContractorStatus(){
   const effectiveMap = getEffectiveContractorMap();
   const totalCount = Object.keys(effectiveMap).length;
@@ -651,6 +686,10 @@ function handleContractorFile(file){
 
       contractorData = { map, filename: file.name, uploadedAt: new Date().toISOString(), count: Object.keys(map).length, isDefault: false };
       await window.storage.set(STORAGE_KEY, JSON.stringify(contractorData), false);
+      // A local override changes getEffectiveContractorMap()'s result --
+      // republish so Report sees the same effective mapping Monitor now
+      // uses.
+      publishMonitorContractorDirectory('monitor-local-override');
       renderContractorStatus();
     }catch(err){
       contractorStatus.innerHTML = `<div class="error-box">Gagal membaca file kontraktor: ${escapeHtml(err.message)}</div>`;
@@ -692,6 +731,12 @@ async function fetchSheetContractors(isManualTrigger){
     });
     liveContractorMap = map;
     liveMapStatus = { loaded:true, count: Object.keys(map).length, lastSync: new Date().toISOString(), error:null };
+    // Monitor's synchronization is now considered successful (GET ok, rows
+    // parsed, liveContractorMap updated) -- publish the shared cache from
+    // here, the real, visible List DT sync path (covers app startup, the
+    // "Sinkron Sekarang" button, and the automatic online-retry listener,
+    // since all three call this same function).
+    publishMonitorContractorDirectory('monitor-sync');
     renderContractorStatus();
     await flushPendingQueue(); // sekalian coba kirim antrian offline begitu berhasil connect
   }catch(err){
@@ -740,16 +785,21 @@ async function savePendingQueue(){
 async function flushPendingQueue(){
   if(pendingQueue.length === 0) return;
   const stillPending = [];
+  let anySucceeded = false;
   for(const entry of pendingQueue){
     try{
       await postContractorUpdate(entry.dtId, entry.contractor);
       liveContractorMap[entry.dtId] = entry.contractor; // pastikan tetap ter-apply di live map
+      anySucceeded = true;
     }catch(err){
       stillPending.push(entry); // gagal lagi, simpan untuk dicoba nanti
     }
   }
   pendingQueue = stillPending;
   await savePendingQueue();
+  // A successfully flushed entry changes liveContractorMap -- republish so
+  // Report sees the same effective mapping Monitor now uses.
+  if(anySucceeded) publishMonitorContractorDirectory('monitor-pending-queue-flush');
   renderContractorStatus();
 }
 
@@ -788,6 +838,10 @@ async function submitContractorEntry(){
 
   // Terapkan langsung secara lokal (optimistic) supaya user bisa lanjut kerja walau belum sinkron
   liveContractorMap[dtId] = contractor;
+  // A local optimistic update changes getEffectiveContractorMap()'s
+  // result -- republish so Report sees the same effective mapping Monitor
+  // now uses.
+  publishMonitorContractorDirectory('monitor-manual-entry');
   renderContractorStatus();
 
   let statusIcon = '⏳', statusText = 'menunggu koneksi';

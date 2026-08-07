@@ -178,26 +178,28 @@ describe('Monitor-style write notifies Report via the shared cache + event', () 
     assert.equal(read.records.length, 3); // the full directory, not a filtered "unmatched only" subset
   });
 
-  test('3-7. dispatching the event notifies a subscribed Report listener, which reloads and reclassifies', () => {
+  test('3-7. dispatching the event notifies a subscribed Report listener, which auto-reloads (marked "synced") and reclassifies', () => {
     const eventTarget = new EventTarget();
 
     // Report subscribes exactly like report-page.js does in
     // initReportPage(), using an injected target for this test.
+    // subscribeContractorDirectoryUpdated() itself reloads the snapshot
+    // before invoking the callback -- the callback only needs to react.
     let eventFired = 0;
     const unsubscribe = subscribeContractorDirectoryUpdated(() => {
       eventFired++;
-      loadCachedContractorDirectory(); // 4. Report receives the event and reloads
     }, { eventTarget });
 
-    // "Already-parsed" workbook fixture: two of three trucks are not yet
-    // in any directory (static or shared cache).
+    // "Already-parsed" workbook fixture: all three SCM-shaped trucks are
+    // unmatched before any Monitor sync (SCM units never fall back to
+    // static -- see shared-report-profile.js's resolveContractor()).
     reportState.fileParsed = true;
     reportState.resolvedBuyer = 'ESG';
     reportState.parsed = {
       records: [
         { carNo: 'SCM-HLG 960 DT', netKg: 30000, grossTime: new Date(2026, 7, 6, 10), dome: 'D1', grade: 1.3, oreClass: 'MGLO', contractor: 'TIDAK DIKENALI' },
         { carNo: 'SCM-LIM 228 DT', netKg: 31000, grossTime: new Date(2026, 7, 6, 11), dome: 'D1', grade: 1.3, oreClass: 'MGLO', contractor: 'TIDAK DIKENALI' },
-        { carNo: 'SCM-LIM 601', netKg: 29000, grossTime: new Date(2026, 7, 6, 12), dome: 'D2', grade: 1.5, oreClass: 'HGLO', contractor: 'REAL' },
+        { carNo: 'SCM-LIM 601', netKg: 29000, grossTime: new Date(2026, 7, 6, 12), dome: 'D2', grade: 1.5, oreClass: 'HGLO', contractor: 'TIDAK DIKENALI' },
       ],
       onShiftTon: 90 /* deliberately arbitrary -- must survive unchanged */,
       onShiftRit: 3,
@@ -206,18 +208,19 @@ describe('Monitor-style write notifies Report via the shared cache + event', () 
     };
 
     const before = recomputeContractorAggregates(reportState.parsed.records, resolveEsgContractor);
-    assert.equal(before.unmatchedTrucks.length, 2); // 6. baseline
+    assert.equal(before.unmatchedTrucks.length, 3); // 6. baseline -- none of the three has synced yet
 
     // Monitor-style write + dispatch (simulates contractor-assignment.js's
     // own minimal integration).
     const cache = core.writeSharedContractorCache([
       { dtId: 'SCM-HLG 960', contractor: 'STM' },
       { dtId: 'SCM-LIM 228', contractor: 'MRP' },
+      { dtId: 'SCM-LIM 601', contractor: 'REAL' },
     ], { source: 'remote' }, globalThis.localStorage);
     core.dispatchDirectoryUpdated(cache, eventTarget);
 
     assert.equal(eventFired, 1); // 3. event dispatched and received exactly once
-    assert.equal(getContractorDirectorySnapshot().source, 'shared-cache');
+    assert.equal(getContractorDirectorySnapshot().source, 'synced'); // 4. Report auto-reloaded via the event
     assert.equal(lookupContractor('SCM-HLG 960'), 'STM'); // Report's own snapshot now sees it
 
     // 5. already-parsed records are reclassified (via the same pure
@@ -226,6 +229,7 @@ describe('Monitor-style write notifies Report via the shared cache + event', () 
     assert.equal(after.unmatchedTrucks.length, 0); // 6-7. unmatched count decreases to zero
     assert.deepEqual(after.contractorCounts.find(([name]) => name === 'STM'), ['STM', 1]); // 7. contractor counts change correctly
     assert.deepEqual(after.contractorCounts.find(([name]) => name === 'MRP'), ['MRP', 1]);
+    assert.deepEqual(after.contractorCounts.find(([name]) => name === 'REAL'), ['REAL', 1]);
 
     unsubscribe();
   });

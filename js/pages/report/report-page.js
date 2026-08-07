@@ -13,7 +13,7 @@
 // workbook upload goes through one dispatcher that decides HYNC/SLNC vs
 // ESG Format A vs ESG Format B vs unsupported, so the UI truly is one
 // shared page rather than buyer-specific branches bolted on.
-import { escapeHtml, formatDateID, fmtTon, fmtRit, deriveWeekFromParsedWorkbook, recomputeContractorAggregates } from './report-utils.js';
+import { escapeHtml, formatDateID, fmtTon, fmtRit, deriveWeekFromParsedWorkbook, recomputeContractorAggregates, findPreviousWeekMismatch } from './report-utils.js';
 import { reportState, resetReportState, BUYER_STATUS } from './report-state.js';
 import {
   AREA_OPTIONS,
@@ -23,7 +23,7 @@ import {
   buildReportText,
   resolveContractor,
 } from './profiles/shared-report-profile.js';
-import { buyerFromPrevText, getProfile } from './profiles/profile-registry.js';
+import { buyerFromPrevText, getProfile, getBuyerDisplayLabel } from './profiles/profile-registry.js';
 import { parseUploadedWorkbook } from './profiles/report-workbook-dispatcher.js';
 import { ESG_WORKBOOK_FORMAT, buildEsgFileSummary, resolveEsgContractor } from './profiles/esg-profile.js';
 import {
@@ -34,7 +34,6 @@ import {
 } from '../../services/personnel-directory-service.js';
 import {
   loadCachedContractorDirectory,
-  syncContractorDirectory,
   getContractorDirectoryStatus,
   subscribeContractorDirectoryUpdated,
 } from '../../services/contractor-directory-service.js';
@@ -60,30 +59,29 @@ export function initReportPage() {
   els = collectElements(page);
   wireEvents();
   loadCachedPersonnelDirectory();
+  // Monitor-owned single-sync architecture: Report never fetches
+  // contractor data itself -- it only reads the shared
+  // hpal.contractors.v1 cache Monitor's own List DT sync writes. This
+  // loads whatever is already on disk (marked 'cached' if present, 'none'
+  // if Monitor has never synced) so the status line and status guard
+  // below are correct immediately, without any network request.
   loadCachedContractorDirectory();
-  renderContractorDirectoryStatus(); // shows the shared-cache/none state immediately -- never silently reports static fallback as "synchronized"
-  // Shared-cache architecture: react whenever ANY source (Monitor's own
-  // List DT sync, or this page's own sync below) writes
-  // hpal.contractors.v1 -- reload the snapshot, refresh the visible
-  // status, and reclassify the currently uploaded workbook if one exists.
-  // Registered exactly once here, since initReportPage() itself is only
-  // ever called once by app.js at bootstrap (same assumption every other
-  // one-time registration in this file already makes) -- never
-  // duplicated on route changes.
+  renderContractorDirectoryStatus();
+  // React whenever Monitor's sync (contractor-assignment.js, via the
+  // shared core) writes a fresh hpal.contractors.v1 and dispatches
+  // hpal:contractor-directory-updated -- reload the snapshot, refresh the
+  // visible status, and reclassify the currently uploaded workbook if one
+  // exists, all without requiring re-upload. Registered exactly once
+  // here, since initReportPage() itself is only ever called once by
+  // app.js at bootstrap (same assumption every other one-time
+  // registration in this file already makes) -- never duplicated on
+  // route changes.
   subscribeContractorDirectoryUpdated(handleContractorDirectoryUpdatedEvent);
-  // One controlled, read-only sync against the same synced List DT
-  // endpoint Monitor uses, fired once at Report init (never on every
-  // route visit -- see onRouteChange below, which only re-renders
-  // personnel selectors, not this). This alone does not guarantee a
-  // workbook uploaded moments later sees fresh data -- that guarantee
-  // comes from handleFileChange() awaiting its own sync before
-  // classifying (see below) -- this init-time call only means the status
-  // line and an early upload are as fresh as possible without waiting.
-  syncContractorDirectory().catch(() => undefined);
   renderStep(reportState.step);
   renderWeekDisplay();
   renderPersonnelSection();
   autoGrowTextarea(els.prevText);
+  autoGrowTextarea(els.output); // no-op at bootstrap (both empty and/or hidden), matches els.prevText's own call above
 
   // Refreshes selector options from the current directory snapshot every
   // time Report becomes the active route (e.g. after syncing the
@@ -92,8 +90,17 @@ export function initReportPage() {
   // initReportPage() itself is only ever called once by app.js at
   // bootstrap (same assumption every other page here already makes), so
   // this registers exactly one listener for the lifetime of the app.
+  // Also re-measures both auto-grow textareas: while #page-report was
+  // hidden (Monitor/Settings active), offsetParent was null so any resize
+  // triggered while away was skipped -- this re-applies scrollHeight now
+  // that the page is visible again, covering the "route return with
+  // existing text" case for both the previous-report and output boxes.
   onRouteChange((route) => {
-    if (route === 'report') renderPersonnelSection();
+    if (route === 'report') {
+      renderPersonnelSection();
+      autoGrowTextarea(els.prevText);
+      autoGrowTextarea(els.output);
+    }
   });
 }
 
@@ -119,7 +126,7 @@ function buildShellMarkup() {
       <section class="hync-panel active" id="hync-step-1">
         <div class="hync-card">
           <h2>Teks Report Sebelumnya</h2>
-          <div class="hync-hint" id="hync-prev-text-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).</div>
+          <div class="hync-hint" id="hync-prev-text-hint">Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal &amp; angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).</div>
           <div class="hync-field">
             <label class="hync-req" for="hync-prev-text" id="hync-prev-text-label">Teks report sebelumnya</label>
             <textarea id="hync-prev-text" class="hync-textarea hync-mono-area" placeholder="Paste teks report shift sebelumnya di sini..."></textarea>
@@ -137,10 +144,13 @@ function buildShellMarkup() {
           <div class="hync-file-status" id="hync-file-status"></div>
 
           <div class="hync-contractor-status-row">
-            <p class="hync-contractor-status" id="hync-contractor-status">List DT: Unavailable</p>
-            <button type="button" class="hync-btn hync-btn-ghost hync-btn-small" id="hync-contractor-refresh-btn">🔄 Refresh List DT</button>
+            <p class="hync-contractor-status" id="hync-contractor-status">List DT Monitor: Not available</p>
           </div>
-          <p class="hync-contractor-status-warn" id="hync-contractor-status-warn" hidden>List DT terbaru tidak dapat dimuat. Report menggunakan daftar bawaan yang mungkin belum mencakup unit terbaru.</p>
+          <p class="hync-contractor-status-lastsync" id="hync-contractor-last-sync" hidden></p>
+          <p class="hync-contractor-status-warn" id="hync-contractor-status-warn" hidden>List DT belum disinkronkan dari Monitor.</p>
+          <div class="hync-btn-row" id="hync-contractor-goto-monitor-row" hidden>
+            <button type="button" class="hync-btn hync-btn-ghost hync-btn-small" id="hync-contractor-goto-monitor-btn">Buka Monitor</button>
+          </div>
         </div>
 
         <div class="hync-card">
@@ -233,7 +243,7 @@ function buildShellMarkup() {
         <div class="hync-card">
           <h2>Teks Laporan</h2>
           <div class="hync-hint">Cek dulu sebelum di-copy ke WA Group. Bisa diedit manual langsung di kotak ini kalau perlu.</div>
-          <textarea class="hync-output-box" id="hync-output" readonly></textarea>
+          <textarea class="hync-output-box" id="hync-output"></textarea>
           <div class="hync-btn-row" style="margin-top:12px;">
             <button type="button" class="hync-btn hync-btn-primary" id="hync-btn-copy">📋 Copy Laporan</button>
           </div>
@@ -277,8 +287,10 @@ function collectElements(page) {
     fileDropText: byId('hync-file-drop-text'),
     fileStatus: byId('hync-file-status'),
     contractorStatus: byId('hync-contractor-status'),
+    contractorLastSync: byId('hync-contractor-last-sync'),
     contractorStatusWarn: byId('hync-contractor-status-warn'),
-    contractorRefreshBtn: byId('hync-contractor-refresh-btn'),
+    contractorGotoMonitorRow: byId('hync-contractor-goto-monitor-row'),
+    contractorGotoMonitorBtn: byId('hync-contractor-goto-monitor-btn'),
     weekDisplay: byId('hync-week-display'),
     weekNumber: byId('hync-week-number'),
     weekRange: byId('hync-week-range'),
@@ -336,7 +348,7 @@ function collectElements(page) {
 ============================================================ */
 function wireEvents() {
   els.fileInput.addEventListener('change', handleFileChange);
-  els.contractorRefreshBtn.addEventListener('click', handleRefreshContractorDirectory);
+  els.contractorGotoMonitorBtn.addEventListener('click', () => navigateTo('monitor'));
   els.btnNext.addEventListener('click', goToStep2);
   els.btnResetStep1.addEventListener('click', handleResetClick);
   els.btnResetStep3.addEventListener('click', handleResetClick);
@@ -354,6 +366,13 @@ function wireEvents() {
     autoGrowTextarea(els.prevText);
     recomputeBuyerResolution({ openPopupOnNewMismatch: true });
   });
+  // Generated report output is manually editable (see its own hint text)
+  // -- typing/pasting/deleting inside it must grow/shrink the box exactly
+  // like the previous-report textarea above. Manual edits are deliberately
+  // NOT written back into reportState.reportText: copyOutput() already
+  // reads the live DOM value directly, and a manual edit here should not
+  // retroactively change what a later "Generate Laporan" run would rebuild.
+  els.output.addEventListener('input', () => autoGrowTextarea(els.output));
 
   els.buyerModalClose.addEventListener('click', closeBuyerMismatchPopup);
   els.buyerModalOverlay.addEventListener('click', (event) => {
@@ -370,7 +389,10 @@ function wireEvents() {
 }
 
 /* ============================================================
-   AUTO-GROW: Previous Report textarea
+   AUTO-GROW: Previous Report textarea + generated report output textarea
+   (V2.3: "Teks Laporan" now grows to fit its full content too, sharing
+   this exact same helper -- see its call sites at generation, reset, and
+   manual-edit time below).
 ============================================================ */
 function autoGrowTextarea(textarea) {
   if (!textarea) return;
@@ -504,25 +526,26 @@ const NEUTRAL_LABELS = {
 };
 
 function buyerLabelSet(buyer) {
+  const buyerDisplay = getBuyerDisplayLabel(buyer);
   return {
-    eyebrow: `SCM · HPAL Ore Selling — FPP ${buyer}`,
-    subtitle: `Generator laporan shift dari data timbangan ${buyer}`,
-    workbookTitle: `Data Timbangan (khusus ${buyer})`,
-    workbookHint: `Upload file timbangan (.xlsx/.xls) sheet 过磅明细 — pastikan ini data milik buyer ${buyer}, bukan buyer lain.`,
-    footnote: `FPP ${buyer} · Internal use — SCM HPAL Ore Selling`,
+    eyebrow: `SCM · HPAL Ore Selling — FPP ${buyerDisplay}`,
+    subtitle: `Generator laporan shift dari data timbangan ${buyerDisplay}`,
+    workbookTitle: `Data Timbangan (khusus ${buyerDisplay})`,
+    workbookHint: `Upload file timbangan (.xlsx/.xls) sheet 过磅明细 — pastikan ini data milik buyer ${buyerDisplay}, bukan buyer lain.`,
+    footnote: `FPP ${buyerDisplay} · Internal use — SCM HPAL Ore Selling`,
   };
 }
 
 function buyerStatusMessage(status) {
-  const prev = reportState.previousReportBuyer;
-  const wb = reportState.workbookBuyer;
+  const prev = getBuyerDisplayLabel(reportState.previousReportBuyer);
+  const wb = getBuyerDisplayLabel(reportState.workbookBuyer);
   switch (status) {
     case BUYER_STATUS.PENDING_WORKBOOK:
       return `Buyer terdeteksi: ${prev} (dari teks report) — menunggu file timbangan.`;
     case BUYER_STATUS.PENDING_PREVIOUS_REPORT:
       return `Buyer terdeteksi: ${wb} (dari file timbangan) — menunggu teks report sebelumnya.`;
     case BUYER_STATUS.CONFIRMED:
-      return `Buyer terkonfirmasi: ${reportState.resolvedBuyer}.`;
+      return `Buyer terkonfirmasi: ${getBuyerDisplayLabel(reportState.resolvedBuyer)}.`;
     case BUYER_STATUS.MISMATCH:
       return '⚠ Buyer tidak sesuai — lihat detail.';
     case BUYER_STATUS.INVALID_WORKBOOK:
@@ -559,8 +582,8 @@ function updateBuyerUI() {
   // that accurately rather than always showing "required".
   els.prevTextLabel.classList.toggle('hync-req', !previousReportOptional);
   els.prevTextHint.textContent = previousReportOptional
-    ? 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya), atau kosongkan jika ini laporan pertama / mulai periode akumulasi baru. Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).'
-    : 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP ESG).';
+    ? 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya), atau kosongkan jika ini laporan pertama / mulai periode akumulasi baru. Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).'
+    : 'Paste teks "DAILY PRODUCTION GEOLOGY REPORT" dari WA Group (shift sebelumnya). Dipakai untuk ambil tanggal & angka WTD/MTD/YTD/Daily lama, dan untuk mendeteksi buyer (FPP HYNC / FPP SLNC / FPP EIEB).';
 
   els.buyerStatus.textContent = buyerStatusMessage(status);
   els.buyerStatus.className = 'hync-buyer-status ' + buyerStatusClass(status);
@@ -574,8 +597,8 @@ function buildBuyerModalContent(status) {
     return {
       title: 'Buyer tidak sesuai',
       bodyHtml: `
-        <p>Teks report sebelumnya terdeteksi sebagai <b>${escapeHtml(reportState.previousReportBuyer)}</b>,
-        sedangkan file timbangan terdeteksi sebagai <b>${escapeHtml(reportState.workbookBuyer)}</b>.</p>
+        <p>Teks report sebelumnya terdeteksi sebagai <b>${escapeHtml(getBuyerDisplayLabel(reportState.previousReportBuyer))}</b>,
+        sedangkan file timbangan terdeteksi sebagai <b>${escapeHtml(getBuyerDisplayLabel(reportState.workbookBuyer))}</b>.</p>
         <p>Pastikan teks report sebelumnya dan file timbangan berasal dari buyer yang sama.</p>
       `,
     };
@@ -613,7 +636,7 @@ function buildBuyerModalContent(status) {
     return {
       title: 'Teks report sebelumnya ambigu',
       bodyHtml: `
-        <p>Teks report sebelumnya menyebutkan lebih dari satu buyer (<b>FPP HYNC</b> / <b>FPP SLNC</b> / <b>FPP ESG</b>) sekaligus.</p>
+        <p>Teks report sebelumnya menyebutkan lebih dari satu buyer (<b>FPP HYNC</b> / <b>FPP SLNC</b> / <b>FPP EIEB</b>) sekaligus.</p>
         <p>Pastikan teks report sebelumnya hanya berasal dari satu buyer.</p>
       `,
     };
@@ -629,7 +652,8 @@ function buildBuyerModalContent(status) {
 // only groups and titles them per the task's required message shapes.
 function buildEsgInvalidWorkbookContent() {
   const issues = reportState.workbookBuyerIssues || [];
-  const formatLabel = reportState.workbookFormat === ESG_WORKBOOK_FORMAT.ESG_FORMAT_A ? 'ESG Format A' : 'ESG Format B';
+  const buyerDisplay = getBuyerDisplayLabel('ESG');
+  const formatLabel = reportState.workbookFormat === ESG_WORKBOOK_FORMAT.ESG_FORMAT_A ? `${buyerDisplay} Format A` : `${buyerDisplay} Format B`;
   const sheetName = reportState.parsed ? reportState.parsed.sheetName : null;
   const sheetText = sheetName ? `sheet <b>${escapeHtml(sheetName)}</b>` : 'sheet tidak diketahui';
 
@@ -639,9 +663,9 @@ function buildEsgInvalidWorkbookContent() {
   if (workbookLevel.length && !rowLevel.length) {
     const detail = workbookLevel.map((i) => escapeHtml(i.message)).join('<br>');
     return {
-      title: 'Data ESG tidak valid',
+      title: `Data ${buyerDisplay} tidak valid`,
       bodyHtml: `
-        <p>Buyer/format ESG tidak dapat dipastikan dari file timbangan (${escapeHtml(formatLabel)}, ${sheetText}):</p>
+        <p>Buyer/format ${escapeHtml(buyerDisplay)} tidak dapat dipastikan dari file timbangan (${escapeHtml(formatLabel)}, ${sheetText}):</p>
         <p>${detail}</p>
         <p>Periksa file timbangan sebelum melanjutkan.</p>
       `,
@@ -651,7 +675,7 @@ function buildEsgInvalidWorkbookContent() {
   const rowsSummary = rowLevel.slice(0, 8).map((i) => `baris ${i.sourceRow}: ${escapeHtml(i.message)}`).join('<br>');
   const remaining = rowLevel.length > 8 ? `<br>... dan ${rowLevel.length - 8} baris lainnya` : '';
   return {
-    title: 'Data ESG tidak valid',
+    title: `Data ${buyerDisplay} tidak valid`,
     bodyHtml: `
       <p>Terdapat baris timbangan valid dengan tanggal, waktu, tonase, atau kode ore yang tidak dapat dibaca (${escapeHtml(formatLabel)}, ${sheetText}).</p>
       ${rowsSummary ? `<p>${rowsSummary}${remaining}</p>` : ''}
@@ -972,20 +996,7 @@ function handleFileChange(event) {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = async (evt) => {
-    // Contractor directory drift fix: exactly one List DT read sync per
-    // upload, awaited before contractor classification runs -- reuses an
-    // already in-flight sync (e.g. the one fired at page init) via the
-    // service's own in-flight dedup, or starts exactly one fresh request
-    // otherwise. This is what actually closes the race the previous
-    // fire-and-forget-at-init-only approach left open: a workbook is now
-    // never classified against a directory snapshot older than this
-    // specific upload attempt. Never fetches per-row -- one attempt, once,
-    // per upload event.
-    renderFileStatus(true, 'Menyinkronkan List DT sebelum membaca file...');
-    await syncContractorDirectory().catch(() => undefined);
-    renderContractorDirectoryStatus();
-
+  reader.onload = (evt) => {
     try {
       if (typeof XLSX === 'undefined') {
         throw new Error('Library Excel belum siap. Muat ulang aplikasi lalu coba lagi.');
@@ -997,8 +1008,13 @@ function handleFileChange(event) {
       // ESG-shaped file -- this page never sends a workbook to the
       // HYNC/SLNC parser directly. Contractor resolution inside this call
       // (shared-report-profile.js's resolveContractor() /
-      // esg-profile.js's resolveEsgContractor()) now reads the directory
-      // snapshot the sync above just refreshed.
+      // esg-profile.js's resolveEsgContractor()) reads whatever the
+      // Monitor-synced shared directory currently holds -- Report never
+      // fetches contractor data itself (Monitor is the single sync
+      // owner); if Monitor syncs again later, the
+      // hpal:contractor-directory-updated event reclassifies this same
+      // workbook without requiring re-upload (see
+      // handleContractorDirectoryUpdatedEvent()).
       const parsed = parseUploadedWorkbook(workbook);
 
       reportState.parsed = parsed;
@@ -1036,58 +1052,43 @@ function renderFileStatus(ok, msg) {
 }
 
 /* ============================================================
-   CONTRACTOR DIRECTORY STATUS + MANUAL REFRESH (shared-cache
-   architecture round). Report must never silently present the static
-   embedded fallback as if it were synchronized -- this status line always
-   tells the user which of the three real tiers (this instance's own live
-   Remote fetch / the Shared cache written by Monitor or Report / the
-   Static embedded fallback) the just-parsed or about-to-be-parsed
-   workbook's contractor breakdown actually came from. "Shared cache" is
-   deliberately not called a private Report cache -- hpal.contractors.v1
-   may have been written by Monitor's own sync, not this Report session.
+   CONTRACTOR DIRECTORY STATUS (Monitor-owned single-sync architecture).
+   Monitor's existing List DT sync is the one and only synchronization
+   flow in the application -- Report never fetches contractor data
+   itself, it only reads the shared hpal.contractors.v1 cache Monitor's
+   sync writes. This status line always tells the user which of the two
+   real states (a live hpal:contractor-directory-updated event was
+   received this session -- "Synced"; or a valid cache was already on
+   disk at Report init -- "Cached") the current contractor breakdown came
+   from, or that no valid Monitor-synced directory exists at all.
 ============================================================ */
 function renderContractorDirectoryStatus() {
   const status = getContractorDirectoryStatus();
-  let text;
-  const isFallback = status.source === 'none';
+  const hasDirectory = status.source === 'synced' || status.source === 'cached';
 
-  if (status.source === 'remote') {
-    text = `List DT: Remote — ${status.recordCount} records`;
-  } else if (status.source === 'shared-cache') {
-    text = `List DT: Shared cache — ${status.recordCount} records`;
-  } else {
-    // The static embedded table (contractor-adapter.js) is always present
-    // in the shipped app -- "List DT: Unavailable" (a fourth status the
-    // Owner asked for) would require the static table itself to also be
-    // empty, which cannot happen in a normal build, so it is never
-    // reachable here in practice; documented rather than built as dead
-    // code. source 'none' always means "no synced/shared-cache directory
-    // yet, running on the static fallback only."
-    text = 'List DT: Static fallback — data may be outdated';
-  }
-  if ((status.source === 'remote' || status.source === 'shared-cache') && status.fetchedAt) {
-    text += ` · sinkron terakhir ${formatContractorTimestamp(status.fetchedAt)}`;
-  }
-
-  els.contractorStatus.textContent = text;
-  els.contractorStatus.classList.toggle('hync-contractor-status--warn', isFallback);
-
-  // Local file:// mode (bug fix): a fetch failure under file:// must never
-  // be silently reported as if the remote endpoint were simply empty --
-  // the browser's own file:// origin restrictions can block the request
-  // before it ever reaches the network, which is a very different problem
-  // from "the endpoint has no data." Owner testing must use
-  // http://127.0.0.1:<port>/ or http://localhost:<port>/, never file:///.
-  const isFileProtocol = typeof location !== 'undefined' && location.protocol === 'file:';
-  if (isFallback && isFileProtocol) {
-    els.contractorStatusWarn.textContent = 'Sinkronisasi List DT tidak dapat divalidasi dari mode file lokal. Jalankan aplikasi melalui Live Server atau localhost.';
+  if (!hasDirectory) {
+    els.contractorStatus.textContent = 'List DT Monitor: Not available';
+    els.contractorStatus.classList.add('hync-contractor-status--warn');
+    els.contractorLastSync.hidden = true;
+    els.contractorStatusWarn.textContent = 'List DT belum disinkronkan dari Monitor.';
     els.contractorStatusWarn.hidden = false;
-  } else if (isFallback) {
-    els.contractorStatusWarn.textContent = 'List DT terbaru tidak dapat dimuat. Report menggunakan daftar bawaan yang mungkin belum mencakup unit terbaru.';
-    els.contractorStatusWarn.hidden = false;
-  } else {
-    els.contractorStatusWarn.hidden = true;
+    els.contractorGotoMonitorRow.hidden = false;
+    return;
   }
+
+  const label = status.source === 'synced' ? 'Synced' : 'Cached';
+  els.contractorStatus.textContent = `List DT Monitor: ${label} — ${status.recordCount} records`;
+  els.contractorStatus.classList.remove('hync-contractor-status--warn');
+
+  if (status.fetchedAt) {
+    els.contractorLastSync.textContent = `Last sync: ${formatContractorTimestamp(status.fetchedAt)}`;
+    els.contractorLastSync.hidden = false;
+  } else {
+    els.contractorLastSync.hidden = true;
+  }
+
+  els.contractorStatusWarn.hidden = true;
+  els.contractorGotoMonitorRow.hidden = true;
 }
 
 function formatContractorTimestamp(isoString) {
@@ -1098,15 +1099,15 @@ function formatContractorTimestamp(isoString) {
 
 // Reclassifies the currently uploaded workbook's contractor breakdown
 // (DT/ADT totals, contractor counts, unmatched list) from its already-
-// preserved raw records against whatever the directory snapshot
-// currently holds, without requiring re-upload. Tonnage, ritase, workbook
-// date, shift, buyer/profile, Automatic Week, dome data, loading-point
-// assignments, personnel selections, manpower inputs, and Problem/Action
-// are all untouched -- recomputeContractorAggregates() (report-utils.js)
-// only ever reads/returns contractor-derived fields. A no-op if no
-// workbook has been parsed yet. Shared by the manual "Refresh List DT"
-// button and the hpal:contractor-directory-updated event handler below,
-// so there is exactly one reclassification code path.
+// preserved raw records against whatever the Monitor-synced directory
+// snapshot currently holds, without requiring re-upload. Tonnage, ritase,
+// workbook date, shift, buyer/profile, Automatic Week, dome data,
+// loading-point assignments, personnel selections, manpower inputs, and
+// Problem/Action are all untouched -- recomputeContractorAggregates()
+// (report-utils.js) only ever reads/returns contractor-derived fields. A
+// no-op if no workbook has been parsed yet. Called only from
+// handleContractorDirectoryUpdatedEvent() below -- Report has no other
+// trigger for a reclassification pass, since it never syncs on its own.
 function reclassifyCurrentWorkbookIfParsed() {
   if (!reportState.fileParsed || !reportState.parsed) return;
 
@@ -1125,41 +1126,22 @@ function reclassifyCurrentWorkbookIfParsed() {
 
   if (reportState.step === 3) {
     renderScaleDisplay(reportState.parsed);
-    renderWarnings(reportState.parsed);
+    renderWarnings(reportState.parsed, reportState.prev);
+    autoGrowTextarea(els.output); // step 3 (and its textarea) is visible here -- shrink the now-cleared box immediately
   }
 }
 
-// Reacts to hpal:contractor-directory-updated -- dispatched by EITHER
-// Monitor's own List DT sync (contractor-assignment.js, via the shared
-// core) or this page's own sync (syncContractorDirectory() below), so
-// Report picks up a Monitor-driven sync it did not itself trigger.
-// Registered exactly once in initReportPage() (see
+// Reacts to hpal:contractor-directory-updated -- dispatched exclusively
+// by Monitor's own List DT sync (contractor-assignment.js, via the
+// shared core) after it writes a fresh hpal.contractors.v1. Registered
+// exactly once in initReportPage() (see
 // subscribeContractorDirectoryUpdated()'s own single-registration
-// comment there).
+// comment there). subscribeContractorDirectoryUpdated() already reloads
+// the service's own snapshot (marked 'synced') before invoking this
+// callback, so this only needs to react to the change.
 function handleContractorDirectoryUpdatedEvent() {
-  loadCachedContractorDirectory();
   renderContractorDirectoryStatus();
   reclassifyCurrentWorkbookIfParsed();
-}
-
-// "Refresh List DT" -- read-only: fetches the latest List DT. Status
-// re-render and workbook reclassification both happen via
-// handleContractorDirectoryUpdatedEvent() above once the sync's own
-// success path dispatches the update event (dispatchEvent runs listeners
-// synchronously, so this has already happened by the time the awaited
-// promise below resolves) -- kept as one single reclassification code
-// path rather than duplicated here. The explicit render call after the
-// await only covers the failure case, where no event fires.
-async function handleRefreshContractorDirectory() {
-  const originalLabel = els.contractorRefreshBtn.textContent;
-  els.contractorRefreshBtn.disabled = true;
-  els.contractorRefreshBtn.textContent = 'Menyinkronkan...';
-
-  await syncContractorDirectory().catch(() => undefined);
-  renderContractorDirectoryStatus();
-
-  els.contractorRefreshBtn.disabled = false;
-  els.contractorRefreshBtn.textContent = originalLabel;
 }
 
 /* ============================================================
@@ -1319,6 +1301,19 @@ function goToStep3() {
     });
     return;
   }
+  // Monitor-owned single-sync architecture: contractor assignment for
+  // SCM units is only ever as good as Monitor's last successful List DT
+  // sync -- generating a final report without any valid Monitor-synced
+  // directory at all would silently classify SCM units from potentially
+  // stale/incomplete static data, which the approved architecture
+  // explicitly forbids. Blocks final generation only when NO cache exists
+  // at all (source 'none') -- individual unmatched trucks despite a valid
+  // cache remain a non-blocking warning (renderWarnings()), unchanged.
+  if (getContractorDirectoryStatus().source === 'none') {
+    renderAlert(els.step2Errors, ['List DT belum disinkronkan dari Monitor. Buka halaman Monitor dan jalankan sinkronisasi List DT sebelum membuat laporan.']);
+    return;
+  }
+
   // Stale-directory handling (V2.3 Phase 4): resolve and revalidate
   // personnel selections against the *current* directory snapshot again
   // at generation time, not just at the Step 1 -> 2 gate -- Settings could
@@ -1335,7 +1330,7 @@ function goToStep3() {
   const totals = calculateTotals({ parsed: reportState.parsed, prev: reportState.prev });
   reportState.totals = totals;
 
-  const personnelLines = buildPersonnelOutputLines(personnelSnapshot.records, reportState.personnel);
+  const personnelLines = buildPersonnelOutputLines(personnelSnapshot.records, reportState.personnel, reportState.resolvedBuyer);
   const reportText = buildReportText({
     buyer: reportState.resolvedBuyer,
     parsed: reportState.parsed,
@@ -1349,9 +1344,13 @@ function goToStep3() {
   els.output.value = reportText;
 
   renderScaleDisplay(reportState.parsed);
-  renderWarnings(reportState.parsed);
+  renderWarnings(reportState.parsed, reportState.prev);
 
   renderStep(3);
+  // Must run after renderStep(3) makes #hync-step-3 the active (visible)
+  // panel -- while the panel is display:none, offsetParent is null and
+  // autoGrowTextarea() correctly skips the (unmeasurable) scrollHeight read.
+  autoGrowTextarea(els.output);
 }
 
 function renderScaleDisplay(parsed) {
@@ -1364,11 +1363,21 @@ function renderScaleDisplay(parsed) {
   `;
 }
 
-function renderWarnings(parsed) {
+// `prev` (V2.3 period-aware accumulation) is the same reportState.prev
+// object calculateTotals() already consumed for this report -- its Date
+// remains the sole canonical period source for every accumulation
+// decision; this only surfaces a mismatch between the previous report's
+// own displayed "Week" line and the ISO week actually computed from its
+// Date, so a stale/hand-edited Week line never silently looks trustworthy.
+function renderWarnings(parsed, prev) {
   const warns = [];
   if (parsed.shiftFallback) warns.push('Tidak ada jam timbang valid terbaca — shift otomatis di-set "Day Shift", mohon cek manual.');
   if (parsed.dateMismatch) warns.push('Ada lebih dari 1 tanggal berbeda di dalam file timbangan ini — dipakai tanggal dari baris pertama.');
   if (parsed.unmatchedTrucks.length) warns.push(`${parsed.unmatchedTrucks.length} no. truck tidak ditemukan di List_DT (dianggap "TIDAK DIKENALI"): ${parsed.unmatchedTrucks.join(', ')}`);
+  const weekMismatch = prev ? findPreviousWeekMismatch(prev.date, prev.week) : null;
+  if (weekMismatch) {
+    warns.push(`Week pada teks report sebelumnya (${weekMismatch.displayedWeek}) tidak sesuai dengan ISO week dari tanggalnya (${weekMismatch.calculatedWeek}) — tanggal report sebelumnya tetap dipakai sebagai acuan periode WTD, bukan angka Week yang tertulis.`);
+  }
   els.step3Warnings.innerHTML = warns.length
     ? `<div class="hync-warn-box">${warns.map((w) => '⚠ ' + escapeHtml(w)).join('<br>')}</div>`
     : '';
@@ -1435,6 +1444,11 @@ function handleResetClick() {
   els.scaleDisplay.innerHTML = '';
   els.step3Warnings.innerHTML = '';
   els.output.value = '';
+  // Runs while #hync-step-3 is (still, for one more line) the active panel
+  // -- i.e. before renderStep(1) hides it -- so the now-empty textarea
+  // visibly shrinks back to its CSS min-height rather than leaving a
+  // stale tall inline height applied for whenever the panel is next shown.
+  autoGrowTextarea(els.output);
 
   closeBuyerMismatchPopup();
   updateBuyerUI();

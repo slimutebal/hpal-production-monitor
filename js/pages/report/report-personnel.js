@@ -219,10 +219,35 @@ export function validatePersonnelSelections(records, personnel) {
   return errors;
 }
 
-const LABEL_WIDTH = 20; // every personnel output line pads its label to this width before ": " -- confirmed against the approved output examples (SPV SCM / FRM SCM / Independent Sampler / PIC <ORG> / Manpower <ORG> / Total Manpower <ORG> all align at column 20)
+// Exact literal column widths (label padded to this many characters before
+// ": "), confirmed against the Owner-approved WhatsApp output examples.
+// SPV SCM / FRM SCM / Independent Sampler are identical for every buyer;
+// PIC/Manpower/Total Manpower <ORG> widths are wider for the EIEB (ATQ)
+// template than the HYNC/SLNC (AWK) one -- these are literal, hand-tuned
+// spacing values (not a single generic padEnd formula), so each width is
+// spelled out explicitly rather than derived. Do not collapse these into
+// one shared constant -- that would silently change the approved spacing.
+const FIXED_LINE_WIDTH = {
+  spvScm: 29,
+  frmScm: 28,
+  independentSampler: 20,
+};
 
-function formatOutputLine(label, value) {
-  return `${label.padEnd(LABEL_WIDTH, ' ')}: ${value}`;
+// Buyer -> {PIC <ORG>, Manpower <ORG>, Total Manpower <ORG>} column widths.
+// HYNC and SLNC share one template; the internal ESG buyer (displayed as
+// EIEB) uses its own wider PIC/Manpower columns. An unrecognized buyer
+// falls back to the HYNC/SLNC widths -- report-page.js never calls this
+// before a buyer is confirmed, so this is a defensive default only, never
+// an expected path.
+const ORG_LINE_WIDTH = {
+  HYNC: { pic: 30, manpower: 23, totalManpower: 20 },
+  SLNC: { pic: 30, manpower: 23, totalManpower: 20 },
+  ESG: { pic: 31, manpower: 24, totalManpower: 20 },
+};
+const DEFAULT_ORG_LINE_WIDTH = ORG_LINE_WIDTH.HYNC;
+
+function formatOutputLine(label, value, width) {
+  return `${label.padEnd(width, ' ')}: ${value}`;
 }
 
 // Builds the approved personnel section output lines (Section "OUTPUT
@@ -239,7 +264,11 @@ function formatOutputLine(label, value) {
 // never with explanatory parenthetical text) -- "PIC <ORG>",
 // "Manpower <ORG>", "Total Manpower <ORG>". "Independent Sampler" itself
 // is the one label that never changes.
-export function buildPersonnelOutputLines(records, personnel) {
+// `buyer` ('HYNC' | 'SLNC' | 'ESG') selects which literal column-width
+// template applies to the PIC/Manpower/Total Manpower lines (see
+// ORG_LINE_WIDTH above) -- it never changes which names/values are
+// resolved, only the fixed spacing of the generated lines.
+export function buildPersonnelOutputLines(records, personnel, buyer) {
   const resolved = resolveSelectedPersonnel(records, personnel);
   const spvNames = sortRecords(resolved.spvScm).map((r) => r.name).join(', ');
   const frmNames = sortRecords(resolved.frmScm).map((r) => r.name).join(', ');
@@ -250,13 +279,14 @@ export function buildPersonnelOutputLines(records, personnel) {
   // derived from spvScmIds/frmScmIds counts (earlier bug fix, unrelated
   // to this label fix).
   const total = personnel.totalManpower != null ? personnel.totalManpower : '';
+  const orgWidths = ORG_LINE_WIDTH[buyer] || DEFAULT_ORG_LINE_WIDTH;
 
   return [
-    formatOutputLine('SPV SCM', spvNames),
-    formatOutputLine('FRM SCM', frmNames),
-    formatOutputLine('Independent Sampler', samplerOrg),
-    formatOutputLine(`PIC ${samplerOrg}`.trim(), picName),
-    formatOutputLine(`Manpower ${samplerOrg}`.trim(), manpowerThird),
-    formatOutputLine(`Total Manpower ${samplerOrg}`.trim(), total),
+    formatOutputLine('SPV SCM', spvNames, FIXED_LINE_WIDTH.spvScm),
+    formatOutputLine('FRM SCM', frmNames, FIXED_LINE_WIDTH.frmScm),
+    formatOutputLine('Independent Sampler', samplerOrg, FIXED_LINE_WIDTH.independentSampler),
+    formatOutputLine(`PIC ${samplerOrg}`.trim(), picName, orgWidths.pic),
+    formatOutputLine(`Manpower ${samplerOrg}`.trim(), manpowerThird, orgWidths.manpower),
+    formatOutputLine(`Total Manpower ${samplerOrg}`.trim(), total, orgWidths.totalManpower),
   ];
 }

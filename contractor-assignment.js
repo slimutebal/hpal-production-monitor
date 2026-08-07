@@ -175,24 +175,15 @@
     });
 
     state.existing = map;
-
-    // Shared contractor-directory cache bridge (Report integration).
-    // Persists the same rows this function already fetched and validated
-    // above into the shared, read-only hpal.contractors.v1 cache Report
-    // consumes, and notifies any listener that fresh data is available.
-    // Uses window.HPALContractorDirectoryCore (loaded before this file --
-    // see index.html) purely for its own independent validation + the
-    // shared cache schema/event contract; this never changes `map`,
-    // `state.existing`, or anything else Monitor's own UI reads, and is a
-    // no-op (Monitor behavior identical either way) if that global is
-    // ever absent.
-    if (typeof window !== "undefined" && window.HPALContractorDirectoryCore) {
-      const sharedCache = window.HPALContractorDirectoryCore.writeSharedContractorCache(rows, { source: "remote" });
-      if (sharedCache) {
-        window.HPALContractorDirectoryCore.dispatchDirectoryUpdated(sharedCache, window);
-      }
-    }
-
+    // Note: this function is an auxiliary workflow (the unmatched-contractor
+    // assignment modal's own read of the List DT sheet) -- it is NOT the
+    // function powering the visible Monitor "Sinkron Sekarang" button or
+    // the "N unit DT (tersambung ke server pusat)" status. The shared
+    // hpal.contractors.v1 cache Report consumes is published exclusively
+    // by index.html's fetchSheetContractors() (the real, visible Monitor
+    // sync), not here -- see that function's own publishMonitorContractorDirectory()
+    // call. This function's own state.existing/map/return value are
+    // otherwise completely unchanged.
     return map;
   }
 

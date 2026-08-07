@@ -466,13 +466,13 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
     const records = buildDirectory();
     // Reproduces the task's own worked AWK example exactly.
     const personnel = validPersonnel({ spvScmIds: ['spv-illofi', 'spv-yoshita'], frmScmIds: ['frm-adi-guna', 'frm-akmal'], samplerId: 'sampler-awk', picThirdId: 'pic-awk', manpowerThirdParty: 15, totalManpower: 22 });
-    const lines = buildPersonnelOutputLines(records, personnel);
+    const lines = buildPersonnelOutputLines(records, personnel, 'HYNC');
     assert.deepEqual(lines, [
-      'SPV SCM             : Illofi, Yoshita',
-      'FRM SCM             : Adi Guna, Akmal',
+      'SPV SCM                      : Illofi, Yoshita',
+      'FRM SCM                     : Adi Guna, Akmal',
       'Independent Sampler : AWK',
-      'PIC AWK             : La Ode Osardi',
-      'Manpower AWK        : 15',
+      'PIC AWK                       : La Ode Osardi',
+      'Manpower AWK           : 15',
       'Total Manpower AWK  : 22',
     ]);
   });
@@ -480,13 +480,13 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
   test('exact-string ATQ output matches the approved corrected format', () => {
     const records = buildDirectory();
     const personnel = validPersonnel({ spvScmIds: ['spv-illofi', 'spv-yoshita'], frmScmIds: ['frm-adi-guna', 'frm-akmal'], samplerId: 'sampler-atq', picThirdId: 'pic-atq', manpowerThirdParty: 15, totalManpower: 22 });
-    const lines = buildPersonnelOutputLines(records, personnel);
+    const lines = buildPersonnelOutputLines(records, personnel, 'ESG');
     assert.deepEqual(lines, [
-      'SPV SCM             : Illofi, Yoshita',
-      'FRM SCM             : Adi Guna, Akmal',
+      'SPV SCM                      : Illofi, Yoshita',
+      'FRM SCM                     : Adi Guna, Akmal',
       'Independent Sampler : ATQ',
-      'PIC ATQ             : Khalifa Akbar',
-      'Manpower ATQ        : 15',
+      'PIC ATQ                        : Khalifa Akbar',
+      'Manpower ATQ            : 15',
       'Total Manpower ATQ  : 22',
     ]);
   });
@@ -497,20 +497,20 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
       makeRecord({ id: 'pic-xyz-2', role_type: 'PIC_3RD', name: 'Example PIC', organization: 'XYZ' }),
     );
     const personnel = validPersonnel({ spvScmIds: ['spv-illofi'], frmScmIds: ['frm-adi-guna'], samplerId: 'sampler-xyz', picThirdId: 'pic-xyz-2', manpowerThirdParty: 10, totalManpower: 14 });
-    const lines = buildPersonnelOutputLines(records, personnel);
+    const lines = buildPersonnelOutputLines(records, personnel, 'HYNC');
     assert.deepEqual(lines, [
-      'SPV SCM             : Illofi',
-      'FRM SCM             : Adi Guna',
+      'SPV SCM                      : Illofi',
+      'FRM SCM                     : Adi Guna',
       'Independent Sampler : XYZ',
-      'PIC XYZ             : Example PIC',
-      'Manpower XYZ        : 10',
+      'PIC XYZ                       : Example PIC',
+      'Manpower XYZ           : 10',
       'Total Manpower XYZ  : 14',
     ]);
   });
 
   test('output never contains "PIC 3rd", "Manpower 3rd", or a bare "Total Manpower" without an organization', () => {
     const records = buildDirectory();
-    const lines = buildPersonnelOutputLines(records, validPersonnel({ samplerId: 'sampler-awk', picThirdId: 'pic-awk' }));
+    const lines = buildPersonnelOutputLines(records, validPersonnel({ samplerId: 'sampler-awk', picThirdId: 'pic-awk' }), 'HYNC');
     const joined = lines.join('\n');
     assert.ok(!joined.includes('PIC 3rd'));
     assert.ok(!joined.includes('Manpower 3rd'));
@@ -519,7 +519,7 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
 
   test('output never contains explanatory parenthetical text', () => {
     const records = buildDirectory();
-    const lines = buildPersonnelOutputLines(records, validPersonnel());
+    const lines = buildPersonnelOutputLines(records, validPersonnel(), 'HYNC');
     const joined = lines.join('\n');
     assert.ok(!joined.includes('('));
     assert.ok(!joined.toLowerCase().includes('mengikuti'));
@@ -528,7 +528,7 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
 
   test('PIC/Manpower/Total Manpower organization always matches the selected Independent Sampler organization, never a different one', () => {
     const records = buildDirectory();
-    const lines = buildPersonnelOutputLines(records, validPersonnel({ samplerId: 'sampler-atq', picThirdId: 'pic-atq' }));
+    const lines = buildPersonnelOutputLines(records, validPersonnel({ samplerId: 'sampler-atq', picThirdId: 'pic-atq' }), 'ESG');
     assert.ok(lines[3].startsWith('PIC ATQ'));
     assert.ok(lines[4].startsWith('Manpower ATQ'));
     assert.ok(lines[5].startsWith('Total Manpower ATQ'));
@@ -538,13 +538,13 @@ describe('Report output -- personnel section (corrected dynamic org labels)', ()
   test('multiple selected names are comma-separated in deterministic (sorted) order regardless of selection order', () => {
     const records = buildDirectory();
     const personnel = validPersonnel({ frmScmIds: ['frm-akmal', 'frm-adi-guna'] }); // selected out of alphabetical order
-    const lines = buildPersonnelOutputLines(records, personnel);
-    assert.equal(lines[1], 'FRM SCM             : Adi Guna, Akmal');
+    const lines = buildPersonnelOutputLines(records, personnel, 'HYNC');
+    assert.equal(lines[1], 'FRM SCM                     : Adi Guna, Akmal');
   });
 
   test('34. output contains resolved names, never raw ids', () => {
     const records = buildDirectory();
-    const lines = buildPersonnelOutputLines(records, validPersonnel());
+    const lines = buildPersonnelOutputLines(records, validPersonnel(), 'HYNC');
     const joined = lines.join('\n');
     assert.ok(!joined.includes('spv-illofi'));
     assert.ok(!joined.includes('frm-adi-guna'));

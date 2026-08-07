@@ -45,6 +45,88 @@ export function sameDate(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+// Period-accumulation helpers (V2.3 Report -- period-aware Daily/WTD/MTD/YTD).
+// Pure, DOM-free, buyer-agnostic: every Report profile (HYNC, SLNC, ESG
+// Format A, ESG Format B) shares this one implementation of "did a
+// reporting period boundary change between the previous report and the
+// current workbook" rather than each computing it independently. All four
+// comparisons treat a missing/invalid date as "not the same period" (same
+// null-safety convention as the pre-existing sameDate() above), so a
+// missing previous date (e.g. the ESG first-report/no-previous-report
+// case) naturally resets every bucket to the current On Shift alone --
+// never a guessed month/year, never the device clock.
+export function isSameCalendarDay(a, b) {
+  return sameDate(a, b);
+}
+
+// ISO week identity is {weekNumber, weekYear} together, never weekNumber
+// alone -- see calculateIsoWeek()'s own header comment. Week 1 of 2026 and
+// Week 1 of 2027 are genuinely different weeks; comparing weekNumber only
+// would wrongly treat them as the same period.
+export function isSameIsoWeek(a, b) {
+  if (!(a instanceof Date) || isNaN(a) || !(b instanceof Date) || isNaN(b)) return false;
+  const wa = calculateIsoWeek(a);
+  const wb = calculateIsoWeek(b);
+  if (!wa || !wb) return false;
+  return wa.weekNumber === wb.weekNumber && wa.weekYear === wb.weekYear;
+}
+
+export function isSameCalendarMonth(a, b) {
+  if (!(a instanceof Date) || isNaN(a) || !(b instanceof Date) || isNaN(b)) return false;
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+export function isSameCalendarYear(a, b) {
+  if (!(a instanceof Date) || isNaN(a) || !(b instanceof Date) || isNaN(b)) return false;
+  return a.getFullYear() === b.getFullYear();
+}
+
+// One-line reset rule shared by every accumulation bucket: continue
+// (previous + current) inside the same period, otherwise start over at
+// exactly the current value -- never a literal 0 unless currentValue
+// itself is 0. Kept as its own named function (rather than inlined at
+// every call site) so calculateTotals() reads as a direct statement of
+// the business rule for each of the four buckets.
+export function accumulatePeriodValue(previousValue, currentValue, samePeriod) {
+  return samePeriod ? previousValue + currentValue : currentValue;
+}
+
+// Derives which of the four accumulation buckets must reset between a
+// previous report's date and the current workbook's date. Daily's *actual*
+// reset decision in calculateTotals() additionally depends on shiftLabel
+// (Day Shift always resets; Night Shift continues only within the same
+// calendar date) -- that pre-existing, approved rule is intentionally left
+// untouched there, so `resetDaily` here is the plain calendar-date
+// component of it only (exposed for callers/tests that want the
+// buyer/shift-agnostic period identity on its own), not the final Daily
+// decision.
+export function deriveAccumulationResets(previousDate, currentDate) {
+  return {
+    resetDaily: !isSameCalendarDay(previousDate, currentDate),
+    resetWtd: !isSameIsoWeek(previousDate, currentDate),
+    resetMtd: !isSameCalendarMonth(previousDate, currentDate),
+    resetYtd: !isSameCalendarYear(previousDate, currentDate),
+  };
+}
+
+// Validation-only: compares a parsed previous report's own displayed
+// "Week" line against the ISO week actually computed from that same
+// previous report's Date. The previous Date remains the sole canonical
+// period source for every accumulation decision (deriveAccumulationResets
+// above) regardless of this result -- this only surfaces a mismatch as a
+// non-blocking warning (report-page.js's renderWarnings()) so a stale or
+// hand-edited "Week" line in a pasted previous report never silently
+// carries WTD across a real ISO-week boundary. Returns null when there is
+// nothing to compare (no previous Week was parsed, or the previous Date
+// itself is missing/invalid).
+export function findPreviousWeekMismatch(previousDate, previousWeek) {
+  if (previousWeek == null) return null;
+  if (!(previousDate instanceof Date) || isNaN(previousDate)) return null;
+  const iso = calculateIsoWeek(previousDate);
+  if (!iso) return null;
+  return iso.weekNumber === previousWeek ? null : { displayedWeek: previousWeek, calculatedWeek: iso.weekNumber };
+}
+
 // Automatic Week (V2.3 Phase 1). Pure, buyer/format-agnostic ISO-8601 week
 // calculation -- the single shared implementation every Report profile
 // (HYNC, SLNC, ESG Format A, ESG Format B) feeds its parsed workbook date

@@ -543,6 +543,20 @@
   white-space: pre-wrap;
   resize: vertical;
 }
+
+/* Auto-grow target (V2.3 Report -- see js/pages/report/report-page.js
+   autoGrowTextarea, same pattern already proven on #hync-prev-text above).
+   JS sets an explicit inline height after every generate/reset/manual-edit;
+   resize is disabled and the internal scrollbar removed so they don't
+   fight the JS-driven height -- the page itself scrolls for long reports
+   instead of a nested scrollbar inside the box. min-height/visual styling
+   (background, border, font, padding) are unchanged from .hync-output-box
+   above. */
+#page-report #hync-output {
+  max-height: none;
+  overflow-y: hidden;
+  resize: none;
+}
 #page-report .hync-copy-feedback {
   font-size: 0.75rem;
   color: var(--good, #34d399);

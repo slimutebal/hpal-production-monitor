@@ -45,7 +45,7 @@ export function parseUploadedWorkbook(workbook) {
   }
 
   if (esgDetection.status === ESG_WORKBOOK_FORMAT.AMBIGUOUS) {
-    const err = new Error('Format workbook ESG ambigu: lebih dari satu sheet memenuhi struktur data ESG. Pastikan hanya satu sheet sumber data yang valid.');
+    const err = new Error('Format workbook EIEB ambigu: lebih dari satu sheet memenuhi struktur data EIEB. Pastikan hanya satu sheet sumber data yang valid.');
     err.code = esgDetection.status;
     err.diagnostics = esgDetection;
     throw err;
@@ -53,7 +53,7 @@ export function parseUploadedWorkbook(workbook) {
 
   // esgDetection.status === UNSUPPORTED from here on.
   if (hasAnyEsgEvidence(esgDetection)) {
-    const err = new Error('Format ESG tidak didukung: struktur file menyerupai data ESG, tetapi header wajib tidak lengkap.');
+    const err = new Error('Format EIEB tidak didukung: struktur file menyerupai data EIEB, tetapi header wajib tidak lengkap.');
     err.code = esgDetection.status;
     err.diagnostics = esgDetection;
     throw err;
