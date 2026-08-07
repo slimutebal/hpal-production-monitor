@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-personnel-read-sync';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-shared-contractor-cache-bridge';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,10 +12,13 @@ const APP_SHELL = [
   './js/router.js',
   './js/components/bottom-navigation.js',
   './js/services/contractor-adapter.js',
+  './js/services/contractor-directory-core.js',
+  './js/services/contractor-directory-service.js',
   './js/services/personnel-directory-service.js',
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',
+  './js/pages/report/report-personnel.js',
   './js/pages/report/profiles/profile-registry.js',
   './js/pages/report/profiles/shared-report-profile.js',
   './js/pages/report/profiles/hync-profile.js',

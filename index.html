@@ -28,6 +28,13 @@
 <meta name="application-name" content="HPAL Monitor">
 <meta name="msapplication-TileImage" content="./icons/icon-144.png">
 <meta name="msapplication-TileColor" content="#0a0e1a">
+<!-- Shared contractor-directory core (normalization + hpal.contractors.v1
+     schema/cache/event) -- must load and execute BEFORE contractor-assignment.js
+     (not deferred, so it runs synchronously here) so
+     window.HPALContractorDirectoryCore exists by the time that deferred
+     script runs. See js/services/contractor-directory-core.js's header
+     comment for why this is a classic script, not an ES module. -->
+<script src="./js/services/contractor-directory-core.js"></script>
 <script src="./contractor-assignment.js" defer></script>
 
 <script>/*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */

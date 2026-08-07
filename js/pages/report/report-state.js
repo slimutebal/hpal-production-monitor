@@ -27,7 +27,32 @@ function createDefaultState() {
     fileParsed: false,
     fileName: '',
     prevText: '',
-    inputs: { picScm: '', picAwk: '', mpAwk: '', mpTotal: '', problem: '', action: '' },
+    inputs: { problem: '', action: '' },
+
+    // Controlled Personnel selection (V2.3 Phase 4). Stores stable
+    // personnel-directory record ids only, never cached names/orgs --
+    // report-personnel.js resolves ids against the live directory snapshot
+    // whenever rendering or generating output, so a Settings-side edit is
+    // always reflected without stale copies living in this state.
+    // samplerSource is 'buyer-default' when applied automatically from the
+    // resolved buyer, 'user-override' once the user picks a different
+    // sampler, or null before any buyer/sampler has been resolved.
+    // manpowerThirdParty and totalManpower are both manual operational
+    // numbers entered directly by the user (bug fix: totalManpower used to
+    // be auto-calculated from spvScmIds.length + frmScmIds.length +
+    // manpowerThirdParty -- that was wrong; SPV/FRM selections identify
+    // names only and must never alter either manpower value). Neither is
+    // ever recalculated from a personnel selection change.
+    personnel: {
+      spvScmIds: [],
+      frmScmIds: [],
+      samplerId: null,
+      samplerSource: null,
+      picThirdId: null,
+      manpowerThirdParty: null,
+      totalManpower: null,
+    },
+
     parsed: null, // output of parseWeighbridgeWorkbook() / esg-profile.js's parseEsgWorkbook()
     prev: null, // output of parsePrevText(), or a zero-accumulation object for an empty ESG previous report
     domeAreas: {}, // dome name -> 'BR1' | 'BR23E' | 'BR23W' | 'DS'

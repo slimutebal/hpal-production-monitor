@@ -27,7 +27,8 @@ import { ESG_WORKBOOK_FORMAT, detectEsgWorkbookFormat } from './esg-workbook-det
 import { parseEsgFormatA } from './adapters/esg-format-a-adapter.js';
 import { parseEsgFormatB } from './adapters/esg-format-b-adapter.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
-import { formatDateID, fmtTon } from '../report-utils.js';
+import { lookupContractor } from '../../../services/contractor-directory-service.js';
+import { formatDateID, fmtTon, classifyShift } from '../report-utils.js';
 
 export { ESG_WORKBOOK_FORMAT };
 
@@ -69,8 +70,19 @@ function normalizeEsgVehicleNo(vehicleNo) {
   return s;
 }
 
-function resolveEsgContractor(vehicleNo) {
-  return lookupHyncContractor(vehicleNo) || lookupHyncContractor(normalizeEsgVehicleNo(vehicleNo));
+// Contractor directory drift fix: consult the shared, synced contractor
+// directory (contractor-directory-service.js) before either static
+// fallback lookup -- this is the confirmed root cause of ESG DT units
+// going unrecognized despite being present in Monitor's synced List DT.
+// See shared-report-profile.js's resolveContractor() for the full
+// precedence rationale (synced -> static raw -> static normalized), which
+// this mirrors exactly for ESG's own normalizeEsgVehicleNo() fallback.
+// Exported so tests can exercise ESG's real contractor-resolution
+// precedence directly (covers both Format A and Format B, which converge
+// on this same function after their own Phase 1/2 row normalization) --
+// see tests/report-contractor-sync.test.mjs.
+export function resolveEsgContractor(vehicleNo) {
+  return lookupContractor(vehicleNo) || lookupHyncContractor(vehicleNo) || lookupHyncContractor(normalizeEsgVehicleNo(vehicleNo));
 }
 
 // Truck count is based on unique normalized vehicle units (one entry per
@@ -112,25 +124,32 @@ function aggregateEsgContractors(rows) {
 }
 
 /* ============================================================
-   SHIFT DETECTION (ESG-specific -- confirmed from the ATQ-ESG reference)
-   Inspects the first 10 valid loaded-time rows; Day Shift is 05:00
-   through 16:59; majority count decides (dayCount >= nightCount -> Day
-   Shift). Deliberately not the same algorithm as HYNC/SLNC's
-   average-time-of-day-over-20-rows rule in shared-report-profile.js --
-   that rule is untouched and this one only applies to ESG rows.
+   SHIFT DETECTION (ESG-specific window: 05:00 inclusive - 17:00 exclusive,
+   confirmed from the ATQ-ESG reference)
+   Bug fix: previously inspected only the first 10 rows in raw (non-
+   chronological) file order and broke ties toward Day Shift -- neither
+   used the complete dataset, and a tie was never surfaced to the user.
+   Now classifies every row with a valid loadedAt via report-utils.js's
+   shared classifyShift() (majority vote across the full dataset, using
+   ESG's own confirmed window, which is classifyShift()'s default so no
+   options object is needed here) and returns shiftLabel: null with an
+   'unresolved' status on a tie or when no row has a valid loadedAt --
+   report-page.js's goToStep2() blocks progression in that case rather
+   than silently defaulting to Day Shift. Deliberately not the same window
+   as HYNC/SLNC's documented 05:01-17:00 rule in shared-report-profile.js
+   -- that window is untouched and passed explicitly there; this call
+   relies on classifyShift()'s default, which matches ESG's own window.
 ============================================================ */
 function detectEsgShift(rows) {
-  const withTime = rows.filter((r) => r.loadedAt instanceof Date && !isNaN(r.loadedAt));
-  const sample = withTime.slice(0, 10);
-  if (!sample.length) return { shiftLabel: 'Day Shift', shiftFallback: true };
-  let dayCount = 0;
-  let nightCount = 0;
-  sample.forEach((r) => {
-    const totalMin = r.loadedAt.getHours() * 60 + r.loadedAt.getMinutes();
-    const isDay = totalMin >= 5 * 60 && totalMin < 17 * 60;
-    if (isDay) dayCount++; else nightCount++;
-  });
-  return { shiftLabel: dayCount >= nightCount ? 'Day Shift' : 'Night Shift', shiftFallback: false };
+  const result = classifyShift(rows.map((r) => r.loadedAt));
+  return {
+    shiftLabel: result.shiftLabel,
+    shiftFallback: result.status === 'unresolved',
+    shiftStatus: result.status,
+    shiftDayCount: result.dayCount,
+    shiftNightCount: result.nightCount,
+    shiftInvalidCount: result.invalidCount,
+  };
 }
 
 /* ============================================================
@@ -192,7 +211,7 @@ function deriveWorkbookBuyerStatus(esgResult) {
 function buildEsgParsedResult(esgResult) {
   const { rows, warnings, sheetName, workbookFormat } = esgResult;
 
-  const { shiftLabel, shiftFallback } = detectEsgShift(rows);
+  const { shiftLabel, shiftFallback, shiftStatus, shiftDayCount, shiftNightCount, shiftInvalidCount } = detectEsgShift(rows);
   const onShiftRit = rows.length;
   const onShiftTon = rows.reduce((sum, r) => sum + r.netKg, 0) / 1000;
   const fileDate = rows.length ? rows[0].date : null;
@@ -222,6 +241,10 @@ function buildEsgParsedResult(esgResult) {
     domes,
     shiftLabel,
     shiftFallback,
+    shiftStatus,
+    shiftDayCount,
+    shiftNightCount,
+    shiftInvalidCount,
     onShiftTon,
     onShiftRit,
     contractorCounts,
@@ -301,7 +324,7 @@ export function buildEsgFileSummary(parsed) {
   s += `Format: ${formatLabel}\n`;
   s += `Sheet: ${parsed.sheetName}\n`;
   s += `Tanggal: ${parsed.fileDate ? formatDateID(parsed.fileDate) : '-'}\n`;
-  s += `Shift: ${parsed.shiftLabel}\n`;
+  s += `Shift: ${parsed.shiftLabel || 'Tidak dapat ditentukan'}\n`;
   s += `Tonase: ${fmtTon(parsed.onShiftTon)} wmt\n`;
   s += `Data: ${parsed.onShiftRit} rit`;
   if (parsed.unmatchedTrucks.length) {

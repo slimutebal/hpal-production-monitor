@@ -199,6 +199,92 @@
   color: var(--bad, #f87171);
 }
 
+/* Controlled Personnel selection (V2.3 Phase 4) -- checkbox/radio-based
+   selectable rows, never a native <select multiple> (poor on mobile per
+   the approved UI design). Built on the same .hync-card visual language
+   as the rest of the page; each option's checkbox/radio stays visible
+   (not visually hidden like .hync-area-opt's short pill labels) since
+   personnel rows carry longer, more variable-length names that need a
+   clear, familiar selectable-list affordance. */
+#page-report .hync-personnel-blocked {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  background: var(--error-bg, rgba(248, 113, 113, 0.1));
+  border: 1px solid var(--error-border, rgba(248, 113, 113, 0.35));
+  color: var(--error-text, #fca5a5);
+}
+#page-report .hync-personnel-blocked p {
+  margin: 0 0 10px;
+}
+
+#page-report .hync-personnel-count {
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+#page-report .hync-personnel-list {
+  display: grid;
+  gap: 6px;
+  max-height: 230px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+#page-report .hync-personnel-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  font-size: 0.85rem;
+  color: var(--text, inherit);
+  cursor: pointer;
+}
+#page-report .hync-personnel-option input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent, #38bdf8);
+}
+#page-report .hync-personnel-option:focus-within {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+}
+#page-report .hync-personnel-option--selected {
+  border-color: var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.08);
+}
+#page-report .hync-personnel-name {
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+#page-report .hync-personnel-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+#page-report .hync-personnel-badge--default {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--accent2, #fbbf24);
+}
+
+#page-report .hync-personnel-empty {
+  padding: 12px 4px;
+  color: var(--muted, #8fa3bd);
+  font-size: 0.8rem;
+  text-align: center;
+  margin: 0;
+}
+
 /* Auto-grow target (see js/pages/report/report-page.js autoGrowTextarea).
    JS sets an explicit inline height on input/paste/reset; resize is
    disabled and the internal scrollbar removed so they don't fight the
@@ -261,6 +347,37 @@
   background: var(--error-bg, rgba(248, 113, 113, 0.1));
   border: 1px solid var(--error-border, rgba(248, 113, 113, 0.35));
   color: var(--error-text, #fca5a5);
+}
+
+/* Contractor directory status (contractor directory drift fix) -- always
+   visible so Report never silently presents the static embedded fallback
+   as if it were synchronized. */
+#page-report .hync-contractor-status-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#page-report .hync-contractor-status {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+}
+#page-report .hync-contractor-status--warn {
+  color: var(--accent2, #fbbf24);
+}
+#page-report .hync-contractor-status-warn {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--accent2, #fbbf24);
+}
+#page-report .hync-btn-small {
+  padding: 6px 10px;
+  min-height: 30px;
+  font-size: 0.72rem;
 }
 
 #page-report .hync-alert {

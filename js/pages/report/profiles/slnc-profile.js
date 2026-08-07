@@ -43,6 +43,6 @@ export function calculateSlncTotals({ parsed, prev }) {
   return calculateTotals({ parsed, prev });
 }
 
-export function buildSlncReportText({ parsed, inputs, domeAreas, totals }) {
-  return buildReportText({ buyer: SLNC_BUYER, parsed, inputs, domeAreas, totals });
+export function buildSlncReportText({ parsed, inputs, domeAreas, totals, weekNumber, personnelLines }) {
+  return buildReportText({ buyer: SLNC_BUYER, parsed, inputs, domeAreas, totals, weekNumber, personnelLines });
 }

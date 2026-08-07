@@ -51,7 +51,7 @@ Rilis sebelumnya (`v2.1.0 — HYNC + SLNC Report`) menambahkan dukungan buyer SL
 
 Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC/ESG ada di bagian [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg).
 
-**V2.3 (dalam pengerjaan, belum dirilis):** Week Report kini dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan (lihat [V2.3 Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) section 15), dan Settings sudah menyediakan Personnel Directory (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) yang disinkron dari Google Sheet — **baca saja (read-only)** untuk saat ini. Belum tersedia: pengelolaan/penulisan personel online (Add/Edit/Deactivate/Reactivate), offline write queue, dan migrasi selektor personel Report (SPV SCM/FRM SCM/Independent Sampler/PIC 3rd masih belum terhubung ke Report; field PIC SCM/PIC AWK-ATQ/Manpower di Report masih free-text seperti sebelumnya). V2.2 tetap menjadi rilis yang di-deploy secara resmi sampai seluruh fase V2.3 selesai.
+**V2.3 (dalam pengerjaan, belum dirilis):** Week Report kini dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan (lihat [V2.3 Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) section 15), dan Settings sudah menyediakan Personnel Directory (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) yang disinkron dari Google Sheet — **baca saja (read-only)** untuk saat ini. Kartu Man Power & Support di Report kini juga memakai selektor personel terkontrol (SPV SCM, FRM SCM multi-select; Independent Sampler dan PIC 3rd single-select, PIC 3rd otomatis difilter sesuai organisasi sampler yang dipilih) yang diambil dari Personnel Directory yang sama — field bebas ketik (PIC SCM/PIC AWK-ATQ) sudah dihapus, dan Report memblokir pembuatan laporan jika Personnel Directory belum pernah disinkron di Settings. Manpower pihak ketiga (AWK/ATQ/organisasi lain) dan Total Manpower **keduanya input manual angka yang independen** — memilih/membatalkan SPV SCM atau FRM SCM tidak pernah mengubah salah satu nilai tersebut. Label output PIC/Manpower/Total Manpower pada teks laporan yang dihasilkan **selalu mengikuti organisasi Independent Sampler yang dipilih** (mis. `PIC AWK`/`Manpower AWK`/`Total Manpower AWK`, atau `PIC ATQ`/`Manpower ATQ`/`Total Manpower ATQ`, tanpa teks penjelas tambahan), bukan label statis "PIC 3rd". Deteksi Shift (Day/Night) kini menganalisis **seluruh** baris jam timbang yang valid pada file (bukan hanya beberapa baris awal), memutuskan berdasarkan mayoritas Day vs Night, dan memblokir lanjut ke Step 2 (bukan menebak) jika jumlah Day dan Night sama besar atau tidak ada jam yang valid sama sekali. Pencocokan kontraktor/DT pada Report (HYNC, SLNC, ESG Format A, ESG Format B) kini benar-benar berbagi satu direktori tersinkron dengan Monitor lewat cache bersama `hpal.contractors.v1` (`js/services/contractor-directory-core.js`, read-only, dikonsumsi Monitor maupun Report) — bukan lagi cache terpisah milik Report sendiri. Saat sinkronisasi List DT Monitor berhasil, hasilnya langsung disimpan ke cache bersama ini dan sebuah event internal (`hpal:contractor-directory-updated`) memberi tahu Report agar langsung memuat ulang data dan menghitung ulang breakdown kontraktor dari file yang sedang aktif, tanpa perlu upload ulang. Report juga tetap bisa melakukan sync List DT miliknya sendiri (satu kali per upload file, sebelum klasifikasi kontraktor, dan lewat tombol **Refresh List DT** read-only yang tersedia kapan saja) — hasilnya ditulis ke cache bersama yang sama sehingga Monitor dan Report selalu melihat data yang identik. Status sumber data (`List DT: Remote/Shared cache/Static fallback`, termasuk jumlah data dan waktu sync terakhir) selalu ditampilkan di kartu Data Timbangan — Report tidak pernah diam-diam memakai data statis tanpa memberi tahu, dan jika aplikasi dibuka lewat mode `file://` lokal (bukan `http://localhost`/Live Server), Report menampilkan pesan khusus alih-alih menganggap endpoint remote kosong. Refresh List DT tidak pernah mengubah tonase, ritase, tanggal, shift, Week, atau input lain. Belum tersedia: pengelolaan/penulisan personel online (Add/Edit/Deactivate/Reactivate) dan offline write queue — Settings tetap read-only untuk penulisan. V2.2 tetap menjadi rilis yang di-deploy secara resmi sampai seluruh fase V2.3 selesai.
 
 ---
 
@@ -67,8 +67,8 @@ Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Set
 
 ### Menggunakan Report
 
-1. Buka halaman **Report**.
-2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis; Week ISO otomatis terhitung dari tanggal file, tidak bisa diedit manual), lalu isi PIC SCM, PIC AWK/ATQ, Manpower AWK/ATQ, Total Manpower, Problem, dan Preventive Action.
+1. Buka halaman **Report**. Personnel Directory harus sudah pernah disinkron di Settings terlebih dahulu (lihat [Menggunakan Settings](#menggunakan-settings)) — jika belum, Report menampilkan pesan blokir dan tombol untuk membuka Settings.
+2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis; Week ISO otomatis terhitung dari tanggal file, tidak bisa diedit manual; Shift Day/Night otomatis terdeteksi dari seluruh baris jam timbang yang valid pada file — bukan hanya sebagian). Pada kartu **Man Power & Support**, pilih **SPV SCM** dan **FRM SCM** (multi-select, minimal satu masing-masing), pilih **Independent Sampler** (otomatis ter-default sesuai buyer — AWK untuk HYNC/SLNC, ATQ untuk ESG, tetap bisa diubah manual), pilih **PIC 3rd** (daftar otomatis difilter sesuai organisasi sampler yang dipilih), isi **Manpower** organisasi sampler terpilih dan **Total Manpower** (keduanya input angka manual dan independen — tidak saling memengaruhi dan tidak dipengaruhi oleh pilihan SPV/FRM/sampler/PIC), lalu isi Problem dan Preventive Action.
 3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
 4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
 
@@ -274,12 +274,16 @@ Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tida
 - Teks report shift sebelumnya — **wajib** untuk HYNC dan SLNC (dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer); **boleh kosong khusus untuk ESG** (berarti laporan pertama / awal periode akumulasi baru — Daily/WTD/MTD/YTD dihitung mulai dari On Shift).
 - File Excel timbangan (wajib; buyer HYNC, SLNC, atau ESG terdeteksi otomatis).
 - Week — dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan yang terbaca; read-only, tidak ada input manual. Tanggal file tidak valid/tidak terbaca akan memblokir lanjut ke Step 2.
-- PIC SCM.
-- PIC AWK (HYNC/SLNC) atau PIC ATQ (ESG) — label field menyesuaikan otomatis, field internal tetap sama.
-- Manpower AWK (HYNC/SLNC) atau Manpower ATQ (ESG).
-- Total Manpower.
+- **SPV SCM** — pilih dari Personnel Directory (multi-select, minimal satu).
+- **FRM SCM** — pilih dari Personnel Directory (multi-select, minimal satu).
+- **Independent Sampler** — pilih dari Personnel Directory (single-select). Otomatis ter-default sesuai buyer yang terdeteksi (AWK untuk HYNC/SLNC, ATQ untuk ESG) setiap kali buyer berubah; bisa diubah manual kapan saja.
+- **PIC 3rd** — pilih dari Personnel Directory (single-select), daftar otomatis difilter hanya menampilkan PIC 3rd dari organisasi Independent Sampler yang sedang dipilih. Mengganti Independent Sampler akan menghapus pilihan PIC 3rd yang sudah tidak sesuai organisasi. Label field dan label pada teks laporan mengikuti organisasi sampler terpilih (mis. "PIC AWK" / "PIC ATQ"), bukan label statis "PIC 3rd".
+- **Manpower** organisasi Independent Sampler terpilih — input angka manual (label field dan label pada teks laporan menyesuaikan otomatis, mis. "Manpower AWK" / "Manpower ATQ").
+- **Total Manpower** — input angka manual, independen dari jumlah SPV SCM/FRM SCM terpilih (bukan hasil hitungan otomatis); label pada teks laporan juga menyesuaikan organisasi sampler terpilih (mis. "Total Manpower AWK" / "Total Manpower ATQ").
 - Problem (boleh kosong, tampil sebagai `-` di laporan).
 - Preventive Action (boleh kosong, tampil sebagai `-` di laporan).
+
+Semua field personel di atas memakai data dari Personnel Directory yang sudah disinkron di Settings — tidak ada input nama bebas ketik. Jika Personnel Directory belum pernah disinkron (cache lokal kosong), Report menampilkan pesan blokir dan tombol untuk membuka Settings; Report tidak pernah beralih ke input teks bebas sebagai fallback.
 
 Format file HYNC/SLNC yang didukung:
 
@@ -381,6 +385,9 @@ lainnya    → MGLO
 | Report HYNC, SLNC & ESG | Membuat Daily Production Geology Report untuk buyer HYNC, SLNC, atau ESG (dua format file timbangan, terdeteksi otomatis) dari file timbangan terpisah. |
 | Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
 | Personnel Directory (read-only) | Kartu SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd di Settings, disinkron dari Google Sheet; belum ada Add/Edit/Deactivate. |
+| Report personnel selectors | Kartu Man Power & Support di Report memakai selektor terkontrol (bukan teks bebas) dari Personnel Directory yang sama: SPV SCM/FRM SCM multi-select, Independent Sampler default otomatis sesuai buyer, PIC 3rd terfilter sesuai organisasi sampler. Manpower dan Total Manpower tetap input manual angka yang independen dari pilihan personel. Label PIC/Manpower/Total Manpower pada teks laporan selalu mengikuti organisasi Independent Sampler terpilih. |
+| Shift detection (full-data) | Deteksi Day/Night Shift menganalisis seluruh baris jam timbang yang valid pada file (mayoritas Day vs Night), bukan hanya sebagian; hasil seri atau tidak ada jam valid akan memblokir lanjut ke Step 2 dengan pesan yang jelas, tidak pernah menebak. |
+| Shared contractor directory (Monitor + Report) | Monitor dan Report kini benar-benar berbagi satu cache List DT (`hpal.contractors.v1`, ditulis kedua sisi lewat `contractor-directory-core.js`) dengan event `hpal:contractor-directory-updated` yang membuat Report langsung memuat ulang dan menghitung ulang breakdown kontraktor begitu Monitor sync -- tanpa upload ulang. Baru jatuh ke mapping statis bawaan bila belum ada data sama sekali. Status sumber data selalu terlihat, dan tombol Refresh List DT (read-only) tersedia kapan saja. |
 | PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
 
 ---
@@ -392,7 +399,7 @@ Aplikasi mendukung offline mode melalui service worker. Cache app-shell V2.0 men
 - `index.html`, `manifest.webmanifest`, `contractor-assignment.js`.
 - CSS app shell, bottom navigation, Report, dan Settings (`assets/css/*.css`).
 - JavaScript app shell dan router (`js/app.js`, `js/router.js`, `js/components/bottom-navigation.js`).
-- JavaScript Report (profil HYNC, SLNC, dan ESG berbagi engine inti yang sama; workbook ESG melalui dispatcher + modul ESG tersendiri) dan adapter kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`).
+- JavaScript Report (profil HYNC, SLNC, dan ESG berbagi engine inti yang sama; workbook ESG melalui dispatcher + modul ESG tersendiri) dan adapter/direktori kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`, `js/services/contractor-directory-core.js`, `js/services/contractor-directory-service.js`).
 - JavaScript halaman Settings placeholder.
 - Icon PWA dan manifest.
 
@@ -456,6 +463,8 @@ hpal-production-monitor/
 │   │   └── bottom-navigation.js
 │   ├── services/
 │   │   ├── contractor-adapter.js
+│   │   ├── contractor-directory-core.js
+│   │   ├── contractor-directory-service.js
 │   │   └── personnel-directory-service.js
 │   └── pages/
 │       ├── report/
@@ -635,5 +644,3 @@ Public visibility on GitHub is provided only for deployment and maintenance purp
 Use, copying, modification, redistribution, rebranding, resale, or ownership claims are prohibited without prior written permission.
 
 Authorized use is limited to the approved internal company/work environment only.
-
-<!-- GitHub Pages deployment reset: 2026-08-06 -->

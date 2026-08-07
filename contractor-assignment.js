@@ -175,6 +175,24 @@
     });
 
     state.existing = map;
+
+    // Shared contractor-directory cache bridge (Report integration).
+    // Persists the same rows this function already fetched and validated
+    // above into the shared, read-only hpal.contractors.v1 cache Report
+    // consumes, and notifies any listener that fresh data is available.
+    // Uses window.HPALContractorDirectoryCore (loaded before this file --
+    // see index.html) purely for its own independent validation + the
+    // shared cache schema/event contract; this never changes `map`,
+    // `state.existing`, or anything else Monitor's own UI reads, and is a
+    // no-op (Monitor behavior identical either way) if that global is
+    // ever absent.
+    if (typeof window !== "undefined" && window.HPALContractorDirectoryCore) {
+      const sharedCache = window.HPALContractorDirectoryCore.writeSharedContractorCache(rows, { source: "remote" });
+      if (sharedCache) {
+        window.HPALContractorDirectoryCore.dispatchDirectoryUpdated(sharedCache, window);
+      }
+    }
+
     return map;
   }
 

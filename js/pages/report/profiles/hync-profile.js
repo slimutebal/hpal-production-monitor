@@ -52,6 +52,6 @@ export function calculateHyncTotals({ parsed, prev }) {
   return calculateTotals({ parsed, prev });
 }
 
-export function buildHyncReportText({ parsed, inputs, domeAreas, totals }) {
-  return buildReportText({ buyer: HYNC_BUYER, parsed, inputs, domeAreas, totals });
+export function buildHyncReportText({ parsed, inputs, domeAreas, totals, weekNumber, personnelLines }) {
+  return buildReportText({ buyer: HYNC_BUYER, parsed, inputs, domeAreas, totals, weekNumber, personnelLines });
 }

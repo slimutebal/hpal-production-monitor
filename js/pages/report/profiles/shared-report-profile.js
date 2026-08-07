@@ -9,8 +9,9 @@
 // This module must never import hync-profile.js or slnc-profile.js (that
 // would create an import cycle, since those two import this module).
 
-import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible } from '../report-utils.js';
+import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible, classifyShift } from '../report-utils.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
+import { lookupContractor } from '../../../services/contractor-directory-service.js';
 import { buyerFromRemark } from './profile-registry.js';
 
 export const SHEET_NAME = '过磅明细';
@@ -45,13 +46,26 @@ function normalizeSlncDt(dt) {
   return s;
 }
 
-// contractor-adapter.js's HYNC_DT_LIST is the one approved DT->contractor
-// table (see that file's header comment). SLNC is not given a second,
-// separately-maintained table -- only a normalization fallback in front of
-// the same read-only lookup, per the task's explicit "do not create a
-// second contractor table" instruction.
-function resolveContractor(carNo) {
-  return lookupHyncContractor(carNo) || lookupHyncContractor(normalizeSlncDt(carNo));
+// Contractor directory drift fix: the shared, synced contractor directory
+// (contractor-directory-service.js -- same List DT data Monitor's own sync
+// keeps current) is always consulted first, so a DT added or corrected
+// through Monitor's existing sync flow is recognized here without
+// touching this file's own logic. contractor-adapter.js's static
+// HYNC_DT_LIST remains the fallback for ids the synced directory has no
+// match for (either because it hasn't been synced yet, or because the id
+// isn't SCM-prefixed -- see contractor-directory-service.js's header
+// comment on why non-SCM ids never appear in the synced key space). SLNC
+// is not given a second, separately-maintained static table -- only a
+// normalization fallback in front of the same read-only static lookup,
+// per the task's explicit "do not create a second contractor table"
+// instruction. A synced match always wins over the static fallback, and
+// only one of the two is ever consulted per truck -- never both merged
+// under different names for the same DT.
+// Exported (like parseFlexibleDate() above) so tests can exercise the real
+// HYNC/SLNC contractor-resolution precedence directly, without needing a
+// full XLSX workbook fixture -- see tests/report-contractor-sync.test.mjs.
+export function resolveContractor(carNo) {
+  return lookupContractor(carNo) || lookupHyncContractor(carNo) || lookupHyncContractor(normalizeSlncDt(carNo));
 }
 
 /* ============================================================
@@ -260,26 +274,21 @@ export function parseWeighbridgeWorkbook(workbook) {
   const onShiftRit = records.length;
   const onShiftTon = records.reduce((sum, r) => sum + r.netKg, 0) / 1000;
 
-  // Shift detection: sort by grossTime, first 20, average time-of-day.
-  const withTime = records
-    .filter((r) => r.grossTime instanceof Date && !isNaN(r.grossTime))
-    .slice()
-    .sort((a, b) => a.grossTime - b.grossTime);
-  let shiftLabel;
-  let shiftFallback = false;
-  if (withTime.length) {
-    const sample = withTime.slice(0, 20);
-    const avgSec = sample.reduce((s, r) => {
-      const t = r.grossTime;
-      return s + t.getHours() * 3600 + t.getMinutes() * 60 + t.getSeconds();
-    }, 0) / sample.length;
-    const dayStart = 5 * 3600 + 60; // 05:01:00
-    const dayEnd = 17 * 3600; // 17:00:00
-    shiftLabel = (avgSec >= dayStart && avgSec <= dayEnd) ? 'Day Shift' : 'Night Shift';
-  } else {
-    shiftLabel = 'Day Shift';
-    shiftFallback = true;
-  }
+  // Shift detection (bug fix): classifies every valid 毛重时间 timestamp in
+  // the workbook -- not a sorted-first-20 sample -- and decides by majority
+  // vote via report-utils.js's classifyShift(). Preserves the exact
+  // documented HYNC/SLNC window (05:01-17:00, inclusive both ends; see
+  // classifyShift()'s header comment for the citation). A tie or a
+  // workbook with no valid timestamp at all comes back unresolved
+  // (shiftLabel: null) rather than silently defaulting to Day Shift --
+  // goToStep2() in report-page.js blocks progression in that case.
+  const shiftResult = classifyShift(records.map((r) => r.grossTime), {
+    dayStartSec: 5 * 3600 + 60,
+    dayEndSec: 17 * 3600,
+    dayEndInclusive: true,
+  });
+  const shiftLabel = shiftResult.shiftLabel;
+  const shiftFallback = shiftResult.status === 'unresolved';
 
   // Unique domes, first-seen order.
   const seen = new Set();
@@ -327,6 +336,10 @@ export function parseWeighbridgeWorkbook(workbook) {
     domes,
     shiftLabel,
     shiftFallback,
+    shiftStatus: shiftResult.status,
+    shiftDayCount: shiftResult.dayCount,
+    shiftNightCount: shiftResult.nightCount,
+    shiftInvalidCount: shiftResult.invalidCount,
     onShiftTon,
     onShiftRit,
     contractorCounts: nonAdtEntries,
@@ -342,7 +355,7 @@ export function parseWeighbridgeWorkbook(workbook) {
 export function buildFileSummary(parsed) {
   let s = `${parsed.records.length} baris timbangan terbaca\n`;
   s += `Tanggal terdeteksi : ${parsed.fileDate ? formatDateID(parsed.fileDate) : '-'}\n`;
-  s += `Shift terdeteksi    : ${parsed.shiftLabel}\n`;
+  s += `Shift terdeteksi    : ${parsed.shiftLabel || 'Tidak dapat ditentukan'}\n`;
   s += `On Shift            : ${fmtTon(parsed.onShiftTon)} wmt [ ${fmtRit(parsed.onShiftRit)} Rit ]\n`;
   s += `Dome ditemukan      : ${parsed.domes.length}`;
   if (parsed.unmatchedTrucks.length) {
@@ -375,23 +388,22 @@ export function calculateTotals({ parsed, prev }) {
 /* ============================================================
    REPORT TEXT
 ============================================================ */
-// `buyer` ('HYNC' | 'SLNC' | 'ESG') and `partnerLabel` are the only things
-// that vary between the approved formats -- everything else (section
-// order, spacing, punctuation) is unconfirmed to differ and so is kept
-// identical. `weekNumber` (V2.3 Phase 1: Automatic Week) is the caller's
+// `buyer` ('HYNC' | 'SLNC' | 'ESG') is the only thing that varies the
+// header between the approved formats -- everything else (section order,
+// spacing, punctuation) is unconfirmed to differ and so is kept identical.
+// `weekNumber` (V2.3 Phase 1: Automatic Week) is the caller's
 // already-computed ISO week number for the workbook's date
 // (report-utils.js's calculateIsoWeek()) -- this function does not
 // calculate it and does not know about weekYear/weekStart/weekEnd; the
 // output line only ever shows the numeric week, matching the pre-existing
-// approved "Week  : <value>" format exactly. `partnerLabel` defaults to
-// 'AWK' (HYNC/SLNC's existing, unparameterized label) so every pre-existing
-// call site that doesn't pass
-// it produces byte-identical output to before this parameter existed; ESG
-// passes 'ATQ' (same length as 'AWK', so the hand-tuned column spacing on
-// the PIC/Manpower lines below is unaffected either way).
-export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, partnerLabel = 'AWK', weekNumber }) {
-  const picScmJoined = inputs.picScm.split(',').map((s) => s.trim()).filter(Boolean).join(' & ');
-
+// approved "Week  : <value>" format exactly. `personnelLines` (V2.3
+// Phase 4: controlled personnel selection) is the caller's already-built
+// personnel-section output (report-personnel.js's
+// buildPersonnelOutputLines()) -- this function does not resolve
+// personnel-directory ids or know about SPV/FRM/sampler/PIC shapes, it only
+// places the lines the caller hands it, exactly like it already treats
+// `weekNumber` as a pre-computed value rather than deriving it itself.
+export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, weekNumber, personnelLines }) {
   const lines = [];
   lines.push('*DAILY PRODUCTION GEOLOGY REPORT*');
   lines.push('');
@@ -401,10 +413,7 @@ export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, part
   lines.push(`*Shift    : ${parsed.shiftLabel}*`);
   lines.push('');
   lines.push('Man Power and Support');
-  lines.push(`PIC SCM : ${picScmJoined}`);
-  lines.push(`PIC ${partnerLabel} : ${inputs.picAwk}`);
-  lines.push(`Manpower ${partnerLabel}  : ${inputs.mpAwk}`);
-  lines.push(`Total Manpower  : ${inputs.mpTotal}`);
+  (personnelLines || []).forEach((line) => lines.push(line));
   lines.push(`Number of Truck : ${parsed.totalDT} DT + ${parsed.totalADT} ADT`);
   parsed.contractorCounts.forEach(([name, count]) => {
     lines.push(`${name.padEnd(20, ' ')}: ${count} Trucks`);
