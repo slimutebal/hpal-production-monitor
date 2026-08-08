@@ -137,6 +137,24 @@
   border-color: var(--bad, #f87171);
 }
 
+/* Contractor + ore-class badge share the PILE cell's second line (this
+   task's Contractor revision -- never a separate wide column). Contractor
+   is a real (smaller) text input, not just display text, so it takes the
+   remaining width and the badge sits beside it. */
+#page-calculate .calculate-grid-cell__source-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+#page-calculate .calculate-cell-input--contractor {
+  min-height: 26px;
+  padding: 3px 6px;
+  font-size: 0.68rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Read-only, derived-only (never a user input) -- ore-class codes
    (HGLO/MGLO/LGLO) are stable machine identifiers, never localized. Fixed
    min-height reserves its line so a row's height does not visibly jump
@@ -147,6 +165,8 @@
   font-weight: 800;
   letter-spacing: 0.02em;
   color: var(--accent, #38bdf8);
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 #page-calculate .calculate-grid-cell__tonnage {
@@ -296,6 +316,21 @@
   overflow-wrap: anywhere;
 }
 
+/* Contractor · Ore Class -- compact source line under the Pile ID in the
+   result breakdown (this task's Contractor revision). */
+#page-calculate .calculate-breakdown-row__source-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#page-calculate .calculate-breakdown-row__contractor {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted, #8fa3bd);
+  overflow-wrap: anywhere;
+}
+
 #page-calculate .calculate-breakdown-row__badge {
   flex: 0 0 auto;
   font-size: 0.68rem;
@@ -342,5 +377,13 @@
     padding-left: 4px;
     padding-right: 4px;
     font-size: 0.74rem;
+  }
+  /* Contractor stays deliberately smaller than the primary inputs even at
+     the narrow-width floor -- it shares its line with the ore-class badge
+     and must not push row height back toward large-card territory. */
+  #page-calculate .calculate-cell-input--contractor {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 0.66rem;
   }
 }

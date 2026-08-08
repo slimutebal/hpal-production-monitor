@@ -200,6 +200,36 @@ describe('Ore-class and Higher Grade totals (Section 18-19 -- informational only
   });
 });
 
+describe('Contractor -- retained but never affects math (this task\'s Contractor revision)', () => {
+  test('A. Contractor is retained on each pile result', () => {
+    const result = calculateWeightedBlend([{ pileId: 'Pile A', contractor: 'SMA', ni: 1.3, units: 10, tonnesPerUnit: 50 }]);
+    assert.equal(result.ok, true);
+    assert.equal(result.piles[0].contractor, 'SMA');
+  });
+
+  test('B. weighted Ni is identical regardless of Contractor values (SMA/TII vs AAA/BBB)', () => {
+    const withRealContractors = calculateWeightedBlend([
+      { pileId: 'A', contractor: 'SMA', ni: 1.3, units: 10, tonnesPerUnit: 50 },
+      { pileId: 'B', contractor: 'TII', ni: 0.95, units: 20, tonnesPerUnit: 45 },
+    ]);
+    const withOtherContractors = calculateWeightedBlend([
+      { pileId: 'A', contractor: 'AAA', ni: 1.3, units: 10, tonnesPerUnit: 50 },
+      { pileId: 'B', contractor: 'BBB', ni: 0.95, units: 20, tonnesPerUnit: 45 },
+    ]);
+    assert.equal(withRealContractors.weightedNi, withOtherContractors.weightedNi);
+    assert.equal(withRealContractors.totalTonnage, withOtherContractors.totalTonnage);
+    assert.equal(withRealContractors.totalUnits, withOtherContractors.totalUnits);
+    closeTo(withRealContractors.weightedNi, 1.075);
+  });
+
+  test('Contractor has zero effect on ore-class totals or Higher Grade grouping', () => {
+    const a = calculateWeightedBlend([{ pileId: 'A', contractor: 'SMA', ni: 1.5, units: 2, tonnesPerUnit: 50 }]);
+    const b = calculateWeightedBlend([{ pileId: 'A', contractor: 'ZZZ', ni: 1.5, units: 2, tonnesPerUnit: 50 }]);
+    assert.deepEqual(a.classes, b.classes);
+    assert.deepEqual(a.higherGrade, b.higherGrade);
+  });
+});
+
 describe('tonnageShare -- % of total tonnage per pile', () => {
   test('sums to 1 (100%) across all piles', () => {
     const result = calculateWeightedBlend([

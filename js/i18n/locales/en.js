@@ -49,6 +49,7 @@ export default {
   'calculate.grid.headerTonnesPerUnit': 't/DT',
 
   'calculate.fields.pileId': 'Pile ID',
+  'calculate.fields.contractor': 'Contractor',
   'calculate.fields.ni': 'Ni (%)',
   'calculate.fields.units': 'Jumlah Unit',
   'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
@@ -67,6 +68,7 @@ export default {
 
   'calculate.validation.pileIdRequired': 'Pile ID is required.',
   'calculate.validation.pileIdDuplicate': 'Pile ID already exists.',
+  'calculate.validation.contractorRequired': 'Contractor is required.',
   'calculate.validation.niRequired': 'Ni is required.',
   'calculate.validation.niInvalid': 'Ni must be a valid number.',
   'calculate.validation.niPositive': 'Ni must be greater than 0.',

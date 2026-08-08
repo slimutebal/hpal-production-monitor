@@ -103,7 +103,7 @@ function handleLocaleChange() {
 
 function createBlankPileRow() {
   rowSeq += 1;
-  return { key: rowSeq, pileId: '', ni: '', units: '', tonnesPerUnit: '' };
+  return { key: rowSeq, pileId: '', contractor: '', ni: '', units: '', tonnesPerUnit: '' };
 }
 
 // Pops any (normally at most one) trailing blank row(s), then pushes
@@ -251,8 +251,10 @@ function buildPileRow(row, index) {
   rowEl.setAttribute('role', 'row');
   rowEl.dataset.rowIndex = String(index);
 
-  // PILE cell: Pile ID input, with the read-only ore-class badge directly
-  // underneath (never a separate wide column -- Section "Input Grid").
+  // PILE cell: Pile ID input on its own line, then a second line pairing
+  // the Contractor input with the read-only ore-class badge (this task's
+  // Contractor revision -- Contractor stays inside the PILE cell rather
+  // than adding a new wide column, architecture doc Section 12.1/32.1).
   const pileCell = document.createElement('div');
   pileCell.className = 'calculate-grid-cell calculate-grid-cell--pile';
   const pileInput = document.createElement('input');
@@ -263,10 +265,24 @@ function buildPileRow(row, index) {
   pileInput.setAttribute('aria-label', t('calculate.fields.pileId'));
   pileInput.setAttribute('enterkeyhint', 'next');
   pileCell.appendChild(pileInput);
+
+  const sourceRow = document.createElement('div');
+  sourceRow.className = 'calculate-grid-cell__source-row';
+  const contractorInput = document.createElement('input');
+  contractorInput.type = 'text';
+  contractorInput.className = 'calculate-cell-input calculate-cell-input--contractor';
+  contractorInput.dataset.field = 'contractor';
+  contractorInput.value = row.contractor;
+  contractorInput.setAttribute('aria-label', t('calculate.fields.contractor'));
+  contractorInput.setAttribute('autocomplete', 'off');
+  contractorInput.setAttribute('enterkeyhint', 'next');
+  sourceRow.appendChild(contractorInput);
   const badge = document.createElement('span');
   badge.className = 'calculate-grid-cell__badge';
   badge.textContent = classifyOre(parseFiniteNumber(row.ni)) || '';
-  pileCell.appendChild(badge);
+  sourceRow.appendChild(badge);
+  pileCell.appendChild(sourceRow);
+
   rowEl.appendChild(pileCell);
 
   // NI cell.
@@ -337,7 +353,7 @@ function buildPileRow(row, index) {
   // for it and this line never renders for it.
   const errorLine = document.createElement('p');
   errorLine.className = 'calculate-row-error';
-  const errorKeys = err ? [err.pileId, err.ni, err.units, err.tonnesPerUnit].filter(Boolean) : [];
+  const errorKeys = err ? [err.pileId, err.contractor, err.ni, err.units, err.tonnesPerUnit].filter(Boolean) : [];
   if (errorKeys.length) {
     errorLine.textContent = errorKeys.map((key) => t(key)).join(' · ');
   } else {
@@ -345,6 +361,7 @@ function buildPileRow(row, index) {
   }
   rowEl.appendChild(errorLine);
   markInvalid(pileInput, err && err.pileId);
+  markInvalid(contractorInput, err && err.contractor, 'calculate-cell-input--contractor');
   markInvalid(niInput, err && err.ni);
   markInvalid(dtInput, err && err.units);
   markInvalid(tpuInput, err && err.tonnesPerUnit);
@@ -355,6 +372,7 @@ function buildPileRow(row, index) {
   // in one field never loses focus or disturbs any other row.
   [
     { input: pileInput, field: 'pileId' },
+    { input: contractorInput, field: 'contractor' },
     { input: niInput, field: 'ni' },
     { input: dtInput, field: 'units' },
     { input: tpuInput, field: 'tonnesPerUnit' },
@@ -398,8 +416,14 @@ function buildRemoveButton(index) {
   return removeBtn;
 }
 
-function markInvalid(input, errorKey) {
-  input.className = errorKey ? 'calculate-cell-input calculate-cell-input--invalid' : 'calculate-cell-input';
+// `extraClass` preserves a field-specific modifier (e.g. Contractor's
+// compact `--contractor` sizing class) that a blind className overwrite
+// would otherwise strip whenever that field goes invalid.
+function markInvalid(input, errorKey, extraClass) {
+  const classes = ['calculate-cell-input'];
+  if (extraClass) classes.push(extraClass);
+  if (errorKey) classes.push('calculate-cell-input--invalid');
+  input.className = classes.join(' ');
   if (errorKey) {
     input.setAttribute('aria-invalid', 'true');
   } else {
@@ -592,12 +616,23 @@ function buildPileBreakdownRow(pile) {
   const idEl = document.createElement('span');
   idEl.className = 'calculate-breakdown-row__id';
   idEl.textContent = pile.pileId;
+  main.appendChild(idEl);
+  row.appendChild(main);
+
+  // Contractor · Ore Class -- compact source line (this task's revision,
+  // architecture doc Section 13). Metadata only, no bearing on the totals
+  // shown below it.
+  const sourceLine = document.createElement('div');
+  sourceLine.className = 'calculate-breakdown-row__source-line';
+  const contractorEl = document.createElement('span');
+  contractorEl.className = 'calculate-breakdown-row__contractor';
+  contractorEl.textContent = pile.contractor;
   const badgeEl = document.createElement('span');
   badgeEl.className = 'calculate-breakdown-row__badge';
   badgeEl.textContent = pile.oreClass || EM_DASH;
-  main.appendChild(idEl);
-  main.appendChild(badgeEl);
-  row.appendChild(main);
+  sourceLine.appendChild(contractorEl);
+  sourceLine.appendChild(badgeEl);
+  row.appendChild(sourceLine);
 
   const metaTop = document.createElement('div');
   metaTop.className = 'calculate-breakdown-row__meta';

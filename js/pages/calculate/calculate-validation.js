@@ -28,6 +28,15 @@ export function validatePileId(pileId, seenNormalizedIds = []) {
   return null;
 }
 
+// Contractor (this task's revision -- architecture doc Section 12/29):
+// required for every active row, no whitelist/directory lookup, no
+// automatic replacement -- just trim outer whitespace and reject blank.
+export function validateContractor(contractor) {
+  const trimmed = typeof contractor === 'string' ? contractor.trim() : '';
+  if (!trimmed) return 'calculate.validation.contractorRequired';
+  return null;
+}
+
 export function validateNi(ni) {
   if (ni === '' || ni === null || ni === undefined) return 'calculate.validation.niRequired';
   const value = Number(ni);
@@ -55,24 +64,27 @@ export function validateTonnesPerUnit(tonnesPerUnit) {
   return null;
 }
 
-// The trailing-blank-row UX rule (this task's revision -- see
-// calculate-page.js's grid input model): a pile row with all four fields
-// still empty is an input AFFORDANCE, not an active pile, and must be
-// excluded from validation/calculation entirely. Whitespace-only Pile ID
-// counts as empty (matches validatePileId()'s own trim-based emptiness
-// check); a field containing "0" is NOT empty -- the user typed something
-// meaningful, even if it will later fail as non-positive.
+// The trailing-blank-row UX rule (updated for this task's Contractor
+// revision -- see calculate-page.js's grid input model): a pile row with
+// all FIVE fields still empty is an input AFFORDANCE, not an active pile,
+// and must be excluded from validation/calculation entirely. Whitespace-only
+// Pile ID/Contractor counts as empty (matches validatePileId()/
+// validateContractor()'s own trim-based emptiness check); a field
+// containing "0" is NOT empty -- the user typed something meaningful, even
+// if it will later fail as non-positive.
 export function isRowBlank(pile) {
-  return !pile.pileId?.trim() && !pile.ni && !pile.units && !pile.tonnesPerUnit;
+  return !pile.pileId?.trim() && !pile.contractor?.trim() && !pile.ni && !pile.units && !pile.tonnesPerUnit;
 }
 
-// Converts one already-valid raw pile (all four validate*() calls above
+// Converts one already-valid raw pile (all five validate*() calls above
 // returned null for it) into the numeric shape blend-calculator.js's
 // calculateWeightedBlend() expects. Never call this on a pile that hasn't
-// passed validation -- it does not re-check anything itself.
+// passed validation -- it does not re-check anything itself. Contractor is
+// trimmed like Pile ID but stays a string (metadata only -- Section 3/12).
 export function toNumericPile(pile) {
   return {
     pileId: pile.pileId.trim(),
+    contractor: pile.contractor.trim(),
     ni: Number(pile.ni),
     units: Number(pile.units),
     tonnesPerUnit: Number(pile.tonnesPerUnit),
@@ -105,13 +117,14 @@ export function validatePiles(piles) {
     if (!pileIdError) seen.push(normalizePileIdForComparison(pile.pileId));
     return {
       pileId: pileIdError,
+      contractor: validateContractor(pile.contractor),
       ni: validateNi(pile.ni),
       units: validateUnits(pile.units),
       tonnesPerUnit: validateTonnesPerUnit(pile.tonnesPerUnit),
     };
   });
 
-  const hasFieldErrors = pileErrors.some((e) => e.pileId || e.ni || e.units || e.tonnesPerUnit);
+  const hasFieldErrors = pileErrors.some((e) => e.pileId || e.contractor || e.ni || e.units || e.tonnesPerUnit);
 
   let blendError = null;
   if (!hasFieldErrors) {

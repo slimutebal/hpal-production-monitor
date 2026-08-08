@@ -1,5 +1,5 @@
 // Calculate page tests (V2.4 Phase 2 -- Blend Calculator; compact mobile
-// input grid revision). See
+// input grid revision, now extended with Contractor -- this task). See
 // docs/V2.4_CALCULATE_AND_BLENDING_RECOMMENDATION_ARCHITECTURE.md.
 //
 // Run with Node's built-in test runner:
@@ -30,6 +30,15 @@
 // idempotent (they only ever re-render from CURRENT module-level state,
 // never accumulate side effects), so a stale listener firing alongside a
 // fresh one changes nothing about the final asserted state.
+//
+// CONTRACTOR (this task): the source model grew from four to five
+// user-entered fields (Pile ID, Contractor, Ni, Jumlah Unit, Tonase/Unit).
+// fillRow() below now accepts a `contractor` property; every fillRow()
+// call in this file that must produce a FULLY VALID active row now passes
+// one, since Contractor is required for any active row (Section 4/29 of
+// the architecture doc). A handful of calls (blank-trailing-row and
+// intentionally-invalid-row tests) still omit it on purpose -- see each
+// test's own comment.
 
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -169,8 +178,9 @@ function typeIntoField(row, field, value) {
   return input;
 }
 
-function fillRow(row, { pileId, ni, units, tonnesPerUnit }) {
+function fillRow(row, { pileId, contractor, ni, units, tonnesPerUnit }) {
   if (pileId !== undefined) typeIntoField(row, 'pileId', pileId);
+  if (contractor !== undefined) typeIntoField(row, 'contractor', contractor);
   if (ni !== undefined) typeIntoField(row, 'ni', ni);
   if (units !== undefined) typeIntoField(row, 'units', units);
   if (tonnesPerUnit !== undefined) typeIntoField(row, 'tonnesPerUnit', tonnesPerUnit);
@@ -275,6 +285,15 @@ describe('initCalculatePage() -- initial mount', () => {
     assert.equal(findFieldInput(row, 'pileId').value, '');
   });
 
+  test('1b. the initial row contains a Contractor input', () => {
+    const pageEl = mountFullAccess();
+    const row = gridRows(pageEl)[0];
+    const contractorInput = findFieldInput(row, 'contractor');
+    assert.ok(contractorInput, 'Contractor input must exist on the initial row');
+    assert.equal(contractorInput.value, '');
+    assert.equal(contractorInput.type, 'text');
+  });
+
   test('the trailing blank row has no remove control', () => {
     const pageEl = mountFullAccess();
     assert.equal(clickRemove(gridRows(pageEl)[0]), false);
@@ -313,12 +332,37 @@ describe('Trailing blank row auto-append', () => {
     assert.equal(findFieldInput(rows[1], 'pileId').value, '');
   });
 
-  test('3. typing additional fields into the same now-active row does not append extra blanks', () => {
+  test('3. typing Contractor FIRST into the trailing row appends exactly one new blank row', () => {
+    const pageEl = mountFullAccess();
+    typeIntoField(gridRows(pageEl)[0], 'contractor', 'SMA');
+
+    const rows = gridRows(pageEl);
+    assert.equal(rows.length, 2, 'Contractor-first entry must activate the row and append one blank row, same as any other field');
+    assert.equal(findFieldInput(rows[1], 'pileId').value, '');
+    assert.equal(findFieldInput(rows[1], 'contractor').value, '');
+  });
+
+  test('3b. typing additional fields into that Contractor-activated row does not append extra blanks', () => {
+    const pageEl = mountFullAccess();
+    const row = gridRows(pageEl)[0];
+    typeIntoField(row, 'contractor', 'SMA');
+    assert.equal(gridRows(pageEl).length, 2);
+
+    typeIntoField(row, 'pileId', 'A');
+    typeIntoField(row, 'ni', '1.30');
+    typeIntoField(row, 'units', '10');
+    typeIntoField(row, 'tonnesPerUnit', '50');
+
+    assert.equal(gridRows(pageEl).length, 2, 'no extra blank rows from editing an already-active row, however it was activated');
+  });
+
+  test('typing additional fields into the same now-active row (activated via Pile ID) does not append extra blanks', () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     typeIntoField(row, 'pileId', 'A');
     assert.equal(gridRows(pageEl).length, 2);
 
+    typeIntoField(row, 'contractor', 'SMA');
     typeIntoField(row, 'ni', '1.30');
     typeIntoField(row, 'units', '10');
     typeIntoField(row, 'tonnesPerUnit', '50');
@@ -347,8 +391,8 @@ describe('Trailing blank row auto-append', () => {
 
   test('4. filling several rows always leaves exactly one trailing blank row', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.3', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'B', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.3', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
 
     const rows = gridRows(pageEl);
     assert.equal(rows.length, 3);
@@ -358,13 +402,14 @@ describe('Trailing blank row auto-append', () => {
 });
 
 /* ============================================================
-   8. REMOVE PRESERVES THE TRAILING-BLANK-ROW INVARIANT
+   8/10. REMOVE PRESERVES THE TRAILING-BLANK-ROW INVARIANT AND
+   CONTRACTOR VALUES
 ============================================================ */
 describe('Remove Pile', () => {
-  test('8. removing a populated row preserves exactly one trailing blank row, other rows\' values survive', () => {
+  test('8. removing a populated row preserves exactly one trailing blank row, other rows\' values (including Contractor) survive', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.3', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'B', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.3', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
 
     let rows = gridRows(pageEl);
     assert.equal(rows.length, 3);
@@ -373,13 +418,14 @@ describe('Remove Pile', () => {
     rows = gridRows(pageEl);
     assert.equal(rows.length, 2);
     assert.equal(findFieldInput(rows[0], 'pileId').value, 'B');
+    assert.equal(findFieldInput(rows[0], 'contractor').value, 'TII', '10. Contractor value must survive the removal of an unrelated row');
     assert.equal(findFieldInput(rows[1], 'pileId').value, '');
     assert.equal(clickRemove(rows[1]), false, 'the surviving trailing row must have no remove control');
   });
 
   test('removing every active row leaves exactly one blank row -- never zero rows', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
     clickRemove(gridRows(pageEl)[0]);
 
@@ -390,11 +436,11 @@ describe('Remove Pile', () => {
 
   test('Remove clears any previously shown result -- no hidden stale calculation survives a row-set change', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
     clickCalculate(pageEl);
     assert.equal(resultRoot(pageEl).hidden, false);
 
-    fillRow(gridRows(pageEl)[1], { pileId: 'B', ni: '1.1', units: '5', tonnesPerUnit: '40' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '1.1', units: '5', tonnesPerUnit: '40' });
     clickRemove(gridRows(pageEl)[1]);
 
     assert.equal(resultRoot(pageEl).hidden, true);
@@ -420,7 +466,7 @@ describe('Blank trailing row is excluded from validation and calculation', () =>
   test('7. a partially-filled ACTIVE row (not the trailing row) DOES validate normally', () => {
     const pageEl = mountFullAccess();
     // Typing only a Pile ID makes this row active (no longer trailing);
-    // it deliberately leaves Ni/DT/t-DT blank.
+    // it deliberately leaves Contractor/Ni/DT/t-DT blank.
     typeIntoField(gridRows(pageEl)[0], 'pileId', 'A');
 
     clickCalculate(pageEl);
@@ -434,7 +480,7 @@ describe('Blank trailing row is excluded from validation and calculation', () =>
 
   test('one fully valid pile plus the blank trailing row calculates successfully', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
     clickCalculate(pageEl);
 
@@ -444,7 +490,7 @@ describe('Blank trailing row is excluded from validation and calculation', () =>
 
   test('9. duplicate detection ignores the intentional blank trailing row -- an empty Pile ID never collides with it', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: '', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: '', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
     clickCalculate(pageEl);
 
@@ -456,14 +502,85 @@ describe('Blank trailing row is excluded from validation and calculation', () =>
 
   test('9b. real duplicate Pile IDs across two ACTIVE rows are still caught (unchanged business rule)', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'S1', ni: '1.2', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 's1', ni: '1.0', units: '5', tonnesPerUnit: '40' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'S1', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 's1', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' });
 
     clickCalculate(pageEl);
 
     const rows = gridRows(pageEl);
     assert.equal(findRowError(rows[0]).hidden, true);
     assert.match(findRowError(rows[1]).textContent, new RegExp(idCatalog['calculate.validation.pileIdDuplicate']));
+  });
+
+  test('11. duplicate Pile ID is still rejected even when Contractors differ (Contractor is never part of the identity key)', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'S13_L02', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'S13_L02', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' });
+
+    clickCalculate(pageEl);
+
+    const rows = gridRows(pageEl);
+    assert.equal(resultRoot(pageEl).hidden, true);
+    assert.equal(findRowError(rows[0]).hidden, true);
+    assert.match(findRowError(rows[1]).textContent, new RegExp(idCatalog['calculate.validation.pileIdDuplicate']));
+  });
+});
+
+/* ============================================================
+   CONTRACTOR VALIDATION (this task)
+============================================================ */
+describe('Contractor validation', () => {
+  test('7. an active row with a missing Contractor fails validation', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+
+    clickCalculate(pageEl);
+
+    const rows = gridRows(pageEl);
+    assert.equal(resultRoot(pageEl).hidden, true);
+    assert.match(findRowError(rows[0]).textContent, new RegExp(idCatalog['calculate.validation.contractorRequired']));
+    const contractorClasses = findFieldInput(rows[0], 'contractor').className.split(/\s+/);
+    assert.ok(contractorClasses.includes('calculate-cell-input--invalid'));
+    assert.ok(contractorClasses.includes('calculate-cell-input--contractor'), 'the compact Contractor sizing class must survive going invalid');
+  });
+
+  test('8. a whitespace-only Contractor fails validation', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: '   ', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+
+    clickCalculate(pageEl);
+
+    const rows = gridRows(pageEl);
+    assert.equal(resultRoot(pageEl).hidden, true);
+    assert.match(findRowError(rows[0]).textContent, new RegExp(idCatalog['calculate.validation.contractorRequired']));
+  });
+
+  test('9. a valid Contractor calculates normally', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'Contractor A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+
+    clickCalculate(pageEl);
+
+    assert.equal(resultRoot(pageEl).hidden, false);
+    const rows = gridRows(pageEl);
+    assert.equal(findRowError(rows[0]).hidden, true);
+  });
+
+  test('Contractor accepts free text without a whitelist ("SMA", "TII", "Contractor A" all valid)', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '1.1', units: '5', tonnesPerUnit: '40' });
+    fillRow(gridRows(pageEl)[2], { pileId: 'C', contractor: 'Contractor A', ni: '1.0', units: '5', tonnesPerUnit: '40' });
+
+    clickCalculate(pageEl);
+
+    assert.equal(resultRoot(pageEl).hidden, false);
+  });
+
+  test('Contractor value is never auto-uppercased or otherwise rewritten beyond outer-whitespace trim', () => {
+    const pageEl = mountFullAccess();
+    typeIntoField(gridRows(pageEl)[0], 'contractor', 'sma lowercase');
+    assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').value, 'sma lowercase');
   });
 });
 
@@ -504,13 +621,13 @@ describe('Ore-class badge and Calculated Tonnage update live inside the compact 
 });
 
 /* ============================================================
-   12. WORKED EXAMPLE
+   12/15. WORKED EXAMPLE
 ============================================================ */
 describe('Calculate Blend -- authoritative worked example (architecture doc Section 14)', () => {
-  test('12. Pile A (Ni 1.30, 10x50) + Pile B (Ni 0.95, 20x45) -> Final Ni 1.075%, Total DT 30, Total Tonnage 1,400 t', () => {
+  test('12/15. Pile A (SMA, Ni 1.30, 10x50) + Pile B (TII, Ni 0.95, 20x45) -> Final Ni 1.075%, Total DT 30, Total Tonnage 1,400 t', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', ni: '1.30', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
 
     clickCalculate(pageEl);
 
@@ -522,20 +639,31 @@ describe('Calculate Blend -- authoritative worked example (architecture doc Sect
 
   test('the (blank) trailing row present alongside two active rows does not affect the result', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', ni: '1.30', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
     assert.equal(gridRows(pageEl).length, 3, 'a third, blank, trailing row must exist at this point');
 
     clickCalculate(pageEl);
 
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%');
   });
+
+  test('Contractor has zero effect on the worked-example result (AAA/BBB gives the identical Final Ni)', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'AAA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'BBB', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+
+    clickCalculate(pageEl);
+
+    assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%');
+    assert.equal(summaryValue(pageEl, 'calculate-total-units'), '30');
+  });
 });
 
 describe('Calculate Blend -- action-boundary guard is not bypassed', () => {
   test('under MONITOR_ONLY, pressing Calculate Blend never computes a result and redirects instead', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
     goMonitorOnly();
     const win = installMockWindow('#/calculate');
@@ -552,13 +680,31 @@ describe('Calculate Blend -- action-boundary guard is not bypassed', () => {
 });
 
 /* ============================================================
+   12. RESULT BREAKDOWN DISPLAYS CONTRACTOR
+============================================================ */
+describe('12. Result breakdown displays Contractor', () => {
+  test('the Pile Breakdown detail shows each pile\'s Contractor', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+
+    clickCalculate(pageEl);
+
+    const breakdownRows = findAll(pageEl, hasClass('calculate-pile-breakdown-row'));
+    assert.equal(breakdownRows.length, 2);
+    assert.match(breakdownRows[0].textContent, /SMA/);
+    assert.match(breakdownRows[1].textContent, /TII/);
+  });
+});
+
+/* ============================================================
    13/14. SESSION STATE AND LOCALIZATION
 ============================================================ */
-describe('13. Calculate -> Monitor -> Calculate preserves rows and the current result', () => {
+describe('13. Calculate -> Monitor -> Calculate preserves rows, Contractor, and the current result', () => {
   test('module-level state survives independently of route changes (the page is never rebuilt on remount)', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.30', units: '10', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'B', ni: '0.95', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
     clickCalculate(pageEl);
     const finalNiBefore = summaryValue(pageEl, 'calculate-final-ni');
 
@@ -568,16 +714,18 @@ describe('13. Calculate -> Monitor -> Calculate preserves rows and the current r
     // still-mounted DOM to confirm nothing was lost.
     const rows = gridRows(pageEl);
     assert.equal(findFieldInput(rows[0], 'pileId').value, 'A');
+    assert.equal(findFieldInput(rows[0], 'contractor').value, 'SMA');
     assert.equal(findFieldInput(rows[1], 'pileId').value, 'B');
+    assert.equal(findFieldInput(rows[1], 'contractor').value, 'TII');
     assert.equal(resultRoot(pageEl).hidden, false);
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), finalNiBefore);
   });
 });
 
-describe('14. Locale switch preserves entered values and the current result', () => {
+describe('14. Locale switch preserves entered values (including Contractor) and the current result', () => {
   test('switching id -> en keeps row inputs and Blend Result numbers unchanged', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     clickCalculate(pageEl);
     const finalNiBefore = summaryValue(pageEl, 'calculate-final-ni');
 
@@ -585,6 +733,7 @@ describe('14. Locale switch preserves entered values and the current result', ()
 
     const rows = gridRows(pageEl);
     assert.equal(findFieldInput(rows[0], 'pileId').value, 'A');
+    assert.equal(findFieldInput(rows[0], 'contractor').value, 'SMA');
     assert.equal(findFieldInput(rows[0], 'ni').value, '1.30');
     assert.equal(resultRoot(pageEl).hidden, false);
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), finalNiBefore);
@@ -602,10 +751,19 @@ describe('14. Locale switch preserves entered values and the current result', ()
     assert.equal(enHeaderTitle, enCatalog['calculate.blend.title']);
     assert.notEqual(idHeaderTitle, enHeaderTitle);
   });
+
+  test('Contractor aria-label localizes with the rest of the field wording', () => {
+    const pageEl = mountFullAccess();
+    setLocale('id');
+    assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').attributes['aria-label'], idCatalog['calculate.fields.contractor']);
+    setLocale('en');
+    assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').attributes['aria-label'], enCatalog['calculate.fields.contractor']);
+  });
 });
 
 /* ============================================================
-   15. PHASE 2 NON-GOALS -- Recommendation/Gate A must remain untouched
+   16 / 15 (page-non-goals). PHASE 2 NON-GOALS -- Recommendation/Gate A
+   must remain untouched; Contractor is the only new field.
 ============================================================ */
 function stripComments(source) {
   return source
@@ -618,20 +776,21 @@ function stripComments(source) {
     .join('\n');
 }
 
-describe('15. Phase 2 non-goals -- no Recommendation UI or business logic', () => {
+describe('15/16. Phase 2 non-goals -- no Recommendation UI or business logic', () => {
   const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
 
   test('the module\'s actual code never references Recommendation-mode concepts', () => {
     for (const forbidden of [
       'targetNi', 'tolerance', 'hopperPattern', 'hopperSequence', 'unitRatio', 'tonnageRatio',
       'findBlendRecommendations', 'recovery', 'newDome', 'availableDt',
+      'fleetUtilization', 'fleetAction', 'materialAction', 'surplusUnit',
     ]) {
       assert.doesNotMatch(source, new RegExp(forbidden, 'i'), `calculate-page.js code must not yet reference ${forbidden}`);
     }
   });
 
-  test('USE/LIMIT/STOP action vocabulary does not appear in actual code', () => {
-    assert.doesNotMatch(source, /\bUSE\b|\bLIMIT\b|\bSTOP\b/);
+  test('USE/LIMIT/STOP/MOVE/SEPARATE/STANDBY action vocabulary does not appear in actual code', () => {
+    assert.doesNotMatch(source, /\bUSE\b|\bLIMIT\b|\bSTOP\b|\bMOVE\b|\bSEPARATE\b|\bSTANDBY\b/);
   });
 
   test('no localStorage usage anywhere in the Phase 2 Calculate modules\' actual code', () => {
@@ -640,34 +799,53 @@ describe('15. Phase 2 non-goals -- no Recommendation UI or business logic', () =
       assert.doesNotMatch(fileSource, /localStorage/, `${file} must not use localStorage in Phase 2`);
     }
   });
+
+  test('no Recommendation result section exists in the rendered DOM after a Blend calculation', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    clickCalculate(pageEl);
+
+    assert.equal(findOne(pageEl, hasClass('calculate-hopper-pattern')), null);
+    assert.equal(findOne(pageEl, hasClass('calculate-recommendation')), null);
+    assert.doesNotMatch(resultRoot(pageEl).textContent, /\bUSE\b|\bLIMIT\b|\bSTOP\b|\bMOVE\b/);
+  });
 });
 
 /* ============================================================
    MOBILE INPUT ATTRIBUTES (this task's revision)
 ============================================================ */
 describe('Mobile keyboard input modes', () => {
-  test('Ni and t/DT use inputmode="decimal", DT uses inputmode="numeric", Pile ID is plain text', () => {
+  test('Ni and t/DT use inputmode="decimal", DT uses inputmode="numeric", Pile ID and Contractor are plain text', () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').type, 'text');
+    assert.equal(findFieldInput(row, 'contractor').type, 'text');
     assert.equal(findFieldInput(row, 'ni').attributes.inputmode, 'decimal');
     assert.equal(findFieldInput(row, 'units').attributes.inputmode, 'numeric');
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes.inputmode, 'decimal');
+  });
+
+  test('Contractor carries autocomplete="off"', () => {
+    const pageEl = mountFullAccess();
+    const row = gridRows(pageEl)[0];
+    assert.equal(findFieldInput(row, 'contractor').attributes.autocomplete, 'off');
   });
 
   test('every field carries its FULL localized wording as an aria-label, never the short grid header text', () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').attributes['aria-label'], idCatalog['calculate.fields.pileId']);
+    assert.equal(findFieldInput(row, 'contractor').attributes['aria-label'], idCatalog['calculate.fields.contractor']);
     assert.equal(findFieldInput(row, 'ni').attributes['aria-label'], idCatalog['calculate.fields.ni']);
     assert.equal(findFieldInput(row, 'units').attributes['aria-label'], idCatalog['calculate.fields.units']);
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes['aria-label'], idCatalog['calculate.fields.tonnesPerUnit']);
   });
 
-  test('enterkeyhint moves Pile -> Ni -> DT -> t/DT, ending in "done"', () => {
+  test('enterkeyhint moves Pile -> Contractor -> Ni -> DT -> t/DT, ending in "done"', () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').attributes.enterkeyhint, 'next');
+    assert.equal(findFieldInput(row, 'contractor').attributes.enterkeyhint, 'next');
     assert.equal(findFieldInput(row, 'ni').attributes.enterkeyhint, 'next');
     assert.equal(findFieldInput(row, 'units').attributes.enterkeyhint, 'next');
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes.enterkeyhint, 'done');
@@ -683,10 +861,12 @@ describe('Mobile keyboard input modes', () => {
 });
 
 /* ============================================================
-   COMPACT GRID HEADER (short labels, not the long field names)
+   COMPACT GRID HEADER (short labels, not the long field names) --
+   Contractor lives inside the PILE cell, so the header column count
+   (PILE | NI | DT | t/DT | action) is unchanged by this task.
 ============================================================ */
 describe('Compact grid header', () => {
-  test('uses short PILE/NI/DT/t-DT headers, never the long field names', () => {
+  test('uses short PILE/NI/DT/t-DT headers, never the long field names, and gains no new column', () => {
     const pageEl = mountFullAccess();
     const headerCells = findAll(pageEl, (el) => hasClass('calculate-grid-cell')(el) && !('rowIndex' in (el.parentNode?.dataset || {})));
     const headerText = findOne(pageEl, hasClass('calculate-grid-row--header')).textContent;
@@ -695,14 +875,15 @@ describe('Compact grid header', () => {
     assert.match(headerText, /DT/);
     assert.doesNotMatch(headerText, /Jumlah Unit/);
     assert.doesNotMatch(headerText, /Tonase \/ Unit/);
-    assert.ok(headerCells.length >= 0); // header cells located without throwing
+    assert.doesNotMatch(headerText, /Kontraktor|Contractor/);
+    assert.equal(headerCells.length, 5, 'still exactly PILE/NI/DT/t-DT/action -- Contractor must not add a sixth column');
   });
 });
 
 /* ============================================================
    LOCALIZATION KEYS
 ============================================================ */
-describe('Localization keys (V2.4 Phase 2, compact grid revision)', () => {
+describe('Localization keys (V2.4 Phase 2, Contractor revision)', () => {
   test('every calculate.* key exists in both locales, non-empty', () => {
     const keys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.'));
     assert.ok(keys.length > 10, 'expected a substantial Phase 2 catalog');
@@ -710,6 +891,15 @@ describe('Localization keys (V2.4 Phase 2, compact grid revision)', () => {
       assert.ok(idCatalog[key], `id.js missing/empty ${key}`);
       assert.ok(enCatalog[key], `en.js missing/empty ${key}`);
     }
+  });
+
+  test('calculate.fields.contractor and calculate.validation.contractorRequired exist in both locales', () => {
+    for (const key of ['calculate.fields.contractor', 'calculate.validation.contractorRequired']) {
+      assert.ok(idCatalog[key], `id.js missing ${key}`);
+      assert.ok(enCatalog[key], `en.js missing ${key}`);
+    }
+    assert.equal(idCatalog['calculate.fields.contractor'], 'Kontraktor');
+    assert.equal(enCatalog['calculate.fields.contractor'], 'Contractor');
   });
 
   test('the obsolete "+ Add Pile" key is gone from both locales (the trailing-blank-row grid replaces that workflow)', () => {
@@ -726,7 +916,11 @@ describe('Localization keys (V2.4 Phase 2, compact grid revision)', () => {
 
   test('no Recommendation-mode i18n keys have been added yet (Gate A is closed)', () => {
     const keys = Object.keys(idCatalog);
-    for (const forbidden of ['calculate.recommendation', 'calculate.action.use', 'calculate.action.limit', 'calculate.action.stop', 'calculate.recovery', 'calculate.status.targetNotAchievable']) {
+    for (const forbidden of [
+      'calculate.recommendation', 'calculate.action.use', 'calculate.action.limit', 'calculate.action.stop',
+      'calculate.action.move', 'calculate.action.separate', 'calculate.action.standby',
+      'calculate.recovery', 'calculate.status.targetNotAchievable', 'calculate.fleet', 'calculate.target', 'calculate.tolerance',
+    ]) {
       assert.equal(keys.some((k) => k.startsWith(forbidden)), false, `unexpected Recommendation-mode key family present: ${forbidden}`);
     }
   });

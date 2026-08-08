@@ -92,6 +92,7 @@ export default {
   // collapsed-by-default) Pile Breakdown detail, never as compact grid
   // header text (see calculate.grid.* above).
   'calculate.fields.pileId': 'Pile ID',
+  'calculate.fields.contractor': 'Kontraktor',
   'calculate.fields.ni': 'Ni (%)',
   'calculate.fields.units': 'Jumlah Unit',
   'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
@@ -116,6 +117,7 @@ export default {
   // used by Settings' personnel/queue rows.
   'calculate.validation.pileIdRequired': 'Pile ID wajib diisi.',
   'calculate.validation.pileIdDuplicate': 'Pile ID sudah digunakan.',
+  'calculate.validation.contractorRequired': 'Kontraktor wajib diisi.',
   'calculate.validation.niRequired': 'Ni wajib diisi.',
   'calculate.validation.niInvalid': 'Ni harus berupa angka yang valid.',
   'calculate.validation.niPositive': 'Ni harus lebih besar dari 0.',

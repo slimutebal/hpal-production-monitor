@@ -28,10 +28,13 @@ function emptyClassTotals() {
   return { HGLO: { units: 0, tonnage: 0 }, MGLO: { units: 0, tonnage: 0 }, LGLO: { units: 0, tonnage: 0 } };
 }
 
-// piles: array of { pileId, ni, units, tonnesPerUnit } with already-numeric
-// (not raw string) ni/units/tonnesPerUnit -- calculate-validation.js is
-// responsible for rejecting anything that would make this function see
-// NaN/Infinity/negative values before it is ever called.
+// piles: array of { pileId, contractor, ni, units, tonnesPerUnit } with
+// already-numeric (not raw string) ni/units/tonnesPerUnit -- calculate-
+// validation.js is responsible for rejecting anything that would make this
+// function see NaN/Infinity/negative values before it is ever called.
+// Contractor is carried through untouched as operational metadata (this
+// task's revision, architecture doc Section 3.4/12) -- it participates in
+// none of the math below.
 //
 // Returns { ok: true, ...result } on success, or { ok: false, error } if
 // every pile contributes zero tonnage (never silently returns Ni = 0 or
@@ -42,6 +45,7 @@ function emptyClassTotals() {
 export function calculateWeightedBlend(piles) {
   const pileResults = piles.map((pile) => ({
     pileId: pile.pileId,
+    contractor: pile.contractor,
     ni: pile.ni,
     units: pile.units,
     tonnesPerUnit: pile.tonnesPerUnit,

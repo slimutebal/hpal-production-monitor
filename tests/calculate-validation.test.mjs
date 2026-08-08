@@ -15,6 +15,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validatePileId,
+  validateContractor,
   validateNi,
   validateUnits,
   validateTonnesPerUnit,
@@ -56,6 +57,32 @@ describe('validatePileId()', () => {
 
   test('does not rewrite a valid Pile ID beyond what duplicate detection requires', () => {
     assert.equal(normalizePileIdForComparison('  S13_L02  '), 's13_l02');
+  });
+});
+
+describe('validateContractor() -- this task\'s Contractor revision', () => {
+  test('empty string -> required', () => {
+    assert.equal(validateContractor(''), 'calculate.validation.contractorRequired');
+  });
+
+  test('whitespace-only -> required (trim makes it empty)', () => {
+    assert.equal(validateContractor('   '), 'calculate.validation.contractorRequired');
+  });
+
+  test('null/undefined -> required', () => {
+    assert.equal(validateContractor(null), 'calculate.validation.contractorRequired');
+    assert.equal(validateContractor(undefined), 'calculate.validation.contractorRequired');
+  });
+
+  test('a normal contractor name -> valid (null)', () => {
+    assert.equal(validateContractor('SMA'), null);
+    assert.equal(validateContractor('TII'), null);
+    assert.equal(validateContractor('Contractor A'), null);
+  });
+
+  test('no whitelist -- any non-blank text is accepted, never auto-corrected or checked against a directory', () => {
+    assert.equal(validateContractor('AAA'), null);
+    assert.equal(validateContractor('xyz123'), null);
   });
 });
 
@@ -148,9 +175,10 @@ describe('validateTonnesPerUnit()', () => {
 });
 
 describe('toNumericPile()', () => {
-  test('converts raw string fields to numbers and trims pileId', () => {
-    assert.deepEqual(toNumericPile({ pileId: '  S13_L02  ', ni: '1.18', units: '10', tonnesPerUnit: '50' }), {
+  test('converts raw string fields to numbers, trims pileId and contractor', () => {
+    assert.deepEqual(toNumericPile({ pileId: '  S13_L02  ', contractor: '  SMA  ', ni: '1.18', units: '10', tonnesPerUnit: '50' }), {
       pileId: 'S13_L02',
+      contractor: 'SMA',
       ni: 1.18,
       units: 10,
       tonnesPerUnit: 50,
@@ -158,43 +186,66 @@ describe('toNumericPile()', () => {
   });
 });
 
-describe('isRowBlank() -- trailing-blank-row detection (compact grid revision)', () => {
-  test('all four fields empty -> blank', () => {
-    assert.equal(isRowBlank({ pileId: '', ni: '', units: '', tonnesPerUnit: '' }), true);
+describe('isRowBlank() -- trailing-blank-row detection (Contractor revision)', () => {
+  test('F. all five fields empty -> blank', () => {
+    assert.equal(isRowBlank({ pileId: '', contractor: '', ni: '', units: '', tonnesPerUnit: '' }), true);
   });
 
-  test('whitespace-only Pile ID with everything else empty -> still blank', () => {
-    assert.equal(isRowBlank({ pileId: '   ', ni: '', units: '', tonnesPerUnit: '' }), true);
+  test('whitespace-only Pile ID and Contractor with everything else empty -> still blank', () => {
+    assert.equal(isRowBlank({ pileId: '   ', contractor: '   ', ni: '', units: '', tonnesPerUnit: '' }), true);
   });
 
-  test('any single field with content -> not blank', () => {
-    assert.equal(isRowBlank({ pileId: 'A', ni: '', units: '', tonnesPerUnit: '' }), false);
-    assert.equal(isRowBlank({ pileId: '', ni: '1.2', units: '', tonnesPerUnit: '' }), false);
-    assert.equal(isRowBlank({ pileId: '', ni: '', units: '10', tonnesPerUnit: '' }), false);
-    assert.equal(isRowBlank({ pileId: '', ni: '', units: '', tonnesPerUnit: '50' }), false);
+  test('Contractor only -> not blank', () => {
+    assert.equal(isRowBlank({ pileId: '', contractor: 'SMA', ni: '', units: '', tonnesPerUnit: '' }), false);
+  });
+
+  test('Pile ID only -> not blank', () => {
+    assert.equal(isRowBlank({ pileId: 'A', contractor: '', ni: '', units: '', tonnesPerUnit: '' }), false);
+  });
+
+  test('Ni only -> not blank', () => {
+    assert.equal(isRowBlank({ pileId: '', contractor: '', ni: '1.2', units: '', tonnesPerUnit: '' }), false);
+  });
+
+  test('Units only -> not blank', () => {
+    assert.equal(isRowBlank({ pileId: '', contractor: '', ni: '', units: '10', tonnesPerUnit: '' }), false);
+  });
+
+  test('Tonnes/unit only -> not blank', () => {
+    assert.equal(isRowBlank({ pileId: '', contractor: '', ni: '', units: '', tonnesPerUnit: '50' }), false);
   });
 
   test('a literal "0" counts as meaningful content, not blank', () => {
-    assert.equal(isRowBlank({ pileId: '', ni: '', units: '0', tonnesPerUnit: '' }), false);
+    assert.equal(isRowBlank({ pileId: '', contractor: '', ni: '', units: '0', tonnesPerUnit: '' }), false);
   });
 
   test('a fully populated row is never blank', () => {
-    assert.equal(isRowBlank({ pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' }), false);
+    assert.equal(isRowBlank({ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' }), false);
   });
 });
 
 describe('validatePiles() -- whole-blend validation', () => {
   test('a single fully valid pile -> valid, no blend error', () => {
-    const { valid, blendError, pileErrors } = validatePiles([{ pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' }]);
+    const { valid, blendError, pileErrors } = validatePiles([{ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' }]);
     assert.equal(valid, true);
     assert.equal(blendError, null);
-    assert.deepEqual(pileErrors[0], { pileId: null, ni: null, units: null, tonnesPerUnit: null });
+    assert.deepEqual(pileErrors[0], { pileId: null, contractor: null, ni: null, units: null, tonnesPerUnit: null });
   });
 
   test('duplicate Pile ID: the FIRST occurrence is never flagged, only later ones are (deterministic order-based rule)', () => {
     const { valid, pileErrors } = validatePiles([
-      { pileId: 'S1', ni: '1.2', units: '10', tonnesPerUnit: '50' },
-      { pileId: 's1', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+      { pileId: 'S1', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 's1', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+    ]);
+    assert.equal(valid, false);
+    assert.equal(pileErrors[0].pileId, null);
+    assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('G. duplicate Pile ID with DIFFERENT Contractors is still a duplicate -- Contractor is never part of the identity key', () => {
+    const { valid, pileErrors } = validatePiles([
+      { pileId: 'S13_L02', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'S13_L02', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
     ]);
     assert.equal(valid, false);
     assert.equal(pileErrors[0].pileId, null);
@@ -203,17 +254,35 @@ describe('validatePiles() -- whole-blend validation', () => {
 
   test('a blank Pile ID never falsely triggers a duplicate error against another blank Pile ID -- each independently reports "required"', () => {
     const { pileErrors } = validatePiles([
-      { pileId: '', ni: '1.2', units: '10', tonnesPerUnit: '50' },
-      { pileId: '', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+      { pileId: '', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: '', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
     ]);
     assert.equal(pileErrors[0].pileId, 'calculate.validation.pileIdRequired');
     assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdRequired');
   });
 
+  test('C. missing Contractor on an otherwise-valid row -> invalid', () => {
+    const { valid, pileErrors } = validatePiles([{ pileId: 'A', contractor: '', ni: '1.2', units: '10', tonnesPerUnit: '50' }]);
+    assert.equal(valid, false);
+    assert.equal(pileErrors[0].contractor, 'calculate.validation.contractorRequired');
+  });
+
+  test('D. whitespace-only Contractor -> invalid', () => {
+    const { valid, pileErrors } = validatePiles([{ pileId: 'A', contractor: '   ', ni: '1.2', units: '10', tonnesPerUnit: '50' }]);
+    assert.equal(valid, false);
+    assert.equal(pileErrors[0].contractor, 'calculate.validation.contractorRequired');
+  });
+
+  test('E. a valid Contractor passes', () => {
+    const { valid, pileErrors } = validatePiles([{ pileId: 'A', contractor: 'Contractor A', ni: '1.2', units: '10', tonnesPerUnit: '50' }]);
+    assert.equal(valid, true);
+    assert.equal(pileErrors[0].contractor, null);
+  });
+
   test('field errors on one pile do not suppress or alter field errors on another', () => {
     const { pileErrors, valid } = validatePiles([
-      { pileId: '', ni: '1.2', units: '10', tonnesPerUnit: '50' },
-      { pileId: 'B', ni: '-1', units: '10', tonnesPerUnit: '50' },
+      { pileId: '', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'B', contractor: 'TII', ni: '-1', units: '10', tonnesPerUnit: '50' },
     ]);
     assert.equal(valid, false);
     assert.equal(pileErrors[0].pileId, 'calculate.validation.pileIdRequired');
@@ -222,23 +291,23 @@ describe('validatePiles() -- whole-blend validation', () => {
 
   test('overall blend tonnage = 0 (every pile has 0 units) -> blendError, even though every field is individually valid', () => {
     const { valid, blendError, pileErrors } = validatePiles([
-      { pileId: 'A', ni: '1.2', units: '0', tonnesPerUnit: '50' },
-      { pileId: 'B', ni: '1.0', units: '0', tonnesPerUnit: '40' },
+      { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '0', tonnesPerUnit: '50' },
+      { pileId: 'B', contractor: 'TII', ni: '1.0', units: '0', tonnesPerUnit: '40' },
     ]);
     assert.equal(valid, false);
     assert.equal(blendError, 'calculate.validation.noPositiveTonnage');
-    assert.deepEqual(pileErrors[0], { pileId: null, ni: null, units: null, tonnesPerUnit: null });
+    assert.deepEqual(pileErrors[0], { pileId: null, contractor: null, ni: null, units: null, tonnesPerUnit: null });
   });
 
   test('the blend-level tonnage check never fires merely because a field was left blank -- only once every pile is individually valid', () => {
-    const { blendError } = validatePiles([{ pileId: '', ni: '', units: '', tonnesPerUnit: '' }]);
+    const { blendError } = validatePiles([{ pileId: '', contractor: '', ni: '', units: '', tonnesPerUnit: '' }]);
     assert.equal(blendError, null);
   });
 
   test('a mix of a zero-unit pile and a contributing pile is valid overall (Blend E)', () => {
     const { valid, blendError } = validatePiles([
-      { pileId: 'A', ni: '1.3', units: '0', tonnesPerUnit: '50' },
-      { pileId: 'B', ni: '1.0', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'A', contractor: 'SMA', ni: '1.3', units: '0', tonnesPerUnit: '50' },
+      { pileId: 'B', contractor: 'TII', ni: '1.0', units: '10', tonnesPerUnit: '50' },
     ]);
     assert.equal(valid, true);
     assert.equal(blendError, null);
