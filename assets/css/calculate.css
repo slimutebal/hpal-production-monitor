@@ -1,0 +1,346 @@
+/* Calculate (V2.4 Phase 2 -- Blend Calculator; compact mobile input grid
+   revision). Every selector is scoped under #page-calculate so this file
+   can never leak into Monitor/Report/Settings, and reuses the app's own
+   CSS custom properties (var(--text), var(--accent), var(--glass),
+   var(--glass-border), var(--bad), ...) rather than inventing an isolated
+   palette -- same convention settings.css/report-hync.css establish.
+   Mobile-first; primary target viewport 360-430 px. The pile input grid
+   below is a COMPACT MOBILE TABLE, never a wide desktop table requiring
+   horizontal scroll -- every column width is expressed in `fr` units
+   (proportional shares of whatever space remains after gaps), not fixed
+   pixels or raw percentages, specifically so it can never force overflow
+   at 360 px. */
+
+#page-calculate .calculate-shell {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4px 0 24px;
+}
+
+#page-calculate .calculate-header {
+  margin-bottom: 18px;
+}
+
+#page-calculate .calculate-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0 0 4px;
+  color: var(--text, inherit);
+}
+
+#page-calculate .calculate-subtitle {
+  color: var(--muted, #8fa3bd);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+#page-calculate .calculate-section-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #8fa3bd);
+  margin: 18px 0 10px;
+}
+
+#page-calculate .calculate-subsection-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+  margin: 16px 0 8px;
+}
+
+/* ==================================================
+   COMPACT INPUT GRID -- PILE | NI | DT | t/DT | (remove)
+   Requested proportions: PILE 38% / NI 17% / DT 14% / t/DT 20% / action 11%,
+   expressed as matching `fr` tracks (see file header comment for why `fr`
+   rather than literal `%`). Every pile occupies exactly one grid row for
+   its inputs, immediately followed by its own (usually zero-height) error
+   line -- never a tall card. Read-only derived values (ore-class badge,
+   Calculated Tonnage) live INSIDE the PILE/t-DT cells, stacked under the
+   input, never as their own extra-wide columns.
+================================================== */
+#page-calculate .calculate-grid {
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px;
+  padding: 4px 8px;
+  background: var(--glass, rgba(255, 255, 255, 0.035));
+  overflow-x: hidden; /* belt: this grid must never require horizontal scroll */
+}
+
+#page-calculate .calculate-grid-row {
+  display: grid;
+  grid-template-columns: 38fr 17fr 14fr 20fr 11fr;
+  grid-template-areas: "pile ni dt tpu action";
+  align-items: center;
+  column-gap: 5px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  min-width: 0;
+}
+#page-calculate .calculate-grid-body .calculate-grid-row:last-child {
+  border-bottom: none;
+}
+
+#page-calculate .calculate-grid-row--header {
+  padding: 2px 0 8px;
+  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+}
+
+#page-calculate .calculate-grid-cell {
+  min-width: 0; /* required so grid children can shrink below their content's natural width instead of overflowing */
+}
+#page-calculate .calculate-grid-cell--pile { grid-area: pile; display: flex; flex-direction: column; gap: 2px; }
+#page-calculate .calculate-grid-cell--ni { grid-area: ni; }
+#page-calculate .calculate-grid-cell--dt { grid-area: dt; }
+#page-calculate .calculate-grid-cell--tpu { grid-area: tpu; display: flex; flex-direction: column; gap: 2px; }
+#page-calculate .calculate-grid-cell--action { grid-area: action; display: flex; align-items: center; justify-content: center; }
+
+#page-calculate .calculate-grid-row--header .calculate-grid-cell {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #8fa3bd);
+}
+
+#page-calculate .calculate-cell-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 8px;
+  padding: 8px 6px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  min-height: 38px;
+}
+/* NI/DT are narrow numeric columns -- centered content reads better than
+   left-aligned in a ~50-70px-wide cell. */
+#page-calculate .calculate-grid-cell--ni .calculate-cell-input,
+#page-calculate .calculate-grid-cell--dt .calculate-cell-input {
+  text-align: center;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+#page-calculate .calculate-cell-input:focus {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-cell-input--invalid {
+  border-color: var(--bad, #f87171);
+}
+
+/* Read-only, derived-only (never a user input) -- ore-class codes
+   (HGLO/MGLO/LGLO) are stable machine identifiers, never localized. Fixed
+   min-height reserves its line so a row's height does not visibly jump
+   the moment a badge/tonnage first appears. */
+#page-calculate .calculate-grid-cell__badge {
+  min-height: 12px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--accent, #38bdf8);
+}
+
+#page-calculate .calculate-grid-cell__tonnage {
+  min-height: 12px;
+  font-size: 0.62rem;
+  color: var(--muted, #8fa3bd);
+  overflow-wrap: anywhere;
+}
+
+/* Compact "x" remove control -- deliberately small and visually quiet
+   (never the large "Hapus"/"Remove" button the earlier card layout used),
+   present only for an active row (never the trailing blank row). */
+#page-calculate .calculate-remove-btn {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--bad, #f87171);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+#page-calculate .calculate-remove-btn:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+/* One compact combined line per row (never four separate per-field
+   messages) -- zero height whenever the row has no error. */
+#page-calculate .calculate-row-error {
+  grid-column: 1 / -1;
+  margin: 0 0 4px;
+  padding: 0 2px;
+  font-size: 0.68rem;
+  color: var(--bad, #f87171);
+}
+
+/* ---- Buttons -- same visual language as .settings-btn*, scoped here so
+   neither stylesheet depends on the other. ---- */
+#page-calculate .calculate-btn-row {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 10px;
+}
+
+#page-calculate .calculate-btn {
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+  border: none;
+  min-height: 42px;
+  font-family: inherit;
+}
+
+#page-calculate .calculate-btn-primary {
+  background: var(--accent-chip, var(--accent, #38bdf8));
+  color: var(--btn-text, #07121f);
+  flex: 1;
+}
+
+#page-calculate .calculate-btn:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+
+#page-calculate .calculate-blend-error {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: var(--bad, #f87171);
+  font-size: 0.82rem;
+}
+
+/* ---- Blend Result ---- */
+#page-calculate .calculate-result-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+#page-calculate .calculate-result-summary__item {
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 14px;
+  padding: 12px 10px;
+  text-align: center;
+}
+
+#page-calculate .calculate-result-summary__item span {
+  display: block;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+  margin-bottom: 6px;
+}
+
+#page-calculate .calculate-result-summary__item strong {
+  font-size: 1.05rem;
+  color: var(--accent, #38bdf8);
+}
+
+#page-calculate .calculate-pile-breakdown,
+#page-calculate .calculate-class-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#page-calculate .calculate-breakdown-row {
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+/* Higher Grade (HGLO+MGLO combined) is an informational total, never a
+   recommendation -- this styling difference is purely visual grouping,
+   not a "this is the recommended mix" signal. */
+#page-calculate .calculate-breakdown-row--emphasis {
+  border-color: var(--accent, #38bdf8);
+}
+
+#page-calculate .calculate-breakdown-row__main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+#page-calculate .calculate-breakdown-row__id {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text, inherit);
+  overflow-wrap: anywhere;
+}
+
+#page-calculate .calculate-breakdown-row__badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-chip, rgba(56, 189, 248, 0.18));
+  color: var(--accent, #38bdf8);
+}
+
+#page-calculate .calculate-breakdown-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.74rem;
+  color: var(--muted, #8fa3bd);
+}
+
+/* Pile Breakdown repeats what is already visible in the input grid above,
+   so it is a collapsed-by-default native <details> disclosure rather
+   than a second always-visible list -- no JS needed for expand/collapse,
+   accessible by default. */
+#page-calculate .calculate-pile-breakdown-details summary {
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+  margin: 16px 0 8px;
+}
+#page-calculate .calculate-pile-breakdown-details .calculate-pile-breakdown {
+  margin-top: 8px;
+}
+
+/* Narrower than 360 px is not a supported width, but this keeps the grid
+   from ever feeling cramped right at the 360 px floor. */
+@media (max-width: 374px) {
+  #page-calculate .calculate-grid-row {
+    column-gap: 4px;
+  }
+  #page-calculate .calculate-cell-input {
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 0.74rem;
+  }
+}

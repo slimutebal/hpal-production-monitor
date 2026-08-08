@@ -34,10 +34,50 @@ export default {
   'common.show': 'Show',
   'common.hide': 'Hide',
 
-  // Calculate (V2.4 Phase 1 -- shell/placeholder only; see locales/id.js's
-  // header comment for the full calculate.* catalog's staging).
+  // Calculate -- see locales/id.js's header comment for the full
+  // calculate.* catalog's staging (Phase 1's "coming later" subtitle is
+  // gone; Recommendation-mode strings are not added yet, Gate A is closed).
   'calculate.title': 'Calculate',
-  'calculate.subtitle': 'Operational blending calculations will be available in the next V2.4 phase.',
+
+  'calculate.blend.subtitle': 'Operational Blending',
+  'calculate.blend.title': 'Blend Calculator',
+  'calculate.blend.calculate': 'Calculate Blend',
+
+  'calculate.grid.headerPile': 'PILE',
+  'calculate.grid.headerNi': 'NI',
+  'calculate.grid.headerDt': 'DT',
+  'calculate.grid.headerTonnesPerUnit': 't/DT',
+
+  'calculate.fields.pileId': 'Pile ID',
+  'calculate.fields.ni': 'Ni (%)',
+  'calculate.fields.units': 'Jumlah Unit',
+  'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
+  'calculate.fields.calculatedTonnage': 'Calculated Tonnage',
+  'calculate.fields.oreClass': 'Ore Class',
+
+  'calculate.result.title': 'Blend Result',
+  'calculate.result.finalNi': 'Final Ni',
+  'calculate.result.totalUnits': 'Total DT',
+  'calculate.result.totalTonnage': 'Total Tonnage',
+  'calculate.result.pileBreakdown': 'Pile Breakdown',
+  'calculate.result.classBreakdown': 'Class Breakdown',
+  'calculate.result.higherGrade': 'Higher Grade',
+  'calculate.result.tonnageShare': '% of Total Tonnage',
+  'calculate.result.tonnageLabel': 'Tonnage',
+
+  'calculate.validation.pileIdRequired': 'Pile ID is required.',
+  'calculate.validation.pileIdDuplicate': 'Pile ID already exists.',
+  'calculate.validation.niRequired': 'Ni is required.',
+  'calculate.validation.niInvalid': 'Ni must be a valid number.',
+  'calculate.validation.niPositive': 'Ni must be greater than 0.',
+  'calculate.validation.unitsRequired': 'Jumlah Unit is required.',
+  'calculate.validation.unitsInvalid': 'Jumlah Unit must be a valid number.',
+  'calculate.validation.unitsInteger': 'Jumlah Unit must be a whole number.',
+  'calculate.validation.unitsNonNegative': 'Jumlah Unit cannot be negative.',
+  'calculate.validation.tonnesPerUnitRequired': 'Tonase / Unit is required.',
+  'calculate.validation.tonnesPerUnitInvalid': 'Tonase / Unit must be a valid number.',
+  'calculate.validation.tonnesPerUnitPositive': 'Tonase / Unit must be greater than 0.',
+  'calculate.validation.noPositiveTonnage': 'At least one pile must contribute positive tonnage.',
 
   'settings.pageTitle': 'Settings',
   'settings.title': 'Personnel Directory',

@@ -62,11 +62,71 @@ export default {
   'common.show': 'Tampilkan',
   'common.hide': 'Sembunyikan',
 
-  // Calculate (V2.4 Phase 1 -- shell/placeholder only; the full
-  // calculate.* catalog for Blend/Recommendation is a later phase, see
-  // architecture doc Section 33).
+  // Calculate. 'calculate.title' is kept identical to en.js, matching
+  // nav.calculate/nav.monitor/nav.report/nav.settings's convention of not
+  // translating stable top-level section names. V2.4 Phase 1's
+  // 'calculate.subtitle' ("coming in a later phase") is removed here --
+  // Phase 2 replaces that placeholder with the real Blend Calculator
+  // below, so the "not yet available" text would now be actively wrong.
+  // Recommendation-mode strings (Target Ni, Tolerance, Hopper Pattern,
+  // USE/LIMIT/STOP, Recovery, ...) are deliberately NOT added yet --
+  // Gate A (architecture doc Section 40) is still closed.
   'calculate.title': 'Calculate',
-  'calculate.subtitle': 'Perhitungan blending operasional akan tersedia pada fase V2.4 berikutnya.',
+
+  'calculate.blend.subtitle': 'Blending Operasional',
+  'calculate.blend.title': 'Kalkulator Blend',
+  'calculate.blend.calculate': 'Hitung Blend',
+
+  // Compact grid short headers (this task's mobile input-grid revision --
+  // "PILE"/"NI"/"DT"/"t/DT", never the long field names below, inside the
+  // table header). Kept identical in both locales like DT/Ni elsewhere --
+  // these are the exact short forms the Owner specified, not generic UI
+  // words to translate. The full wording (calculate.fields.*) is still
+  // used for each input's accessible aria-label.
+  'calculate.grid.headerPile': 'PILE',
+  'calculate.grid.headerNi': 'NI',
+  'calculate.grid.headerDt': 'DT',
+  'calculate.grid.headerTonnesPerUnit': 't/DT',
+
+  // Full wording -- used as each input's aria-label and in the (now
+  // collapsed-by-default) Pile Breakdown detail, never as compact grid
+  // header text (see calculate.grid.* above).
+  'calculate.fields.pileId': 'Pile ID',
+  'calculate.fields.ni': 'Ni (%)',
+  'calculate.fields.units': 'Jumlah Unit',
+  'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
+  'calculate.fields.calculatedTonnage': 'Tonase Terhitung',
+  'calculate.fields.oreClass': 'Kelas Ore',
+
+  'calculate.result.title': 'Hasil Blend',
+  'calculate.result.finalNi': 'Ni Akhir',
+  'calculate.result.totalUnits': 'Total DT',
+  'calculate.result.totalTonnage': 'Total Tonase',
+  'calculate.result.pileBreakdown': 'Rincian Pile',
+  'calculate.result.classBreakdown': 'Rincian Kelas',
+  // Kept in English in both locales, matching the architecture doc's own
+  // consistent English usage of this grouping term (HGLO + MGLO) -- an
+  // informational total only in Phase 2, never a recommended ratio.
+  'calculate.result.higherGrade': 'Higher Grade',
+  'calculate.result.tonnageShare': '% dari Total Tonase',
+  'calculate.result.tonnageLabel': 'Tonase',
+
+  // Remove Pile reuses common.remove ('Hapus') rather than a dedicated
+  // calculate.actions.remove key -- same generic remove action already
+  // used by Settings' personnel/queue rows.
+  'calculate.validation.pileIdRequired': 'Pile ID wajib diisi.',
+  'calculate.validation.pileIdDuplicate': 'Pile ID sudah digunakan.',
+  'calculate.validation.niRequired': 'Ni wajib diisi.',
+  'calculate.validation.niInvalid': 'Ni harus berupa angka yang valid.',
+  'calculate.validation.niPositive': 'Ni harus lebih besar dari 0.',
+  'calculate.validation.unitsRequired': 'Jumlah Unit wajib diisi.',
+  'calculate.validation.unitsInvalid': 'Jumlah Unit harus berupa angka yang valid.',
+  'calculate.validation.unitsInteger': 'Jumlah Unit harus berupa bilangan bulat.',
+  'calculate.validation.unitsNonNegative': 'Jumlah Unit tidak boleh negatif.',
+  'calculate.validation.tonnesPerUnitRequired': 'Tonase / Unit wajib diisi.',
+  'calculate.validation.tonnesPerUnitInvalid': 'Tonase / Unit harus berupa angka yang valid.',
+  'calculate.validation.tonnesPerUnitPositive': 'Tonase / Unit harus lebih besar dari 0.',
+  'calculate.validation.noPositiveTonnage': 'Minimal satu pile harus memiliki tonase lebih besar dari 0.',
 
   'settings.pageTitle': 'Pengaturan',
   'settings.title': 'Personnel Directory',

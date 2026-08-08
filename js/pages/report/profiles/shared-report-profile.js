@@ -13,6 +13,7 @@ import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cle
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
 import { lookupContractor, canonicalDtId } from '../../../services/contractor-directory-service.js';
 import { buyerFromRemark, getBuyerDisplayLabel } from './profile-registry.js';
+import { classifyOre } from '../../../shared/ore-classification.js';
 
 export const SHEET_NAME = '过磅明细';
 export const REQUIRED_HEADERS = ['流水号', '车号', '净重', '毛重时间', '日期', '规格'];
@@ -202,10 +203,16 @@ export function parseSpec(specRaw) {
 
 // Ore-class thresholds are unchanged and buyer-agnostic (also confirmed by
 // Monitor's own identical classifyOre() in index.html, applied there for
-// both HYNC and SLNC alike).
+// both HYNC and SLNC alike). V2.4 Phase 2: delegates to the shared
+// js/shared/ore-classification.js helper (extracted from this exact
+// function) rather than duplicating the thresholds inline -- Calculate
+// now imports that same shared helper directly, so this is the one
+// consolidation point that removes an independent copy rather than adding
+// one. External behavior is unchanged: classifyOre() returns null for
+// invalid input, which `?? '-'` maps back to this function's own
+// long-standing '-' contract for every existing caller.
 export function classifyOreClass(grade) {
-  if (grade === null || grade === undefined || isNaN(grade)) return '-';
-  return grade > 1.4 ? 'HGLO' : (grade < 1.2 ? 'LGLO' : 'MGLO');
+  return classifyOre(grade) ?? '-';
 }
 
 // Resolves the buyer for one already-parsed workbook from the per-row 备注
