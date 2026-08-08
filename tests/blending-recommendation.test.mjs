@@ -165,7 +165,7 @@ describe('validateRecommendationSources()', () => {
     assert.equal(sourceErrors[0].tonnesPerUnit, 'calculate.validation.tonnesPerUnitPositive');
   });
 
-  test('duplicate normalized Pile ID -> rejected on the later occurrence', () => {
+  test('duplicate normalized Pile ID (same Contractor) -> rejected on the later occurrence', () => {
     const { valid, sourceErrors } = validateRecommendationSources([
       validSource,
       { ...validSource, pileId: '  a  ' },
@@ -173,6 +173,16 @@ describe('validateRecommendationSources()', () => {
     assert.equal(valid, false);
     assert.equal(sourceErrors[0].pileId, null);
     assert.equal(sourceErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('this task\'s Section 9/10: the same Pile ID with a DIFFERENT Contractor is valid, never merged', () => {
+    const { valid, sourceErrors } = validateRecommendationSources([
+      { pileId: 'L30', contractor: 'MRP', ni: '1.2', units: '5', tonnesPerUnit: '50' },
+      { pileId: 'L30', contractor: 'TII', ni: '1.0', units: '8', tonnesPerUnit: '45' },
+    ]);
+    assert.equal(valid, true);
+    assert.equal(sourceErrors[0].pileId, null);
+    assert.equal(sourceErrors[1].pileId, null);
   });
 
   test('every source has zero units -> fleetError (this task\'s Section 34 "at least one physical DT required")', () => {
@@ -367,6 +377,61 @@ describe('26. Cross-Contractor negative test -- Higher under SMA, LGLO under TII
     assert.equal(result.candidate.higherGradeUnits, 4);
     assert.equal(result.candidate.lgloUnits, 7);
     closeTo(result.candidate.estimatedNi, 620.5 / 550, 1e-9);
+  });
+});
+
+// ============================================================
+// COMPOSITE SOURCE IDENTITY -- SAME PILE ID ACROSS DIFFERENT CONTRACTORS
+// (this task's Section 9/10). Regression test for a real bug this task's
+// revision fixed: buildCandidate()/combine() previously keyed their
+// internal activeByPileId Map by Pile ID ALONE, so once two sources from
+// DIFFERENT Contractor groups shared a Pile ID, the second group's
+// allocation value would silently overwrite the first's in that Map --
+// every source read back the WRONG activeUnits (whichever group's loop
+// ran last), corrupting estimatedNi/unitRatio/everything downstream. The
+// fix keys that Map by normalizeSourceIdentity(pileId, contractor)
+// instead. This test reuses the exact "24. Known fleet example" numbers
+// (5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010, expected 1:2 exactly at
+// 1.120%) but gives BOTH sources the SAME Pile ID "L30" under different
+// Contractors -- if the Map-key bug ever regresses, this candidate's
+// activeUnits/estimatedNi would silently corrupt rather than matching the
+// known-correct numbers below.
+// ============================================================
+describe('Composite source identity -- same Pile ID ("L30") under two different Contractors never collides', () => {
+  const sources = [
+    { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
+    { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '8', tonnesPerUnit: '50' },
+  ];
+
+  test('produces the exact same result as the differently-named "24. Known fleet example" -- Higher active=4, LGLO active=8, Ni exactly 1.120', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+
+    const { candidate } = result;
+    closeTo(candidate.estimatedNi, 1.120);
+    assert.equal(candidate.totalFleetUnits, 13);
+    assert.equal(candidate.totalActiveUnits, 12);
+    assert.deepEqual(candidate.unitRatio, { rawHigher: 4, rawLglo: 8, higher: 1, lglo: 2 });
+    assert.equal(candidate.relocations.length, 0, 'different Contractors -- no relocation is possible');
+  });
+
+  test('both same-Pile-ID sources survive independently in candidate.sources, each with its OWN correct activeUnits/contractor -- never collapsed or overwritten', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const { candidate } = result;
+
+    assert.equal(candidate.sources.length, 2, 'two distinct sources must remain two distinct entries');
+    const smaSource = candidate.sources.find((s) => s.contractor === 'SMA');
+    const tiiSource = candidate.sources.find((s) => s.contractor === 'TII');
+    assert.ok(smaSource && tiiSource, 'both Contractor variants of "L30" must be independently present');
+    assert.equal(smaSource.pileId, 'L30');
+    assert.equal(tiiSource.pileId, 'L30');
+    // The regression this guards against: without the fix, one of these
+    // would silently read the OTHER's activeUnits value instead of its own.
+    assert.equal(smaSource.activeUnits, 4, 'SMA/L30 (Higher Grade) must show its OWN active allocation, not TII\'s');
+    assert.equal(tiiSource.activeUnits, 8, 'TII/L30 (LGLO) must show its OWN active allocation, not SMA\'s');
+    assert.equal(smaSource.standbyUnits, 1);
+    assert.equal(tiiSource.standbyUnits, 0);
   });
 });
 

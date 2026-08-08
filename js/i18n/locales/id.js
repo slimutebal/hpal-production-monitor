@@ -64,18 +64,27 @@ export default {
 
   // Calculate. 'calculate.title' is kept identical to en.js, matching
   // nav.calculate/nav.monitor/nav.report/nav.settings's convention of not
-  // translating stable top-level section names. V2.4 Phase 1's
-  // 'calculate.subtitle' ("coming in a later phase") is removed here --
-  // Phase 2 replaces that placeholder with the real Blend Calculator
-  // below, so the "not yet available" text would now be actively wrong.
-  // Recommendation-mode strings (Target Ni, Tolerance, Hopper Pattern,
-  // USE/LIMIT/STOP, Recovery, ...) are deliberately NOT added yet --
-  // Gate A (architecture doc Section 40) is still closed.
+  // translating stable top-level section names.
+  //
+  // PHASE 4.1 (this task): Calculate is now ONE continuous page -- live
+  // Blend summary -> shared grid -> Recommendation -- with no mode switch
+  // and no explicit "Hitung Blend" button, so calculate.tabs.*/
+  // calculate.blend.calculate are gone. calculate.result.title/
+  // pileBreakdown/tonnageShare and calculate.fields.calculatedTonnage/
+  // oreClass are also gone -- the old large duplicated "Hasil Blend"
+  // section and always-visible per-pile breakdown no longer exist (the
+  // sticky live summary below is now the one authoritative Blend result,
+  // and the grid itself already shows each row's own live tonnage).
   'calculate.title': 'Calculate',
 
   'calculate.blend.subtitle': 'Blending Operasional',
   'calculate.blend.title': 'Kalkulator Blend',
-  'calculate.blend.calculate': 'Hitung Blend',
+
+  // Small, non-blocking count of source rows excluded from the live
+  // summary/Recommendation because a field is still incomplete/invalid.
+  // Indonesian has no plural marking, so both keys share the same text.
+  'calculate.blend.incompleteRowsOne': '{count} baris belum lengkap · tidak dihitung',
+  'calculate.blend.incompleteRowsOther': '{count} baris belum lengkap · tidak dihitung',
 
   // Compact grid short headers (this task's mobile input-grid revision --
   // "PILE"/"NI"/"DT"/"t/DT", never the long field names below, inside the
@@ -88,28 +97,22 @@ export default {
   'calculate.grid.headerDt': 'DT',
   'calculate.grid.headerTonnesPerUnit': 't/DT',
 
-  // Full wording -- used as each input's aria-label and in the (now
-  // collapsed-by-default) Pile Breakdown detail, never as compact grid
-  // header text (see calculate.grid.* above).
+  // Full wording -- used as each input's aria-label/placeholder, never as
+  // compact grid header text (see calculate.grid.* above).
   'calculate.fields.pileId': 'Pile ID',
   'calculate.fields.contractor': 'Kontraktor',
   'calculate.fields.ni': 'Ni (%)',
   'calculate.fields.units': 'Jumlah Unit',
   'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
-  'calculate.fields.calculatedTonnage': 'Tonase Terhitung',
-  'calculate.fields.oreClass': 'Kelas Ore',
 
-  'calculate.result.title': 'Hasil Blend',
-  'calculate.result.finalNi': 'Ni Akhir',
+  'calculate.result.finalNi': 'NI SUMPRODUCT',
   'calculate.result.totalUnits': 'Total DT',
   'calculate.result.totalTonnage': 'Total Tonase',
-  'calculate.result.pileBreakdown': 'Rincian Pile',
   'calculate.result.classBreakdown': 'Rincian Kelas',
   // Kept in English in both locales, matching the architecture doc's own
   // consistent English usage of this grouping term (HGLO + MGLO) -- an
-  // informational total only in Phase 2, never a recommended ratio.
+  // informational total only, never a recommendation.
   'calculate.result.higherGrade': 'Higher Grade',
-  'calculate.result.tonnageShare': '% dari Total Tonase',
   'calculate.result.tonnageLabel': 'Tonase',
 
   // Remove Pile reuses common.remove ('Hapus') rather than a dedicated
@@ -129,6 +132,59 @@ export default {
   'calculate.validation.tonnesPerUnitInvalid': 'Tonase / Unit harus berupa angka yang valid.',
   'calculate.validation.tonnesPerUnitPositive': 'Tonase / Unit harus lebih besar dari 0.',
   'calculate.validation.noPositiveTonnage': 'Minimal satu pile harus memiliki tonase lebih besar dari 0.',
+
+  // V2.4 Phase 4/4.1 -- Recommendation section (Gate A closed), now always
+  // visible directly below the source grid (no mode switch -- Phase 4.1).
+  // targetNi*/tolerance*/noPhysicalFleet below are the exact i18n KEYS the
+  // pure engine (blending-recommendation.js, Phase 3) already returns.
+  // Material Action (USE/LIMIT/STOP) and Planned Blend Recovery wording
+  // remain deliberately absent -- Phase 5/6.
+  'calculate.recommendation.title': 'Rekomendasi Blending',
+  'calculate.recommendation.dtHint': 'DT = unit fisik aktif yang dapat berulang hauling.',
+
+  'calculate.recommendation.targetNi': 'Target Ni',
+  'calculate.recommendation.tolerance': 'Toleransi (±)',
+  'calculate.recommendation.calculate': 'Hitung Rekomendasi',
+
+  'calculate.recommendation.hopperPattern': 'Pola Hopper',
+  'calculate.recommendation.repeat': 'ULANGI',
+  'calculate.recommendation.lglo': 'LGLO',
+  'calculate.recommendation.load': 'muatan',
+  'calculate.recommendation.feedRatioHint': 'Pola kedatangan load ke hopper — bukan jumlah total unit fisik.',
+
+  'calculate.recommendation.estimatedNi': 'ESTIMASI AKHIR NI',
+  'calculate.recommendation.deviation': 'Deviasi',
+  'calculate.recommendation.withinTolerance': 'Dalam Toleransi',
+  'calculate.recommendation.toleranceRange': 'Rentang Toleransi',
+
+  'calculate.recommendation.fleetUtilization': 'Utilisasi Fleet',
+  'calculate.recommendation.assigned': 'Ditugaskan',
+  'calculate.recommendation.active': 'Aktif',
+  'calculate.recommendation.surplus': 'Surplus',
+  'calculate.recommendation.relocation': 'Penyesuaian Fleet',
+
+  'calculate.recommendation.unitRatio': 'Rasio Unit',
+  'calculate.recommendation.tonnageRatio': 'Rasio Tonase',
+  'calculate.recommendation.hopperSequence': 'Urutan Hopper',
+  'calculate.recommendation.sourceBreakdown': 'Rincian Fleet Sumber',
+
+  'calculate.recommendation.targetNotAchievable': 'Target Tidak Dapat Dicapai',
+  'calculate.recommendation.bestAttainable': 'Terbaik yang Dapat Dicapai',
+  'calculate.recommendation.gap': 'Selisih',
+
+  'calculate.recommendation.searchSpaceTooLarge': 'Kombinasi fleet untuk input ini terlalu besar untuk dihitung. Kurangi jumlah DT atau sumber, lalu coba lagi.',
+  'calculate.recommendation.noFeasibleCandidate': 'Tidak ada kombinasi fleet yang dapat dihitung dari input saat ini.',
+  // Shown when Hitung Rekomendasi is pressed with zero complete source
+  // rows (this task's Section 12) -- Recommendation must not run.
+  'calculate.recommendation.noCompleteSources': 'Belum ada sumber lengkap untuk dihitung. Lengkapi minimal satu baris sumber (Pile ID, Kontraktor, Ni, DT, t/DT).',
+
+  'calculate.validation.targetNiRequired': 'Target Ni wajib diisi.',
+  'calculate.validation.targetNiInvalid': 'Target Ni harus berupa angka yang valid.',
+  'calculate.validation.targetNiPositive': 'Target Ni harus lebih besar dari 0.',
+  'calculate.validation.toleranceRequired': 'Toleransi wajib diisi.',
+  'calculate.validation.toleranceInvalid': 'Toleransi harus berupa angka yang valid.',
+  'calculate.validation.toleranceNonNegative': 'Toleransi harus 0 atau lebih besar.',
+  'calculate.validation.noPhysicalFleet': 'Minimal satu sumber harus memiliki DT fisik lebih besar dari 0.',
 
   'settings.pageTitle': 'Pengaturan',
   'settings.title': 'Personnel Directory',

@@ -19,10 +19,32 @@ export function normalizePileIdForComparison(pileId) {
   return typeof pileId === 'string' ? pileId.trim().toLowerCase() : '';
 }
 
-export function validatePileId(pileId, seenNormalizedIds = []) {
+// Same trim + case-fold normalization, applied to Contractor (this task's
+// revision -- Owner clarification: source identity for duplicate detection
+// is now the COMPOSITE Pile ID + Contractor pair, not Pile ID alone).
+export function normalizeContractorForComparison(contractor) {
+  return typeof contractor === 'string' ? contractor.trim().toLowerCase() : '';
+}
+
+// Composite source identity used for duplicate detection (this task's
+// revision): the same Pile ID may legitimately appear more than once as
+// long as Contractor differs (e.g. "L30/MRP" and "L30/TII" are distinct
+// sources); only an identical normalized Pile ID + Contractor pair is a
+// true duplicate. JSON.stringify of a 2-tuple gives an exact, collision-
+// free key (unlike a hand-joined string, which could collide if either
+// field itself contained the separator).
+export function normalizeSourceIdentity(pileId, contractor) {
+  return JSON.stringify([normalizePileIdForComparison(pileId), normalizeContractorForComparison(contractor)]);
+}
+
+// `contractor` participates in the duplicate check only -- Contractor's
+// OWN required/blank validation remains entirely in validateContractor()
+// below; a blank/invalid Contractor here still normalizes to '' and is
+// compared like any other value.
+export function validatePileId(pileId, contractor, seenNormalizedIdentities = []) {
   const trimmed = typeof pileId === 'string' ? pileId.trim() : '';
   if (!trimmed) return 'calculate.validation.pileIdRequired';
-  if (seenNormalizedIds.includes(normalizePileIdForComparison(pileId))) {
+  if (seenNormalizedIdentities.includes(normalizeSourceIdentity(pileId, contractor))) {
     return 'calculate.validation.pileIdDuplicate';
   }
   return null;
@@ -93,12 +115,12 @@ export function toNumericPile(pile) {
 
 // Validates a whole pile list at once, in array order -- duplicate
 // detection is therefore deterministic: the FIRST occurrence of a given
-// (trimmed, case-folded) Pile ID is never itself flagged, only a LATER
-// row reusing the same normalized id is (architecture doc Section 9's
-// "deterministic behavior" requirement). Field errors on one pile never
-// suppress field errors on another; the overall `valid` flag is false if
-// ANY pile has ANY field error, or if the whole-blend tonnage check below
-// fails.
+// composite (Pile ID + Contractor) identity is never itself flagged, only
+// a LATER row reusing the same normalized identity is (architecture doc
+// Section 9's "deterministic behavior" requirement; this task's Section 9
+// composite-identity revision). Field errors on one pile never suppress
+// field errors on another; the overall `valid` flag is false if ANY pile
+// has ANY field error, or if the whole-blend tonnage check below fails.
 //
 // Returns:
 //   {
@@ -113,8 +135,8 @@ export function toNumericPile(pile) {
 export function validatePiles(piles) {
   const seen = [];
   const pileErrors = piles.map((pile) => {
-    const pileIdError = validatePileId(pile.pileId, seen);
-    if (!pileIdError) seen.push(normalizePileIdForComparison(pile.pileId));
+    const pileIdError = validatePileId(pile.pileId, pile.contractor, seen);
+    if (!pileIdError) seen.push(normalizeSourceIdentity(pile.pileId, pile.contractor));
     return {
       pileId: pileIdError,
       contractor: validateContractor(pile.contractor),

@@ -27,7 +27,7 @@ import {
   validateNi,
   validateUnits,
   validateTonnesPerUnit,
-  normalizePileIdForComparison,
+  normalizeSourceIdentity,
 } from './calculate-validation.js';
 import {
   simplifyUnitRatio,
@@ -87,12 +87,14 @@ export function validateTolerance(tolerance) {
 // different validation rule). This also keeps Recommendation from
 // introducing a second independent validation-rule copy, the same
 // discipline already applied to ore classification (architecture doc
-// Section 11).
+// Section 11). Duplicate detection uses the same composite Pile ID +
+// Contractor identity as Blend (this task's Section 9/10) -- "L30/MRP"
+// and "L30/TII" are distinct sources, never merged.
 export function validateRecommendationSources(sources) {
   const seen = [];
   const sourceErrors = sources.map((source) => {
-    const pileIdError = validatePileId(source.pileId, seen);
-    if (!pileIdError) seen.push(normalizePileIdForComparison(source.pileId));
+    const pileIdError = validatePileId(source.pileId, source.contractor, seen);
+    if (!pileIdError) seen.push(normalizeSourceIdentity(source.pileId, source.contractor));
     return {
       pileId: pileIdError,
       contractor: validateContractor(source.contractor),
@@ -138,13 +140,18 @@ export function isWithinTolerance(estimatedNi, targetNi, tolerance) {
 // ============================================================
 
 // groups: groupSourcesByContractor() output (canonical Contractor-then-
-// Pile-ID order). activeByPileId: Map<pileId, activeUnits> for THIS
-// candidate. Returns null for the excluded all-zero allocation (this
-// task's Section 19) or for any candidate that fails a defensive
-// (structurally unreachable once totalActiveUnits > 0) invariant check.
-function buildCandidate(groups, activeByPileId, targetNi, tolerance) {
+// Pile-ID order). activeBySourceKey: Map<normalizeSourceIdentity(pileId,
+// contractor), activeUnits> for THIS candidate -- keyed by the COMPOSITE
+// Pile ID + Contractor identity, never Pile ID alone (this task's Section
+// 9/10: "L30/MRP" and "L30/TII" must remain distinct here; a Pile-ID-only
+// key would let the second Contractor's allocation silently overwrite the
+// first's in this Map once sources are combined across Contractor groups).
+// Returns null for the excluded all-zero allocation (this task's Section
+// 19) or for any candidate that fails a defensive (structurally
+// unreachable once totalActiveUnits > 0) invariant check.
+function buildCandidate(groups, activeBySourceKey, targetNi, tolerance) {
   let totalActiveUnits = 0;
-  activeByPileId.forEach((v) => { totalActiveUnits += v; });
+  activeBySourceKey.forEach((v) => { totalActiveUnits += v; });
   if (totalActiveUnits === 0) return null;
 
   const flatSources = [];
@@ -155,13 +162,18 @@ function buildCandidate(groups, activeByPileId, targetNi, tolerance) {
       pileId: s.pileId,
       contractor: s.contractor,
       assignedUnits: s.assignedUnits,
-      activeUnits: activeByPileId.get(s.pileId),
+      activeUnits: activeBySourceKey.get(normalizeSourceIdentity(s.pileId, s.contractor)),
     }));
     const { relocations: groupRelocations, perSource } = planContractorRelocations(contractorGroup);
     relocations.push(...groupRelocations);
 
     group.sources.forEach((s) => {
-      const activeUnits = activeByPileId.get(s.pileId);
+      const activeUnits = activeBySourceKey.get(normalizeSourceIdentity(s.pileId, s.contractor));
+      // perSource (fleet-allocation.js's planContractorRelocations()) is
+      // keyed by Pile ID alone, which is safe here ONLY because
+      // contractorGroup is already scoped to ONE Contractor -- duplicate
+      // validation guarantees Pile ID is unique within a single
+      // Contractor's own sources.
       const moves = perSource.get(s.pileId);
       flatSources.push({
         pileId: s.pileId,
@@ -311,16 +323,19 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
   });
 
   const candidates = [];
-  function combine(groupIndex, activeByPileId) {
+  // Keyed by normalizeSourceIdentity(pileId, contractor), never pileId
+  // alone -- see buildCandidate()'s own comment for why a Pile-ID-only key
+  // would silently collide once two different Contractors share a Pile ID.
+  function combine(groupIndex, activeBySourceKey) {
     if (groupIndex === groups.length) {
-      const candidate = buildCandidate(groups, activeByPileId, targetNiValue, toleranceValue);
+      const candidate = buildCandidate(groups, activeBySourceKey, targetNiValue, toleranceValue);
       if (candidate) candidates.push(candidate);
       return;
     }
     const group = groups[groupIndex];
     for (const allocation of perContractorAllocations[groupIndex]) {
-      const next = new Map(activeByPileId);
-      group.sources.forEach((s, i) => next.set(s.pileId, allocation[i]));
+      const next = new Map(activeBySourceKey);
+      group.sources.forEach((s, i) => next.set(normalizeSourceIdentity(s.pileId, s.contractor), allocation[i]));
       combine(groupIndex + 1, next);
     }
   }

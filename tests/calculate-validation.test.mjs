@@ -22,41 +22,82 @@ import {
   validatePiles,
   toNumericPile,
   normalizePileIdForComparison,
+  normalizeContractorForComparison,
+  normalizeSourceIdentity,
   isRowBlank,
 } from '../js/pages/calculate/calculate-validation.js';
 
+// Composite Pile ID + Contractor duplicate identity (this task's Owner
+// revision): the same Pile ID may legitimately appear more than once as
+// long as Contractor differs (e.g. "L30/MRP" and "L30/TII" are distinct
+// sources) -- validatePileId()'s signature grew a `contractor` parameter,
+// and its `seen` list now holds normalizeSourceIdentity() composites
+// rather than bare normalized Pile IDs.
 describe('validatePileId()', () => {
-  test('empty string -> required', () => {
-    assert.equal(validatePileId(''), 'calculate.validation.pileIdRequired');
+  test('empty string -> required, regardless of Contractor', () => {
+    assert.equal(validatePileId('', 'SMA'), 'calculate.validation.pileIdRequired');
   });
 
   test('whitespace-only -> required (trim makes it empty)', () => {
-    assert.equal(validatePileId('   '), 'calculate.validation.pileIdRequired');
+    assert.equal(validatePileId('   ', 'SMA'), 'calculate.validation.pileIdRequired');
   });
 
   test('null/undefined -> required', () => {
-    assert.equal(validatePileId(null), 'calculate.validation.pileIdRequired');
-    assert.equal(validatePileId(undefined), 'calculate.validation.pileIdRequired');
+    assert.equal(validatePileId(null, 'SMA'), 'calculate.validation.pileIdRequired');
+    assert.equal(validatePileId(undefined, 'SMA'), 'calculate.validation.pileIdRequired');
   });
 
-  test('a normal id -> valid (null)', () => {
-    assert.equal(validatePileId('S13_L02', []), null);
+  test('a normal id -> valid (null) with an empty seen list', () => {
+    assert.equal(validatePileId('S13_L02', 'SMA', []), null);
   });
 
-  test('duplicate (exact match) -> duplicate error', () => {
-    assert.equal(validatePileId('S13_L02', ['s13_l02']), 'calculate.validation.pileIdDuplicate');
+  test('duplicate (exact match: same Pile ID AND same Contractor) -> duplicate error', () => {
+    const seen = [normalizeSourceIdentity('S13_L02', 'SMA')];
+    assert.equal(validatePileId('S13_L02', 'SMA', seen), 'calculate.validation.pileIdDuplicate');
   });
 
-  test('duplicate case-insensitive -> duplicate error', () => {
-    assert.equal(validatePileId('s13_L02', ['s13_l02']), 'calculate.validation.pileIdDuplicate');
+  test('duplicate case-insensitive on BOTH Pile ID and Contractor -> duplicate error', () => {
+    const seen = [normalizeSourceIdentity('S13_L02', 'SMA')];
+    assert.equal(validatePileId('s13_L02', 'sma', seen), 'calculate.validation.pileIdDuplicate');
   });
 
-  test('duplicate with outer whitespace -> duplicate error (trim before compare)', () => {
-    assert.equal(validatePileId('  S13_L02  ', ['s13_l02']), 'calculate.validation.pileIdDuplicate');
+  test('duplicate with outer whitespace on both fields -> duplicate error (trim before compare)', () => {
+    const seen = [normalizeSourceIdentity('S13_L02', 'SMA')];
+    assert.equal(validatePileId('  S13_L02  ', '  SMA  ', seen), 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('same Pile ID but a DIFFERENT Contractor -> NOT a duplicate (Owner-clarified composite identity)', () => {
+    const seen = [normalizeSourceIdentity('L30', 'MRP')];
+    assert.equal(validatePileId('L30', 'TII', seen), null);
   });
 
   test('does not rewrite a valid Pile ID beyond what duplicate detection requires', () => {
     assert.equal(normalizePileIdForComparison('  S13_L02  '), 's13_l02');
+  });
+});
+
+describe('normalizeContractorForComparison() / normalizeSourceIdentity()', () => {
+  test('normalizeContractorForComparison trims and case-folds, same as Pile ID', () => {
+    assert.equal(normalizeContractorForComparison('  MRP  '), 'mrp');
+    assert.equal(normalizeContractorForComparison(null), '');
+    assert.equal(normalizeContractorForComparison(undefined), '');
+  });
+
+  test('normalizeSourceIdentity is order-sensitive per field but insensitive to case/outer whitespace', () => {
+    assert.equal(normalizeSourceIdentity('L30', 'MRP'), normalizeSourceIdentity('  l30  ', '  mrp  '));
+  });
+
+  test('normalizeSourceIdentity distinguishes different Pile IDs with the same Contractor', () => {
+    assert.notEqual(normalizeSourceIdentity('L30', 'MRP'), normalizeSourceIdentity('L31', 'MRP'));
+  });
+
+  test('normalizeSourceIdentity distinguishes the same Pile ID with different Contractors', () => {
+    assert.notEqual(normalizeSourceIdentity('L30', 'MRP'), normalizeSourceIdentity('L30', 'TII'));
+  });
+
+  test('no accidental collision between a "pileId containing the separator" and a differently-split pair (JSON.stringify encoding is exact)', () => {
+    // Guards the encoding choice itself, not just typical inputs.
+    assert.notEqual(normalizeSourceIdentity('a|b', 'c'), normalizeSourceIdentity('a', 'b|c'));
   });
 });
 
@@ -232,24 +273,62 @@ describe('validatePiles() -- whole-blend validation', () => {
     assert.deepEqual(pileErrors[0], { pileId: null, contractor: null, ni: null, units: null, tonnesPerUnit: null });
   });
 
-  test('duplicate Pile ID: the FIRST occurrence is never flagged, only later ones are (deterministic order-based rule)', () => {
+  test('duplicate Pile ID (same Contractor): the FIRST occurrence is never flagged, only later ones are (deterministic order-based rule)', () => {
     const { valid, pileErrors } = validatePiles([
       { pileId: 'S1', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
-      { pileId: 's1', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+      { pileId: 's1', contractor: 'SMA', ni: '1.0', units: '5', tonnesPerUnit: '40' },
     ]);
     assert.equal(valid, false);
     assert.equal(pileErrors[0].pileId, null);
     assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
   });
 
-  test('G. duplicate Pile ID with DIFFERENT Contractors is still a duplicate -- Contractor is never part of the identity key', () => {
+  test('same Pile ID, same Contractor, but written with different case in EACH field -- still a duplicate (case folded independently per field)', () => {
     const { valid, pileErrors } = validatePiles([
-      { pileId: 'S13_L02', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
-      { pileId: 'S13_L02', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+      { pileId: 'S1', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 's1', contractor: 'sma', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+    ]);
+    assert.equal(valid, false);
+    assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('G. the same Pile ID with DIFFERENT Contractors is now VALID (Owner-clarified composite identity: "L30/MRP" and "L30/TII" are distinct sources)', () => {
+    const { valid, pileErrors } = validatePiles([
+      { pileId: 'L30', contractor: 'MRP', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'L30', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+    ]);
+    assert.equal(valid, true);
+    assert.equal(pileErrors[0].pileId, null);
+    assert.equal(pileErrors[1].pileId, null);
+  });
+
+  test('G2. the same Pile ID with the SAME Contractor is still rejected as a duplicate ("L30/MRP" twice)', () => {
+    const { valid, pileErrors } = validatePiles([
+      { pileId: 'L30', contractor: 'MRP', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'L30', contractor: 'MRP', ni: '1.0', units: '5', tonnesPerUnit: '40' },
     ]);
     assert.equal(valid, false);
     assert.equal(pileErrors[0].pileId, null);
     assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('G3. duplicate detection on the composite identity is case-insensitive and trims outer whitespace on both fields', () => {
+    const { valid, pileErrors } = validatePiles([
+      { pileId: 'L30', contractor: 'MRP', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: '  l30  ', contractor: '  mrp  ', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+    ]);
+    assert.equal(valid, false);
+    assert.equal(pileErrors[1].pileId, 'calculate.validation.pileIdDuplicate');
+  });
+
+  test('G4. the SAME Pile ID appearing under THREE different Contractors is entirely valid (no pairwise false positives)', () => {
+    const { valid, pileErrors } = validatePiles([
+      { pileId: 'L30', contractor: 'MRP', ni: '1.2', units: '10', tonnesPerUnit: '50' },
+      { pileId: 'L30', contractor: 'TII', ni: '1.0', units: '5', tonnesPerUnit: '40' },
+      { pileId: 'L30', contractor: 'SMA', ni: '1.1', units: '8', tonnesPerUnit: '45' },
+    ]);
+    assert.equal(valid, true);
+    pileErrors.forEach((e) => assert.equal(e.pileId, null));
   });
 
   test('a blank Pile ID never falsely triggers a duplicate error against another blank Pile ID -- each independently reports "required"', () => {

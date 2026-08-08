@@ -35,13 +35,16 @@ export default {
   'common.hide': 'Hide',
 
   // Calculate -- see locales/id.js's header comment for the full
-  // calculate.* catalog's staging (Phase 1's "coming later" subtitle is
-  // gone; Recommendation-mode strings are not added yet, Gate A is closed).
+  // calculate.* catalog's staging. Phase 4.1: one continuous page, no
+  // mode tabs, no explicit Calculate Blend button, no duplicated result
+  // section/per-pile breakdown -- see locales/id.js for the full note.
   'calculate.title': 'Calculate',
 
   'calculate.blend.subtitle': 'Operational Blending',
   'calculate.blend.title': 'Blend Calculator',
-  'calculate.blend.calculate': 'Calculate Blend',
+
+  'calculate.blend.incompleteRowsOne': '{count} incomplete row · not included',
+  'calculate.blend.incompleteRowsOther': '{count} incomplete rows · not included',
 
   'calculate.grid.headerPile': 'PILE',
   'calculate.grid.headerNi': 'NI',
@@ -53,17 +56,12 @@ export default {
   'calculate.fields.ni': 'Ni (%)',
   'calculate.fields.units': 'Jumlah Unit',
   'calculate.fields.tonnesPerUnit': 'Tonase / Unit',
-  'calculate.fields.calculatedTonnage': 'Calculated Tonnage',
-  'calculate.fields.oreClass': 'Ore Class',
 
-  'calculate.result.title': 'Blend Result',
-  'calculate.result.finalNi': 'Final Ni',
+  'calculate.result.finalNi': 'SUMPRODUCT NI',
   'calculate.result.totalUnits': 'Total DT',
   'calculate.result.totalTonnage': 'Total Tonnage',
-  'calculate.result.pileBreakdown': 'Pile Breakdown',
   'calculate.result.classBreakdown': 'Class Breakdown',
   'calculate.result.higherGrade': 'Higher Grade',
-  'calculate.result.tonnageShare': '% of Total Tonnage',
   'calculate.result.tonnageLabel': 'Tonnage',
 
   'calculate.validation.pileIdRequired': 'Pile ID is required.',
@@ -80,6 +78,55 @@ export default {
   'calculate.validation.tonnesPerUnitInvalid': 'Tonase / Unit must be a valid number.',
   'calculate.validation.tonnesPerUnitPositive': 'Tonase / Unit must be greater than 0.',
   'calculate.validation.noPositiveTonnage': 'At least one pile must contribute positive tonnage.',
+
+  // V2.4 Phase 4/4.1 -- Recommendation section, now always visible (no
+  // mode switch) -- see locales/id.js's header comment for the full note.
+  'calculate.recommendation.title': 'Blend Recommendation',
+  'calculate.recommendation.dtHint': 'DT = reusable physical fleet assigned to the source.',
+
+  'calculate.recommendation.targetNi': 'Target Ni',
+  'calculate.recommendation.tolerance': 'Tolerance (±)',
+  'calculate.recommendation.calculate': 'Calculate Recommendation',
+
+  'calculate.recommendation.hopperPattern': 'Hopper Pattern',
+  'calculate.recommendation.repeat': 'REPEAT',
+  'calculate.recommendation.lglo': 'LGLO',
+  'calculate.recommendation.load': 'load',
+  'calculate.recommendation.feedRatioHint': 'Repeating hopper load pattern — not total physical fleet count.',
+
+  'calculate.recommendation.estimatedNi': 'ESTIMATED FINAL NI',
+  'calculate.recommendation.deviation': 'Deviation',
+  'calculate.recommendation.withinTolerance': 'Within Tolerance',
+  'calculate.recommendation.toleranceRange': 'Tolerance Range',
+
+  'calculate.recommendation.fleetUtilization': 'Fleet Utilization',
+  'calculate.recommendation.assigned': 'Assigned',
+  'calculate.recommendation.active': 'Active',
+  'calculate.recommendation.surplus': 'Surplus',
+  'calculate.recommendation.relocation': 'Fleet Reallocation',
+
+  'calculate.recommendation.unitRatio': 'Unit Ratio',
+  'calculate.recommendation.tonnageRatio': 'Tonnage Ratio',
+  'calculate.recommendation.hopperSequence': 'Hopper Sequence',
+  'calculate.recommendation.sourceBreakdown': 'Source Fleet Breakdown',
+
+  'calculate.recommendation.targetNotAchievable': 'Target Not Achievable',
+  'calculate.recommendation.bestAttainable': 'Best Attainable',
+  'calculate.recommendation.gap': 'Gap',
+
+  'calculate.recommendation.searchSpaceTooLarge': 'The fleet combinations for this input are too large to compute. Reduce the DT count or number of sources, then try again.',
+  'calculate.recommendation.noFeasibleCandidate': 'No feasible fleet combination could be computed from the current input.',
+  // Shown when Calculate Recommendation is pressed with zero complete
+  // source rows -- Recommendation must not run.
+  'calculate.recommendation.noCompleteSources': 'No complete sources are available to calculate yet. Complete at least one source row (Pile ID, Contractor, Ni, DT, t/DT).',
+
+  'calculate.validation.targetNiRequired': 'Target Ni is required.',
+  'calculate.validation.targetNiInvalid': 'Target Ni must be a valid number.',
+  'calculate.validation.targetNiPositive': 'Target Ni must be greater than 0.',
+  'calculate.validation.toleranceRequired': 'Tolerance is required.',
+  'calculate.validation.toleranceInvalid': 'Tolerance must be a valid number.',
+  'calculate.validation.toleranceNonNegative': 'Tolerance must be 0 or greater.',
+  'calculate.validation.noPhysicalFleet': 'At least one source must have positive physical DT.',
 
   'settings.pageTitle': 'Settings',
   'settings.title': 'Personnel Directory',

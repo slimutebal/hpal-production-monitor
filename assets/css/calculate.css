@@ -1,15 +1,18 @@
-/* Calculate (V2.4 Phase 2 -- Blend Calculator; compact mobile input grid
-   revision). Every selector is scoped under #page-calculate so this file
-   can never leak into Monitor/Report/Settings, and reuses the app's own
-   CSS custom properties (var(--text), var(--accent), var(--glass),
-   var(--glass-border), var(--bad), ...) rather than inventing an isolated
-   palette -- same convention settings.css/report-hync.css establish.
-   Mobile-first; primary target viewport 360-430 px. The pile input grid
-   below is a COMPACT MOBILE TABLE, never a wide desktop table requiring
-   horizontal scroll -- every column width is expressed in `fr` units
-   (proportional shares of whatever space remains after gaps), not fixed
-   pixels or raw percentages, specifically so it can never force overflow
-   at 360 px. */
+/* Calculate (V2.4 -- Blend Calculator + Recommendation, Phase 4.1
+   continuous-flow revision). Every selector is scoped under #page-calculate
+   so this file can never leak into Monitor/Report/Settings, and reuses the
+   app's own CSS custom properties (var(--text), var(--accent), var(--glass),
+   var(--glass-border), var(--bad), var(--good), var(--bg-base), ...)
+   rather than inventing an isolated palette -- same convention
+   settings.css/report-hync.css establish. Mobile-first; primary target
+   viewport 360-430 px. The pile input grid below is a COMPACT MOBILE
+   TABLE, never a wide desktop table requiring horizontal scroll -- every
+   column width is expressed in `fr` units (proportional shares of
+   whatever space remains after gaps), not fixed pixels or raw
+   percentages, specifically so it can never force overflow at 360 px.
+   Calculate is ONE continuous page (live Blend summary -> shared grid ->
+   Recommendation) -- there is no mode switch, so no selector here ever
+   needs to hide/show a whole panel by mode. */
 
 #page-calculate .calculate-shell {
   max-width: 640px;
@@ -240,22 +243,49 @@
   outline-offset: 2px;
 }
 
-#page-calculate .calculate-blend-error {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(248, 113, 113, 0.12);
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  color: var(--bad, #f87171);
-  font-size: 0.82rem;
-}
-
-/* ---- Blend Result ---- */
-#page-calculate .calculate-result-summary {
+/* ---- Live Blend summary (this task's Phase 4.1 revision) -- the ONE
+   authoritative Blend result, replacing both the old explicit "Hitung
+   Blend" button and the large duplicated result section. Sticky so it
+   stays visible while the user scrolls down through the source grid
+   toward Recommendation, for continuous current-Blend-vs-Recommendation
+   comparison.
+   UI polish (later revision): --table-header-bg is only ~85-90% opaque
+   (see its rgba() definitions in index.html), so scrolling grid content
+   was still visibly bleeding through while stuck. Uses --bg-base instead
+   -- the app's fully opaque (alpha-free) surface token, already used the
+   same way for report-hync.css's own opaque modal box -- so nothing
+   behind it is ever visible while stuck, in either theme, with no
+   backdrop-filter/blur needed. */
+#page-calculate .calculate-blend-summary {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 6px;
+  gap: 6px;
+  padding: 6px 0;
+  margin: 0 0 10px;
+  background: var(--bg-base, #0a0e1a);
+}
+#page-calculate .calculate-blend-summary .calculate-result-summary__item {
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+#page-calculate .calculate-blend-summary .calculate-result-summary__item span {
+  font-size: 0.58rem;
+  margin-bottom: 2px;
+}
+#page-calculate .calculate-blend-summary .calculate-result-summary__item strong {
+  font-size: 0.92rem;
+}
+
+/* Small, non-blocking count of source rows currently excluded from the
+   live summary/Recommendation because a field is still incomplete/invalid
+   (this task's Section 5) -- deliberately NOT a large warning banner. */
+#page-calculate .calculate-partial-row-info {
+  margin: 0 0 10px;
+  font-size: 0.7rem;
+  color: var(--muted, #8fa3bd);
 }
 
 #page-calculate .calculate-result-summary__item {
@@ -280,7 +310,6 @@
   color: var(--accent, #38bdf8);
 }
 
-#page-calculate .calculate-pile-breakdown,
 #page-calculate .calculate-class-breakdown {
   display: flex;
   flex-direction: column;
@@ -350,11 +379,12 @@
   color: var(--muted, #8fa3bd);
 }
 
-/* Pile Breakdown repeats what is already visible in the input grid above,
-   so it is a collapsed-by-default native <details> disclosure rather
-   than a second always-visible list -- no JS needed for expand/collapse,
-   accessible by default. */
-#page-calculate .calculate-pile-breakdown-details summary {
+/* Class breakdown (HGLO/MGLO/LGLO/Higher Grade) -- compact, collapsed-by-
+   default secondary Blend detail (this task's Section 17). The old
+   always-visible per-pile breakdown is gone entirely: the grid itself
+   already shows each row's own live Ni/DT/t-DT/tonnage, and the sticky
+   summary above is now the one authoritative Blend result. */
+#page-calculate .calculate-class-breakdown-details summary {
   cursor: pointer;
   font-size: 0.68rem;
   font-weight: 700;
@@ -363,8 +393,17 @@
   color: var(--muted, #8fa3bd);
   margin: 16px 0 8px;
 }
-#page-calculate .calculate-pile-breakdown-details .calculate-pile-breakdown {
+#page-calculate .calculate-class-breakdown-details .calculate-class-breakdown {
   margin-top: 8px;
+}
+
+/* Subtle placeholders on the trailing blank row's Pile ID/Contractor
+   inputs (this task's Section 24 backlog note) -- muted, never competing
+   visually with real entered text. */
+#page-calculate .calculate-cell-input::placeholder,
+#page-calculate .calculate-recommendation-input::placeholder {
+  color: var(--muted, #8fa3bd);
+  opacity: 0.55;
 }
 
 /* Narrower than 360 px is not a supported width, but this keeps the grid
@@ -385,5 +424,296 @@
     padding-left: 6px;
     padding-right: 6px;
     font-size: 0.66rem;
+  }
+}
+
+/* ==================================================
+   V2.4 PHASE 4.1 -- RECOMMENDATION SECTION (continuous-flow revision)
+   Target Ni/Tolerance controls and the Hopper Pattern/status/fleet/
+   ratio/relocation result, now always visible directly below the source
+   grid -- no mode switch. Reuses the same theme tokens and compact-card
+   language as the live Blend summary above -- no isolated palette.
+================================================== */
+
+/* ---- Recommendation controls ---- */
+#page-calculate .calculate-recommendation-hint {
+  font-size: 0.7rem;
+  color: var(--muted, #8fa3bd);
+  line-height: 1.4;
+  margin: 10px 0 14px;
+}
+
+#page-calculate .calculate-recommendation-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+#page-calculate .calculate-recommendation-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#page-calculate .calculate-recommendation-field__label {
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-recommendation-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  color: var(--text, inherit);
+  border-radius: 8px;
+  padding: 9px 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  min-height: 42px;
+}
+#page-calculate .calculate-recommendation-input:focus {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 1px;
+  border-color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-recommendation-input--invalid {
+  border-color: var(--bad, #f87171);
+}
+
+#page-calculate .calculate-recommendation-field-error,
+#page-calculate .calculate-recommendation-error {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: var(--bad, #f87171);
+  font-size: 0.82rem;
+}
+
+/* ---- Recommendation status card -- pairs color with an explicit
+   glyph + status word (never color-only, this task's Section 10/28). ---- */
+#page-calculate .calculate-recommendation-status {
+  border-radius: 14px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+#page-calculate .calculate-recommendation-status--within {
+  border-color: var(--good, #34d399);
+}
+#page-calculate .calculate-recommendation-status--not-achievable {
+  border-color: var(--bad, #f87171);
+}
+#page-calculate .calculate-recommendation-status__badge {
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+#page-calculate .calculate-recommendation-status--within .calculate-recommendation-status__badge {
+  color: var(--good, #34d399);
+}
+#page-calculate .calculate-recommendation-status--not-achievable .calculate-recommendation-status__badge {
+  color: var(--bad, #f87171);
+}
+#page-calculate .calculate-recommendation-status__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#page-calculate .calculate-recommendation-status__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-recommendation-status__row strong {
+  color: var(--text, inherit);
+}
+
+/* ---- Hopper Pattern -- the single most visually prominent
+   Recommendation result (this task's Section 8). ---- */
+#page-calculate .calculate-hopper-pattern {
+  text-align: center;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  padding: 18px 14px;
+  margin-bottom: 14px;
+}
+#page-calculate .calculate-hopper-pattern__label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #8fa3bd);
+  margin-bottom: 6px;
+}
+#page-calculate .calculate-hopper-pattern__ratio {
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: var(--accent, #38bdf8);
+  line-height: 1.1;
+  margin-bottom: 10px;
+}
+#page-calculate .calculate-hopper-pattern__groups {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+#page-calculate .calculate-hopper-pattern__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#page-calculate .calculate-hopper-pattern__group span {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-hopper-pattern__group strong {
+  font-size: 0.9rem;
+  color: var(--text, inherit);
+}
+#page-calculate .calculate-hopper-pattern__repeat {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--muted, #8fa3bd);
+}
+/* Prevents "1 : 2" from being misread as an exact physical-fleet count
+   (this task's Section 9) -- concise, visually secondary. */
+#page-calculate .calculate-recommendation-feed-hint {
+  font-size: 0.66rem;
+  color: var(--muted, #8fa3bd);
+  line-height: 1.4;
+  margin: 10px 0 0;
+}
+
+/* ---- Estimated Ni + Fleet Utilization summary row -- reuses
+   .calculate-result-summary__item's existing card styling (only the
+   container's column count differs). ---- */
+#page-calculate .calculate-recommendation-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 4px;
+}
+#page-calculate .calculate-recommendation-utilization-pct {
+  text-align: right;
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+  margin: 0 0 14px;
+}
+
+/* ---- Hopper Sequence ---- */
+#page-calculate .calculate-hopper-sequence__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#page-calculate .calculate-hopper-sequence__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  font-size: 0.78rem;
+}
+#page-calculate .calculate-hopper-sequence__repeat {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted, #8fa3bd);
+  margin: 6px 0 0;
+}
+
+/* ---- Unit Ratio / Tonnage Ratio ---- */
+#page-calculate .calculate-recommendation-ratios {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+#page-calculate .calculate-recommendation-ratio-item {
+  background: var(--glass, rgba(255, 255, 255, 0.055));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  padding: 10px;
+  text-align: center;
+}
+#page-calculate .calculate-recommendation-ratio-item span {
+  display: block;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #8fa3bd);
+  margin-bottom: 4px;
+}
+#page-calculate .calculate-recommendation-ratio-item strong {
+  font-size: 0.9rem;
+  color: var(--text, inherit);
+}
+
+/* ---- Source fleet breakdown -- collapsed by default, same convention
+   as Blend's Pile Breakdown (this task's Section 23). ---- */
+#page-calculate .calculate-recommendation-sources-details summary {
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+  margin: 16px 0 8px;
+}
+#page-calculate .calculate-recommendation-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+#page-calculate .calculate-recommendation-source-row__surplus {
+  color: var(--accent2, #fbbf24);
+}
+
+/* ---- Same-Contractor relocation detail (this task's Section 14) ---- */
+#page-calculate .calculate-recommendation-relocations {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#page-calculate .calculate-recommendation-relocation-row__path {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+}
+
+@media (max-width: 374px) {
+  #page-calculate .calculate-hopper-pattern__ratio {
+    font-size: 2.1rem;
+  }
+  #page-calculate .calculate-recommendation-controls {
+    gap: 6px;
+  }
+  #page-calculate .calculate-recommendation-input {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 0.78rem;
   }
 }
