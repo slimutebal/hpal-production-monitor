@@ -2,10 +2,15 @@
 // global namespace so it cannot collide with Monitor's inline script.
 
 const DEFAULT_ROUTE = 'monitor';
-// Exact match only: "#/monitor", "#/report", "#/settings" — nothing else.
-// A trailing segment, suffix, or extra characters (e.g. "#/monitor-extra",
-// "#/report123", "#/settings/test") must fall through to the default route.
-const ROUTE_PATTERN = /^#\/(monitor|report|settings)$/;
+// Exact match only: "#/monitor", "#/calculate", "#/report", "#/settings" —
+// nothing else. A trailing segment, suffix, or extra characters (e.g.
+// "#/monitor-extra", "#/calculate/foo", "#/calculate-extra",
+// "#/report123", "#/settings/test") must fall through to the default
+// route. V2.4 Phase 1 adds "calculate" to this enumeration (see
+// docs/V2.4_CALCULATE_AND_BLENDING_RECOMMENDATION_ARCHITECTURE.md Section
+// 8) -- same closed-enumeration pattern as the other three, not an
+// open-ended route scheme.
+const ROUTE_PATTERN = /^#\/(monitor|calculate|report|settings)$/;
 
 let currentRoute = null;
 const listeners = new Set();

@@ -16,6 +16,7 @@ import {
   initBottomNavigationAutoHide,
   showBottomNavigation,
 } from './components/bottom-navigation.js';
+import { initCalculatePage } from './pages/calculate/calculate-page.js';
 import { initReportPage } from './pages/report/report-page.js';
 import { initSettingsPage } from './pages/settings/settings-page.js';
 
@@ -58,6 +59,7 @@ function init() {
 
   mountBottomNavigation();
   initBottomNavigationAutoHide();
+  initCalculatePage();
   initReportPage();
   initSettingsPage();
 
@@ -77,15 +79,18 @@ function init() {
     }
   });
 
-  // V2.3 Phase 8 -- the one and only #/report route guard (architecture
-  // doc section 5/10): MONITOR_ONLY is always denied, FULL_ACCESS is always
-  // allowed. On deny, deterministically redirect to #/settings and ask it
-  // to open/focus the License card with the "requires Full Access" message
-  // -- never to #/monitor, never an unspecified fallback. This is a
-  // route-level guard only; report-page.js's own goToStep2()/goToStep3()
-  // independently re-check hasFullAccess() at the action boundary, so a
-  // direct programmatic call (bypassing the router entirely) is still
-  // blocked even if this guard were somehow skipped.
+  // V2.3 Phase 8 -- the #/report route guard (architecture doc section
+  // 5/10), joined by V2.4 Phase 1's identical #/calculate guard below
+  // (V2.4 architecture doc Section 8/10): MONITOR_ONLY is always denied,
+  // FULL_ACCESS is always allowed. On deny, deterministically redirect to
+  // #/settings and ask it to open/focus the License card with the
+  // "requires Full Access" message -- never to #/monitor, never an
+  // unspecified fallback. This is a route-level guard only;
+  // report-page.js's own goToStep2()/goToStep3() and calculate-page.js's
+  // own requireFullAccessForCalculateAction() independently re-check
+  // hasFullAccess() at the action boundary, so a direct programmatic call
+  // (bypassing the router entirely) is still blocked even if a route
+  // guard were somehow skipped.
   registerRouteGuard(
     'report',
     () => hasFullAccess(),
@@ -94,16 +99,26 @@ function init() {
       requestFullAccessAttention('route-report');
     },
   );
+  registerRouteGuard(
+    'calculate',
+    () => hasFullAccess(),
+    () => {
+      navigateTo('settings');
+      requestFullAccessAttention('route-calculate');
+    },
+  );
 
-  // If a license is removed while Report is the active route (Settings'
-  // own Remove License action, the only way FULL_ACCESS can be revoked
-  // without a route change), the route guard above never re-runs on its
-  // own -- nothing changed window.location.hash. This explicitly performs
-  // the "if currently on Report: redirect immediately to Settings"
-  // requirement for that specific case; the route guard still handles
-  // every other unlicensed #/report entry attempt.
+  // If a license is removed while Report or Calculate is the active route
+  // (Settings' own Remove License action, the only way FULL_ACCESS can be
+  // revoked without a route change), neither route guard above re-runs on
+  // its own -- nothing changed window.location.hash. This explicitly
+  // performs the "if currently on a FULL_ACCESS-only route: redirect
+  // immediately to Settings" requirement for that specific case; the
+  // route guards still handle every other unlicensed entry attempt. One
+  // shared subscription for both routes, not a duplicate system per route.
   subscribeAccessChange(() => {
-    if (!hasFullAccess() && getCurrentRoute() === 'report') {
+    const route = getCurrentRoute();
+    if (!hasFullAccess() && (route === 'report' || route === 'calculate')) {
       navigateTo('settings');
     }
   });

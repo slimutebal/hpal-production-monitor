@@ -24,6 +24,27 @@ const NAV_ITEMS = [
       '</svg>',
   },
   {
+    route: 'calculate',
+    labelKey: 'nav.calculate',
+    // V2.4 Phase 1: Calculate is a FULL_ACCESS-only feature (architecture
+    // doc Section 10), positioned between Monitor and Report per the
+    // Owner-approved nav order (Monitor | Calculate | Report | Settings)
+    // -- hidden entirely under MONITOR_ONLY, same UX-only posture as
+    // Report immediately below: the route guard (app.js/router.js) and
+    // calculate-page.js's own requireFullAccessForCalculateAction() are
+    // what actually block access, never this hidden nav item alone.
+    fullAccessOnly: true,
+    icon:
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<rect x="6" y="3" width="12" height="18" rx="2"/>' +
+      '<line x1="8" y1="7" x2="16" y2="7"/>' +
+      '<circle cx="9" cy="12" r="1.2"/>' +
+      '<circle cx="15" cy="12" r="1.2"/>' +
+      '<circle cx="9" cy="16" r="1.2"/>' +
+      '<circle cx="15" cy="16" r="1.2"/>' +
+      '</svg>',
+  },
+  {
     route: 'report',
     labelKey: 'nav.report',
     // V2.3 Phase 8: Report is a FULL_ACCESS-only feature (Owner UX

@@ -32,6 +32,11 @@
 // section 12.3 requires it to stay independent of UI locale.
 export default {
   'nav.monitor': 'Monitor',
+  // V2.4 Phase 1: kept identical in id/en, matching nav.monitor/
+  // nav.report/nav.settings's existing convention of NOT translating
+  // top-level section names (they are stable product feature names, not
+  // generic words) -- see calculate.title below for the same reasoning.
+  'nav.calculate': 'Calculate',
   'nav.report': 'Report',
   'nav.settings': 'Settings',
 
@@ -56,6 +61,12 @@ export default {
   'common.filterAll': 'Semua',
   'common.show': 'Tampilkan',
   'common.hide': 'Sembunyikan',
+
+  // Calculate (V2.4 Phase 1 -- shell/placeholder only; the full
+  // calculate.* catalog for Blend/Recommendation is a later phase, see
+  // architecture doc Section 33).
+  'calculate.title': 'Calculate',
+  'calculate.subtitle': 'Perhitungan blending operasional akan tersedia pada fase V2.4 berikutnya.',
 
   'settings.pageTitle': 'Pengaturan',
   'settings.title': 'Personnel Directory',

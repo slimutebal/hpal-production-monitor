@@ -1,5 +1,7 @@
 // router.js route-guard tests (V2.3 Phase 8, Simple Local License and
-// Access Control) -- registerRouteGuard()/applyRoute() denial + redirect
+// Access Control; extended in V2.4 Phase 1 for the new #/calculate route
+// -- see docs/V2.4_CALCULATE_AND_BLENDING_RECOMMENDATION_ARCHITECTURE.md
+// Section 8) -- registerRouteGuard()/applyRoute() denial + redirect
 // behavior, independent of any particular license implementation (a
 // trivial in-test guard function stands in for licenseService.hasFullAccess()).
 //
@@ -31,9 +33,10 @@ function installMockDom(initialHash) {
   let hash = initialHash || '';
 
   const pageMonitor = { id: 'page-monitor', classList: { active: false, toggle(cls, force) { if (cls === 'is-active') this.active = force; } } };
+  const pageCalculate = { id: 'page-calculate', classList: { active: false, toggle(cls, force) { if (cls === 'is-active') this.active = force; } } };
   const pageReport = { id: 'page-report', classList: { active: false, toggle(cls, force) { if (cls === 'is-active') this.active = force; } } };
   const pageSettings = { id: 'page-settings', classList: { active: false, toggle(cls, force) { if (cls === 'is-active') this.active = force; } } };
-  const pages = [pageMonitor, pageReport, pageSettings];
+  const pages = [pageMonitor, pageCalculate, pageReport, pageSettings];
 
   globalThis.window = {
     location: {
@@ -56,7 +59,7 @@ function installMockDom(initialHash) {
     },
   };
 
-  return { pages, pageMonitor, pageReport, pageSettings };
+  return { pages, pageMonitor, pageCalculate, pageReport, pageSettings };
 }
 
 async function freshRouter() {
@@ -134,5 +137,88 @@ describe('registerRouteGuard() + applyRoute() denial/redirect', () => {
     registerRouteGuard('report', () => false, () => {});
     initRouter();
     assert.equal(getCurrentRoute(), 'monitor');
+  });
+});
+
+// V2.4 Phase 1: #/calculate joins the router's closed route enumeration
+// (architecture doc Section 8) between monitor and report. These tests
+// mirror the equivalent 'report' cases above one-for-one, proving the
+// SAME generic guard mechanism (not a special case) also covers the new
+// route, plus the route-resolution/fallback rules Section 8 requires
+// explicitly (#/calculate/foo and #/calculate-extra must both fall back
+// to monitor, exactly like the existing #/monitor-extra/#/report123 rules).
+describe('#/calculate route (V2.4 Phase 1)', () => {
+  test('#/calculate resolves as Calculate when unguarded', async () => {
+    const dom = installMockDom('#/calculate');
+    const { initRouter, getCurrentRoute } = await freshRouter();
+    initRouter();
+    assert.equal(getCurrentRoute(), 'calculate');
+    assert.equal(dom.pageCalculate.classList.active, true);
+  });
+
+  test('a guard returning true allows #/calculate through', async () => {
+    const dom = installMockDom('#/calculate');
+    const { initRouter, getCurrentRoute, registerRouteGuard } = await freshRouter();
+    registerRouteGuard('calculate', () => true, () => {
+      throw new Error('onDeny must not be called when the guard allows');
+    });
+    initRouter();
+    assert.equal(getCurrentRoute(), 'calculate');
+    assert.equal(dom.pageCalculate.classList.active, true);
+  });
+
+  test('a guard returning false denies #/calculate and never activates its page', async () => {
+    const dom = installMockDom('#/calculate');
+    const { initRouter, getCurrentRoute, registerRouteGuard, navigateTo } = await freshRouter();
+    let onDenyCalls = 0;
+    registerRouteGuard('calculate', () => false, () => {
+      onDenyCalls += 1;
+      navigateTo('settings');
+    });
+    initRouter();
+
+    assert.equal(onDenyCalls, 1);
+    assert.equal(dom.pageCalculate.classList.active, false);
+    assert.equal(getCurrentRoute(), 'settings');
+    assert.equal(dom.pageSettings.classList.active, true);
+  });
+
+  test('#/calculate and #/report can be guarded independently -- denying one never denies the other', async () => {
+    const dom = installMockDom('#/calculate');
+    const { initRouter, getCurrentRoute, registerRouteGuard, navigateTo } = await freshRouter();
+    registerRouteGuard('calculate', () => false, () => navigateTo('settings'));
+    registerRouteGuard('report', () => {
+      throw new Error('the report guard must never be consulted for a #/calculate navigation');
+    }, () => {});
+    initRouter();
+    assert.equal(getCurrentRoute(), 'settings');
+    assert.equal(dom.pageCalculate.classList.active, false);
+  });
+
+  test('#/calculate/foo falls back to monitor (trailing segment)', async () => {
+    const dom = installMockDom('#/calculate/foo');
+    const { initRouter, getCurrentRoute } = await freshRouter();
+    initRouter();
+    assert.equal(getCurrentRoute(), 'monitor');
+    assert.equal(dom.pageMonitor.classList.active, true);
+    assert.equal(dom.pageCalculate.classList.active, false);
+  });
+
+  test('#/calculate-extra falls back to monitor (suffix, not an exact match)', async () => {
+    const dom = installMockDom('#/calculate-extra');
+    const { initRouter, getCurrentRoute } = await freshRouter();
+    initRouter();
+    assert.equal(getCurrentRoute(), 'monitor');
+    assert.equal(dom.pageCalculate.classList.active, false);
+  });
+
+  test('the existing monitor/report/settings routes remain valid and unaffected by the new pattern', async () => {
+    for (const route of ['monitor', 'report', 'settings']) {
+      const dom = installMockDom(`#/${route}`);
+      const { initRouter, getCurrentRoute } = await freshRouter();
+      initRouter();
+      assert.equal(getCurrentRoute(), route);
+      assert.equal(dom.pages.find((p) => p.id === `page-${route}`).classList.active, true);
+    }
   });
 });

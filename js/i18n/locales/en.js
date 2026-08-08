@@ -8,6 +8,7 @@
 // (and does not yet cover) in this phase.
 export default {
   'nav.monitor': 'Monitor',
+  'nav.calculate': 'Calculate',
   'nav.report': 'Report',
   'nav.settings': 'Settings',
 
@@ -32,6 +33,11 @@ export default {
   'common.filterAll': 'All',
   'common.show': 'Show',
   'common.hide': 'Hide',
+
+  // Calculate (V2.4 Phase 1 -- shell/placeholder only; see locales/id.js's
+  // header comment for the full calculate.* catalog's staging).
+  'calculate.title': 'Calculate',
+  'calculate.subtitle': 'Operational blending calculations will be available in the next V2.4 phase.',
 
   'settings.pageTitle': 'Settings',
   'settings.title': 'Personnel Directory',
