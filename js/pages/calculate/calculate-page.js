@@ -54,7 +54,9 @@ import { classifyOre } from '../../shared/ore-classification.js';
 import { calculatePileTonnage, calculateWeightedBlend } from './blend-calculator.js';
 import { validatePiles, toNumericPile, isRowBlank } from './calculate-validation.js';
 import { findBlendRecommendations, DEFAULT_RECOMMENDATION_TOLERANCE } from './blending-recommendation.js';
+import { deriveOperationalHopperPattern } from './hopper-pattern.js';
 import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT, MATERIAL_ACTION_STOP } from './recommendation-actions.js';
+import { calculateRequiredNewDomeNi, findQualifyingSources } from './planned-blend-recovery.js';
 
 const ORE_CLASSES = ['HGLO', 'MGLO', 'LGLO'];
 const EM_DASH = '—';
@@ -87,6 +89,26 @@ let toleranceRaw = '';
 let recommendationFieldErrors = null; // null, or { targetNi, tolerance, fleet } i18n keys
 let recommendationEngineErrorKey = null; // null, or an i18n key (SEARCH_SPACE_TOO_LARGE / NO_FEASIBLE_CANDIDATE / no complete sources)
 let lastRecommendationResult = null; // null, or the ok:true result from findBlendRecommendations()
+
+// Planned Blend Recovery (V2.4 Phase 6) -- only ever meaningful while
+// lastRecommendationResult.status === 'TARGET_NOT_ACHIEVABLE' (this
+// task's Section 2). Reset to this exact blank state every time a FRESH
+// Recommendation is calculated or cleared (resetRecoveryState() below),
+// so a Recovery answer/scenario from a previous, now-irrelevant
+// Recommendation is never carried over (this task's Section 20 "no stale
+// baseline"). `recoveryEls` holds direct DOM references into the
+// Recovery section's OWN subtree (parallel to `rowRefs` for grid rows)
+// so editing Added DT/Tonnes-per-DT can patch just the Recovery result
+// in place -- this task's Section 19 requires that edit to clear ONLY
+// the Recovery result, never the whole Recommendation/Material/Fleet
+// Actions -- without needing a full buildRecommendationResultChildren()
+// rebuild. Always null whenever no Recovery section is currently
+// rendered.
+let recoveryAddedDtRaw = '';
+let recoveryTonnesPerDtRaw = '';
+let recoveryFieldErrors = null; // null, or { addedUnitsError, tonnesPerUnitError } i18n keys
+let recoveryResult = null; // null, or the ok:true result from calculateRequiredNewDomeNi()
+let recoveryEls = null;
 
 export function initCalculatePage() {
   page = document.getElementById('page-calculate');
@@ -769,6 +791,13 @@ function buildMetaSpan(text) {
 function handleCalculateRecommendation() {
   if (!requireFullAccessForCalculateAction()) return;
 
+  // Every fresh Recommendation calculation starts Recovery from a clean
+  // slate (this task's Section 20 "no stale baseline") -- whatever was
+  // typed/computed for a previous, now-irrelevant Recommendation must
+  // never silently carry over, even if the new one also turns out to be
+  // TARGET_NOT_ACHIEVABLE.
+  resetRecoveryState();
+
   const completeRows = getCompleteRows();
 
   if (completeRows.length === 0) {
@@ -827,12 +856,15 @@ function handleCalculateRecommendation() {
 // recomputeLiveBlend()), and every Target Ni/Tolerance edit, so a stale
 // result is never left on screen looking like it still matches the
 // current inputs. No-ops (and skips re-rendering) when there is nothing
-// to clear.
+// to clear. Planned Blend Recovery (V2.4 Phase 6, this task's Section 19)
+// disappears at the exact same time -- it only ever exists as a subtree
+// of the Recommendation result this function is about to hide/clear.
 function clearRecommendationResult() {
   if (!lastRecommendationResult && !recommendationFieldErrors && !recommendationEngineErrorKey) return;
   lastRecommendationResult = null;
   recommendationFieldErrors = null;
   recommendationEngineErrorKey = null;
+  resetRecoveryState();
   renderRecommendationFieldError();
   renderRecommendationEngineError();
   renderRecommendationResult();
@@ -886,12 +918,28 @@ function buildRecommendationResultChildren(result) {
   const { candidate } = result;
   const nodes = [];
 
-  nodes.push(buildRecommendationStatusCard(result));
-  nodes.push(buildHopperPatternCard(candidate));
+  // OPERATIONAL HOPPER PATTERN (V2.4 Phase 6.1 -- Owner correction:
+  // "PHYSICAL FLEET ALLOCATION != HOPPER LOAD PATTERN"). Derived ONCE here
+  // from the already-selected `candidate`, then used everywhere the
+  // prominent "what should the operator actually feed" numbers are shown
+  // (the Hopper Pattern card itself, the Hopper Sequence, the within-
+  // tolerance status-card Estimated Ni/Deviation, and the summary strip's
+  // Estimasi Akhir Ni) -- this task's Section 12: "the main operator-facing
+  // Estimated Final Ni must correspond to the displayed Hopper Pattern",
+  // never a second, confusingly-different primary value. `candidate`
+  // itself (unitRatio/estimatedNi/totalActiveUnits/relocations/etc.) is
+  // NEVER overwritten or hidden -- it stays exactly as before for Fleet
+  // Utilization, the Ratios row (physical Unit Ratio, deliberately kept
+  // separate/secondary), Material/Fleet Actions, and Planned Blend
+  // Recovery (this task's Sections 10/13/22).
+  const hopperPattern = deriveOperationalHopperPattern({ candidate, targetNi: result.targetNi, tolerance: result.tolerance });
+
+  nodes.push(buildRecommendationStatusCard(result, hopperPattern));
+  nodes.push(buildHopperPatternCard(hopperPattern));
 
   const summary = document.createElement('div');
   summary.className = 'calculate-recommendation-summary';
-  summary.appendChild(buildSummaryItem('calculate.recommendation.estimatedNi', `${candidate.estimatedNi.toFixed(3)}%`, 'calculate-recommendation-estimated-ni'));
+  summary.appendChild(buildSummaryItem('calculate.recommendation.estimatedNi', `${hopperPattern.estimatedNi.toFixed(3)}%`, 'calculate-recommendation-estimated-ni'));
   summary.appendChild(buildSummaryItem('calculate.recommendation.fleetUtilization', `${fmtRit(candidate.totalActiveUnits)} / ${fmtRit(candidate.totalFleetUnits)} DT`, 'calculate-recommendation-fleet-utilization'));
   nodes.push(summary);
 
@@ -904,34 +952,56 @@ function buildRecommendationResultChildren(result) {
   // UNAMBIGUOUS -- never a decorative/incorrect expansion of a multi-
   // source-per-class candidate. When ambiguous, the source breakdown
   // below already shows active units per source.
-  const sequenceEntries = buildHopperSequenceEntries(candidate);
+  const sequenceEntries = buildHopperSequenceEntries(candidate, hopperPattern);
   if (sequenceEntries) {
     nodes.push(buildHopperSequenceCard(sequenceEntries));
   }
 
+  // Ratios row deliberately stays on candidate.unitRatio/tonnageRatio --
+  // the PHYSICAL active-fleet ratio (this task's Section 10:
+  // "physicalFleetRatio: 5:14 and hopperPattern: 1:3 must be
+  // representable simultaneously"). It is visually secondary to the
+  // Hopper Pattern card above it, so showing both here is engineering
+  // detail, not a confusing duplicate primary value.
   nodes.push(buildRatiosRow(candidate));
   nodes.push(buildSourceBreakdownDetails(candidate));
 
+  // PENYESUAIAN FLEET -> AKSI FLEET -> AKSI MATERIAL (this task's Section
+  // 16/18-20): relocation/fleet-planning detail comes first, then what
+  // each physical DT should do, then material interpretation last -- this
+  // matches the field workflow order, not an arbitrary listing.
   if (candidate.relocations.length > 0) {
     nodes.push(buildRelocationSection(candidate));
   }
 
   // MATERIAL ACTIONS / FLEET ACTIONS (V2.4 Phase 5) -- always derived
   // fresh from THIS `result` (the already-selected primary Recommendation
-  // candidate), never cached separately -- see recommendation-actions.js's
-  // own header comment for the hard "derived after selection, never
-  // circular" rule this maintains. Rendered last, after Hopper Pattern and
-  // every other existing Recommendation detail (this task's Section 29:
-  // "Hopper Pattern remains more visually prominent than action detail").
+  // candidate), never cached separately, and NEVER re-derived from
+  // `hopperPattern` -- see recommendation-actions.js's own header comment
+  // for the hard "derived after selection, never circular" rule this
+  // maintains, and this task's Section 13: Material/Fleet Actions keep
+  // their Phase 5 semantics unchanged regardless of how Hopper Pattern is
+  // now displayed. Fleet Actions renders BEFORE Material Actions (this
+  // task's Section 16 order correction).
   const actions = deriveRecommendationActions(result);
-  nodes.push(buildMaterialActionsSection(actions));
   nodes.push(buildFleetActionsSection(actions));
+  nodes.push(buildMaterialActionsSection(actions));
+
+  // PLANNED BLEND RECOVERY (V2.4 Phase 6) -- rendered LAST, after every
+  // existing Recommendation detail and Material/Fleet Actions (this task's
+  // Section 21), and only while the target is unreachable (this task's
+  // Section 2). resetRecoveryState() already guarantees recoveryEls is
+  // null whenever this branch is not taken (called from both
+  // handleCalculateRecommendation() and clearRecommendationResult() before
+  // this function ever runs).
+  if (result.status === 'TARGET_NOT_ACHIEVABLE') {
+    nodes.push(buildRecoverySection(result));
+  }
 
   return nodes;
 }
 
-function buildRecommendationStatusCard(result) {
-  const candidate = result.candidate;
+function buildRecommendationStatusCard(result, hopperPattern) {
   const isOk = result.status === 'OK';
 
   const card = document.createElement('div');
@@ -950,13 +1020,21 @@ function buildRecommendationStatusCard(result) {
   rows.appendChild(buildStatusRow('calculate.recommendation.tolerance', `±${result.tolerance.toFixed(3)}%`));
 
   if (isOk) {
-    rows.appendChild(buildStatusRow('calculate.recommendation.estimatedNi', `${candidate.estimatedNi.toFixed(3)}%`));
-    rows.appendChild(buildStatusRow('calculate.recommendation.deviation', formatSignedNi(candidate.deviation)));
+    // Uses hopperPattern (this task's Section 12), never candidate directly
+    // -- this is the SAME Estimated Ni/Deviation the Hopper Pattern card
+    // below is telling the operator to execute, so there is only ever one
+    // "Estimasi Akhir Ni" concept on screen for a within-tolerance result.
+    rows.appendChild(buildStatusRow('calculate.recommendation.estimatedNi', `${hopperPattern.estimatedNi.toFixed(3)}%`));
+    rows.appendChild(buildStatusRow('calculate.recommendation.deviation', formatSignedNi(hopperPattern.deviation)));
     const rangeLow = (result.targetNi - result.tolerance).toFixed(3);
     const rangeHigh = (result.targetNi + result.tolerance).toFixed(3);
     rows.appendChild(buildStatusRow('calculate.recommendation.toleranceRange', `${rangeLow} – ${rangeHigh}%`));
   } else {
-    // Target Not Achievable -- Best Attainable Ni/Gap only, NEVER
+    // Target Not Achievable -- Best Attainable Ni/Gap stay based on the
+    // selected PHYSICAL candidate (result.bestAttainableNi/result.gap),
+    // never on hopperPattern (this task's Section 13/22: the achievability
+    // verdict and the Material/Fleet Action + Recovery baseline it feeds
+    // must never be silently swapped for a small-pattern number). NEVER
     // presented as though it were a within-tolerance result.
     rows.appendChild(buildStatusRow('calculate.recommendation.bestAttainable', `${result.bestAttainableNi.toFixed(3)}%`));
     rows.appendChild(buildStatusRow('calculate.recommendation.gap', formatSignedNi(result.gap)));
@@ -983,11 +1061,16 @@ function formatSignedNi(value) {
 }
 
 // HOPPER PATTERN -- the most visually prominent Recommendation result.
-// Uses candidate.unitRatio (already simplified by the pure engine)
-// directly -- never recalculated here. The feed-ratio hint directly below
-// it exists specifically so `1 : 2` is never misread as "exactly 1
-// physical truck : 2 physical trucks".
-function buildHopperPatternCard(candidate) {
+// Uses the OPERATIONAL hopperPattern (hopper-pattern.js's
+// deriveOperationalHopperPattern(), this task's Part A) -- deliberately
+// NEVER candidate.unitRatio (the physical active-fleet ratio) directly,
+// since a physical allocation like 5:14 does not automatically mean the
+// field feed instruction should be "5 : 14" (Owner correction: "PHYSICAL
+// FLEET ALLOCATION != HOPPER LOAD PATTERN"). The feed-ratio hint directly
+// below it exists specifically so `1 : 2` is never misread as "exactly 1
+// physical truck : 2 physical trucks" -- doubly true now that the pattern
+// can legitimately differ from the truck count.
+function buildHopperPatternCard(hopperPattern) {
   const card = document.createElement('div');
   card.className = 'calculate-hopper-pattern';
 
@@ -998,13 +1081,13 @@ function buildHopperPatternCard(candidate) {
 
   const ratio = document.createElement('div');
   ratio.className = 'calculate-hopper-pattern__ratio';
-  ratio.textContent = `${fmtRit(candidate.unitRatio.higher)} : ${fmtRit(candidate.unitRatio.lglo)}`;
+  ratio.textContent = `${fmtRit(hopperPattern.higherLoads)} : ${fmtRit(hopperPattern.lgloLoads)}`;
   card.appendChild(ratio);
 
   const groups = document.createElement('div');
   groups.className = 'calculate-hopper-pattern__groups';
-  groups.appendChild(buildHopperGroupLabel(t('calculate.result.higherGrade'), candidate.unitRatio.higher));
-  groups.appendChild(buildHopperGroupLabel(t('calculate.recommendation.lglo'), candidate.unitRatio.lglo));
+  groups.appendChild(buildHopperGroupLabel(t('calculate.result.higherGrade'), hopperPattern.higherLoads));
+  groups.appendChild(buildHopperGroupLabel(t('calculate.recommendation.lglo'), hopperPattern.lgloLoads));
   card.appendChild(groups);
 
   const repeat = document.createElement('div');
@@ -1034,22 +1117,28 @@ function buildHopperGroupLabel(name, loads) {
 
 // Deterministic per-pile Hopper Sequence. Unambiguous ONLY when each grade
 // side (Higher Grade vs LGLO) has at most one ACTIVE contributing source
-// -- in that case the simplified unitRatio counts map onto those sources
-// directly. With more than one active source on either side, there is no
-// single correct per-pile split of the simplified ratio, so this returns
-// null and the caller simply omits the sequence card rather than showing
-// a misleading invented ordering.
-function buildHopperSequenceEntries(candidate) {
+// -- in that case the OPERATIONAL hopperPattern's loads counts (this
+// task's Part A -- never the physical unitRatio) map onto those sources
+// directly, since with a single active source per side the group's
+// effective Ni/tonnes-per-load IS that one source's own values, so the
+// pattern loads unambiguously describe THAT source. With more than one
+// active source on either side, there is no single correct per-pile split,
+// so this returns null and the caller simply omits the sequence card
+// rather than showing a misleading invented ordering. A source appearing
+// here always has activeUnits > 0, so it is always Material USE (this
+// task's Section 13) -- the Hopper Sequence can never point at a STOPped
+// source.
+function buildHopperSequenceEntries(candidate, hopperPattern) {
   const higherActive = candidate.sources.filter((s) => HIGHER_GRADE_CLASSES.has(s.oreClass) && s.activeUnits > 0);
   const lgloActive = candidate.sources.filter((s) => s.oreClass === 'LGLO' && s.activeUnits > 0);
   if (higherActive.length > 1 || lgloActive.length > 1) return null;
 
   const entries = [];
-  if (higherActive.length === 1 && candidate.unitRatio.higher > 0) {
-    entries.push({ contractor: higherActive[0].contractor, pileId: higherActive[0].pileId, loads: candidate.unitRatio.higher });
+  if (higherActive.length === 1 && hopperPattern.higherLoads > 0) {
+    entries.push({ contractor: higherActive[0].contractor, pileId: higherActive[0].pileId, loads: hopperPattern.higherLoads });
   }
-  if (lgloActive.length === 1 && candidate.unitRatio.lglo > 0) {
-    entries.push({ contractor: lgloActive[0].contractor, pileId: lgloActive[0].pileId, loads: candidate.unitRatio.lglo });
+  if (lgloActive.length === 1 && hopperPattern.lgloLoads > 0) {
+    entries.push({ contractor: lgloActive[0].contractor, pileId: lgloActive[0].pileId, loads: hopperPattern.lgloLoads });
   }
   return entries.length > 0 ? entries : null;
 }
@@ -1353,8 +1442,16 @@ function buildFleetActionRow(entry) {
     lines.appendChild(buildFleetActionLine('receive', `${fmtRit(relocation.units)} DT ${suffix}`));
   });
 
+  // STANDBY (V2.4 Phase 6.1 -- UI wording only, internal
+  // separateUnits/'separate' unchanged). A short hint accompanies it so
+  // STANDBY is never misread as permanently removed/broken/Contractor-lost
+  // (this task's Section 15).
   if (entry.separateUnits > 0) {
     lines.appendChild(buildFleetActionLine('separate', `${fmtRit(entry.separateUnits)} DT`));
+    const standbyHint = document.createElement('p');
+    standbyHint.className = 'calculate-fleet-action-standby-hint';
+    standbyHint.textContent = t('calculate.actions.fleet.standbyHint');
+    lines.appendChild(standbyHint);
   }
 
   row.appendChild(lines);
@@ -1394,4 +1491,302 @@ export function requireFullAccessForCalculateAction() {
   navigateTo('settings');
   requestFullAccessAttention('calculate-action');
   return false;
+}
+
+/* ============================================================
+   PLANNED BLEND RECOVERY (V2.4 Phase 6) -- rendered as the LAST child of
+   the Recommendation result (after Hopper Pattern/Fleet Utilization/
+   Material Actions/Fleet Actions), and only while
+   `result.status === 'TARGET_NOT_ACHIEVABLE'` (this task's Section 2/19).
+   Baseline is ALWAYS the best-attainable candidate's own
+   estimatedNi/totalTonnage -- never the live sticky "NI SUMPRODUCT" Blend
+   summary (this task's Section 1/7). The pure formula/validation/matching
+   logic all lives in planned-blend-recovery.js; everything here is DOM
+   wiring only.
+============================================================ */
+function resetRecoveryState() {
+  recoveryAddedDtRaw = '';
+  recoveryTonnesPerDtRaw = '';
+  recoveryFieldErrors = null;
+  recoveryResult = null;
+  recoveryEls = null;
+}
+
+function buildRecoverySection(result) {
+  const candidate = result.candidate;
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-actions-section calculate-recovery-section';
+
+  const title = document.createElement('h3');
+  title.className = 'calculate-subsection-label';
+  title.textContent = t('calculate.recovery.title');
+  wrap.appendChild(title);
+
+  // Baseline display -- reuses the same status-row styling as the
+  // Recommendation status card, but with Recovery-specific labels so it is
+  // never confused with the live Blend summary or the Recommendation's own
+  // Target/Tolerance rows.
+  const baselineRows = document.createElement('div');
+  baselineRows.className = 'calculate-recommendation-status__rows calculate-recovery-baseline';
+  baselineRows.appendChild(buildStatusRow('calculate.recovery.currentPlannedNi', `${candidate.estimatedNi.toFixed(3)}%`));
+  baselineRows.appendChild(buildStatusRow('calculate.recovery.currentPlannedTonnage', `${fmtTon(candidate.totalTonnage)} t`));
+  wrap.appendChild(baselineRows);
+
+  const controls = document.createElement('div');
+  controls.className = 'calculate-recommendation-controls calculate-recovery-controls';
+  const addedDtField = buildRecoveryField('addedDt', 'numeric');
+  const tonnesPerDtField = buildRecoveryField('tonnesPerDt', 'decimal');
+  controls.appendChild(addedDtField.field);
+  controls.appendChild(tonnesPerDtField.field);
+  wrap.appendChild(controls);
+
+  const fieldError = document.createElement('p');
+  fieldError.className = 'calculate-recommendation-field-error';
+  fieldError.setAttribute('role', 'alert');
+  fieldError.hidden = true;
+  wrap.appendChild(fieldError);
+
+  // Recovery is its OWN explicit action (this task's Section 18) -- never
+  // triggered by simply typing Added DT / Tonnes-per-DT.
+  const btnRow = document.createElement('div');
+  btnRow.className = 'calculate-btn-row';
+  const calculateBtn = document.createElement('button');
+  calculateBtn.type = 'button';
+  calculateBtn.className = 'calculate-btn calculate-btn-primary calculate-calculate-recovery-btn';
+  calculateBtn.textContent = t('calculate.recovery.calculate');
+  calculateBtn.addEventListener('click', handleCalculateRecovery);
+  btnRow.appendChild(calculateBtn);
+  wrap.appendChild(btnRow);
+
+  const resultBox = document.createElement('div');
+  resultBox.className = 'calculate-recovery-result';
+  resultBox.hidden = true;
+  wrap.appendChild(resultBox);
+
+  const qualifyingBox = document.createElement('div');
+  qualifyingBox.className = 'calculate-recovery-qualifying';
+  qualifyingBox.hidden = true;
+  wrap.appendChild(qualifyingBox);
+
+  // `candidate` is stashed here (not re-read from lastRecommendationResult)
+  // so renderRecoveryResult() always matches qualifying sources against the
+  // EXACT candidate this Recovery baseline came from (this task's Section
+  // 26 -- reads the best-attainable candidate's own `.sources`, never a
+  // second independent lookup).
+  recoveryEls = {
+    addedDtInput: addedDtField.input,
+    tonnesPerDtInput: tonnesPerDtField.input,
+    fieldError,
+    resultBox,
+    qualifyingBox,
+    candidate,
+  };
+
+  renderRecoveryFieldError();
+  renderRecoveryResult();
+
+  return wrap;
+}
+
+const RECOVERY_FIELD_LABEL_KEYS = {
+  addedDt: 'calculate.recovery.addedDt',
+  tonnesPerDt: 'calculate.recovery.tonnesPerDt',
+};
+
+// Editing Added DT / Tonnes-per-DT clears ONLY the Recovery result (this
+// task's Section 19) -- via clearRecoveryResult(), never
+// clearRecommendationResult(). It deliberately does not touch
+// lastRecommendationResult, Material Actions, or Fleet Actions.
+function buildRecoveryField(fieldName, inputMode) {
+  const field = document.createElement('div');
+  field.className = 'calculate-recommendation-field calculate-recovery-field';
+
+  const label = document.createElement('label');
+  label.className = 'calculate-recommendation-field__label';
+  label.textContent = t(RECOVERY_FIELD_LABEL_KEYS[fieldName]);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.setAttribute('inputmode', inputMode);
+  input.setAttribute('enterkeyhint', fieldName === 'addedDt' ? 'next' : 'done');
+  input.setAttribute('aria-label', label.textContent);
+  input.dataset.field = fieldName;
+  input.className = 'calculate-recommendation-input';
+  input.value = fieldName === 'addedDt' ? recoveryAddedDtRaw : recoveryTonnesPerDtRaw;
+  input.addEventListener('input', () => {
+    if (fieldName === 'addedDt') recoveryAddedDtRaw = input.value;
+    else recoveryTonnesPerDtRaw = input.value;
+    clearRecoveryResult();
+  });
+
+  field.appendChild(label);
+  field.appendChild(input);
+  return { field, label, input };
+}
+
+// Recovery calculation IS a Calculate action (this task's Section 18) --
+// gated by the exact same FULL_ACCESS boundary guard as
+// handleCalculateRecommendation().
+function handleCalculateRecovery() {
+  if (!requireFullAccessForCalculateAction()) return;
+  // Defensive only -- the button only ever exists inside a freshly built
+  // TARGET_NOT_ACHIEVABLE Recovery section, so lastRecommendationResult is
+  // always the matching result here.
+  if (!lastRecommendationResult || lastRecommendationResult.status !== 'TARGET_NOT_ACHIEVABLE') return;
+
+  const candidate = lastRecommendationResult.candidate;
+  const result = calculateRequiredNewDomeNi({
+    currentNi: candidate.estimatedNi,
+    currentTonnage: candidate.totalTonnage,
+    targetNi: lastRecommendationResult.targetNi,
+    addedUnits: recoveryAddedDtRaw,
+    tonnesPerUnit: recoveryTonnesPerDtRaw,
+  });
+
+  if (!result.ok) {
+    recoveryResult = null;
+    recoveryFieldErrors = result.error === 'INVALID_INPUT'
+      ? { addedUnitsError: result.addedUnitsError, tonnesPerUnitError: result.tonnesPerUnitError }
+      : null;
+    renderRecoveryFieldError();
+    renderRecoveryResult();
+    return;
+  }
+
+  recoveryFieldErrors = null;
+  recoveryResult = result;
+  renderRecoveryFieldError();
+  renderRecoveryResult();
+}
+
+// Lighter counterpart to clearRecommendationResult() -- clears ONLY the
+// Recovery result/error (this task's Section 19), leaving
+// lastRecommendationResult, Material Actions, and Fleet Actions untouched.
+function clearRecoveryResult() {
+  if (!recoveryResult && !recoveryFieldErrors) return;
+  recoveryResult = null;
+  recoveryFieldErrors = null;
+  renderRecoveryFieldError();
+  renderRecoveryResult();
+}
+
+function renderRecoveryFieldError() {
+  if (!recoveryEls) return;
+  const errs = recoveryFieldErrors;
+  markInvalid(recoveryEls.addedDtInput, errs && errs.addedUnitsError, null, 'calculate-recommendation-input');
+  markInvalid(recoveryEls.tonnesPerDtInput, errs && errs.tonnesPerUnitError, null, 'calculate-recommendation-input');
+
+  const messages = errs ? [errs.addedUnitsError, errs.tonnesPerUnitError].filter(Boolean) : [];
+  if (messages.length) {
+    recoveryEls.fieldError.hidden = false;
+    recoveryEls.fieldError.textContent = messages.map((key) => t(key)).join(' · ');
+  } else {
+    recoveryEls.fieldError.hidden = true;
+    recoveryEls.fieldError.textContent = '';
+  }
+}
+
+function renderRecoveryResult() {
+  if (!recoveryEls) return;
+  if (!recoveryResult) {
+    recoveryEls.resultBox.hidden = true;
+    recoveryEls.resultBox.replaceChildren();
+    recoveryEls.qualifyingBox.hidden = true;
+    recoveryEls.qualifyingBox.replaceChildren();
+    return;
+  }
+
+  recoveryEls.resultBox.hidden = false;
+  recoveryEls.resultBox.replaceChildren(buildRecoveryResultContent(recoveryResult));
+
+  // Chemical-only match against the SAME candidate.sources this Recovery
+  // baseline came from (this task's Section 26) -- never a second
+  // independent source lookup.
+  const qualifyingSources = findQualifyingSources(recoveryEls.candidate.sources, recoveryResult.requiredNi);
+  recoveryEls.qualifyingBox.hidden = false;
+  recoveryEls.qualifyingBox.replaceChildren(buildQualifyingSourcesContent(qualifyingSources));
+}
+
+// Displays the MINIMUM required Ni with a "≥" prefix (this task's Section
+// 6) -- never clamped, never forced to be >= Target/Current Ni beyond what
+// the math itself produces.
+function buildRecoveryResultContent(result) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-recovery-result__inner';
+
+  const label = document.createElement('span');
+  label.className = 'calculate-recovery-result-label';
+  label.textContent = t('calculate.recovery.minimumNewSourceNi');
+  wrap.appendChild(label);
+
+  const value = document.createElement('strong');
+  value.className = 'calculate-recovery-result-value';
+  value.textContent = `≥ ${result.requiredNi.toFixed(3)}%`;
+  wrap.appendChild(value);
+
+  return wrap;
+}
+
+// Deterministic ordering only (lowest qualifying Ni, then Contractor, then
+// Pile ID -- see findQualifyingSources()'s own header comment) -- never
+// highest-Ni-first (this task's Section 15/25 test 6).
+function buildQualifyingSourcesContent(qualifyingSources) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-recovery-qualifying__inner';
+
+  const title = document.createElement('h4');
+  title.className = 'calculate-subsection-label calculate-recovery-qualifying-title';
+  title.textContent = t('calculate.recovery.qualifyingSources');
+  wrap.appendChild(title);
+
+  if (qualifyingSources.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'calculate-recovery-qualifying-empty';
+    empty.textContent = t('calculate.recovery.noQualifyingSources');
+    wrap.appendChild(empty);
+    return wrap;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'calculate-actions-list';
+  qualifyingSources.forEach((source) => list.appendChild(buildQualifyingSourceRow(source)));
+  wrap.appendChild(list);
+
+  // Chemical-only caveat (this task's Section 16/17) -- a qualifying source
+  // proves nothing about available tonnage/stockpile/campaign supply, and
+  // may already be fully committed to the best-attainable candidate itself.
+  const hint = document.createElement('p');
+  hint.className = 'calculate-recovery-qualifying-hint';
+  hint.textContent = t('calculate.recovery.chemicalQualificationHint');
+  wrap.appendChild(hint);
+
+  return wrap;
+}
+
+function buildQualifyingSourceRow(source) {
+  const row = document.createElement('div');
+  row.className = 'calculate-breakdown-row calculate-recovery-qualifying-row';
+
+  const main = document.createElement('div');
+  main.className = 'calculate-breakdown-row__main';
+  const idEl = document.createElement('span');
+  idEl.className = 'calculate-breakdown-row__id';
+  idEl.textContent = `${source.contractor} · ${source.pileId}`;
+  main.appendChild(idEl);
+
+  // Reuses the Material Action USE badge styling (green, "meets" framing)
+  // -- this is a distinct concept (chemical qualification, not a Material
+  // Action verdict) but intentionally shares the same visual language.
+  const badge = document.createElement('span');
+  badge.className = 'calculate-action-badge calculate-action-badge--use';
+  badge.textContent = t('calculate.recovery.meetsMinimum');
+  main.appendChild(badge);
+  row.appendChild(main);
+
+  const meta = document.createElement('div');
+  meta.className = 'calculate-breakdown-row__meta';
+  meta.appendChild(buildMetaSpan(`${source.oreClass || EM_DASH} · ${t('calculate.fields.ni')} ${source.ni.toFixed(3)}%`));
+  row.appendChild(meta);
+
+  return row;
 }

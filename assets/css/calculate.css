@@ -832,6 +832,16 @@
   color: var(--accent2, #fbbf24);
 }
 
+/* STANDBY hint (V2.4 Phase 6.1) -- reuses the exact same muted/small
+   styling as Material Action's own .calculate-action-reason, so it reads
+   as the same kind of "brief explanatory note" convention. */
+#page-calculate .calculate-fleet-action-standby-hint {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted, #8fa3bd);
+}
+
 @media (max-width: 374px) {
   #page-calculate .calculate-action-badge {
     font-size: 0.62rem;
@@ -839,5 +849,75 @@
   }
   #page-calculate .calculate-fleet-action-line {
     font-size: 0.72rem;
+  }
+}
+
+/* ==================================================
+   PLANNED BLEND RECOVERY (V2.4 Phase 6). Rendered as the LAST section of
+   the Recommendation result, only while the target is unreachable --
+   deliberately secondary to Hopper Pattern/Target Status/Material Actions/
+   Fleet Actions above it (this task's Section 23), so it reuses the same
+   .calculate-actions-section/.calculate-subsection-label/
+   .calculate-recommendation-controls/.calculate-recommendation-field/
+   .calculate-recommendation-input/.calculate-breakdown-row/
+   .calculate-action-badge building blocks rather than an isolated new
+   palette. --accent2 (the existing "surplus/warning" amber token) marks
+   the required-Ni result -- an attention-worthy number, not a success
+   state like --good. Added DT / Tonnes-per-DT sit side-by-side via the
+   inherited .calculate-recommendation-controls flex layout, which already
+   fits comfortably at 360px (proven by the Target Ni/Tolerance pair
+   above).
+================================================== */
+#page-calculate .calculate-recovery-baseline {
+  margin-bottom: 10px;
+}
+
+#page-calculate .calculate-recovery-result {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--accent2, #fbbf24);
+  background: rgba(251, 191, 36, 0.1);
+  padding: 12px 14px;
+}
+#page-calculate .calculate-recovery-result__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#page-calculate .calculate-recovery-result-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-recovery-result-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--accent2, #fbbf24);
+}
+
+#page-calculate .calculate-recovery-qualifying {
+  margin-top: 12px;
+}
+#page-calculate .calculate-recovery-qualifying-title {
+  margin-bottom: 8px;
+}
+#page-calculate .calculate-recovery-qualifying-empty {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-recovery-qualifying-hint {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  font-style: italic;
+  color: var(--muted, #8fa3bd);
+}
+
+@media (max-width: 374px) {
+  #page-calculate .calculate-recovery-result-value {
+    font-size: 1.4rem;
   }
 }

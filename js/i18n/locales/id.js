@@ -138,7 +138,8 @@ export default {
   // targetNi*/tolerance*/noPhysicalFleet below are the exact i18n KEYS the
   // pure engine (blending-recommendation.js, Phase 3) already returns.
   // Material Action (USE/LIMIT/STOP) and Fleet Action (AKTIF/PINDAH/
-  // PISAHKAN) wording is added below (calculate.actions.*, V2.4 Phase 5).
+  // STANDBY) wording is added below (calculate.actions.*, V2.4 Phase 5;
+  // STANDBY wording corrected from the original "PISAHKAN" in Phase 6.1).
   // Planned Blend Recovery wording remains deliberately absent -- Phase 6.
   'calculate.recommendation.title': 'Rekomendasi Blending',
   'calculate.recommendation.dtHint': 'DT = unit fisik aktif yang dapat berulang hauling.',
@@ -203,7 +204,17 @@ export default {
   'calculate.actions.fleet.use': 'AKTIF',
   'calculate.actions.fleet.move': 'PINDAH',
   'calculate.actions.fleet.receive': 'TERIMA',
-  'calculate.actions.fleet.separate': 'PISAHKAN',
+  // "STANDBY" (V2.4 Phase 6.1 Owner correction) replaces the old
+  // "PISAHKAN" wording -- "Pisahkan" could be misread as separating
+  // material or permanently removing the unit. The internal
+  // recommendation-actions.js field/kind name (separateUnits / 'separate')
+  // stays unchanged (this task's Part B Section 14 explicitly allows the
+  // internal domain name to remain, only the user-facing word changes).
+  'calculate.actions.fleet.separate': 'STANDBY',
+  // Shown under a STANDBY line only (this task's Section 15) -- clarifies
+  // STANDBY means "not needed under the CURRENT feeding allocation", never
+  // permanently removed/broken/Contractor-lost/Material STOP.
+  'calculate.actions.fleet.standbyHint': 'Tidak diperlukan dalam alokasi feeding saat ini.',
   // {pileId}-templated suffixes (this task's Section 12) -- e.g.
   // "1 DT PINDAH → L12" / "1 DT TERIMA ← L30". Arrows are kept identical
   // across locales (a stable visual glyph, not translated text), matching
@@ -226,6 +237,36 @@ export default {
   'calculate.validation.toleranceInvalid': 'Toleransi harus berupa angka yang valid.',
   'calculate.validation.toleranceNonNegative': 'Toleransi harus 0 atau lebih besar.',
   'calculate.validation.noPhysicalFleet': 'Minimal satu sumber harus memiliki DT fisik lebih besar dari 0.',
+
+  // Planned Blend Recovery (V2.4 Phase 6, architecture doc Section 25) --
+  // shown only when Recommendation status is TARGET_NOT_ACHIEVABLE
+  // (recommendation-actions.js's bestAttainableNote above is a sibling,
+  // NOT a duplicate: that note is about Material/Fleet Actions, this
+  // section is the separate minimum-Ni-for-a-new-source calculation).
+  // "Blend Terencana" (Planned Blend), never "Aktual"/"Shift"/"FPP" --
+  // this module has no concept of actual cumulative production (this
+  // task's Section 9/25.1).
+  'calculate.recovery.title': 'Recovery Blend Terencana',
+  'calculate.recovery.currentPlannedNi': 'Ni Blend Terencana Saat Ini',
+  'calculate.recovery.currentPlannedTonnage': 'Tonase Blend Terencana Saat Ini',
+  'calculate.recovery.addedDt': 'DT Tambahan',
+  'calculate.recovery.tonnesPerDt': 'Tonase / DT',
+  'calculate.recovery.calculate': 'Hitung Recovery',
+  'calculate.recovery.minimumNewSourceNi': 'Minimum Ni Sumber Baru',
+  'calculate.recovery.qualifyingSources': 'Sumber yang Memenuhi',
+  'calculate.recovery.meetsMinimum': 'MEMENUHI MINIMUM',
+  'calculate.recovery.noQualifyingSources': 'Belum ada sumber yang sudah dimasukkan memenuhi Ni minimum ini.',
+  // Chemical-only caveat (this task's Section 16-17) -- never implies
+  // guaranteed tonnage/stockpile availability.
+  'calculate.recovery.chemicalQualificationHint': 'Hanya menunjukkan Ni tercatat sumber ini memenuhi syarat kimia -- bukan jaminan tonase atau stok fisik yang tersedia.',
+
+  'calculate.validation.recoveryAddedUnitsRequired': 'DT Tambahan wajib diisi.',
+  'calculate.validation.recoveryAddedUnitsInvalid': 'DT Tambahan harus berupa angka yang valid.',
+  'calculate.validation.recoveryAddedUnitsInteger': 'DT Tambahan harus berupa bilangan bulat.',
+  'calculate.validation.recoveryAddedUnitsPositive': 'DT Tambahan harus lebih besar dari 0.',
+  'calculate.validation.recoveryTonnesPerUnitRequired': 'Tonase / DT wajib diisi.',
+  'calculate.validation.recoveryTonnesPerUnitInvalid': 'Tonase / DT harus berupa angka yang valid.',
+  'calculate.validation.recoveryTonnesPerUnitPositive': 'Tonase / DT harus lebih besar dari 0.',
 
   'settings.pageTitle': 'Pengaturan',
   'settings.title': 'Personnel Directory',

@@ -135,7 +135,12 @@ export default {
   'calculate.actions.fleet.use': 'ACTIVE',
   'calculate.actions.fleet.move': 'MOVE',
   'calculate.actions.fleet.receive': 'RECEIVE',
-  'calculate.actions.fleet.separate': 'SEPARATE',
+  // "STANDBY" (V2.4 Phase 6.1 Owner correction) replaces the old
+  // "SEPARATE" wording -- see locales/id.js's header comment for the full
+  // note. Internal domain field/kind name (separateUnits / 'separate')
+  // stays unchanged.
+  'calculate.actions.fleet.separate': 'STANDBY',
+  'calculate.actions.fleet.standbyHint': 'Not required in the current feeding allocation.',
   'calculate.actions.fleet.toPileSuffix': '→ {pileId}',
   'calculate.actions.fleet.fromPileSuffix': '← {pileId}',
 
@@ -148,6 +153,28 @@ export default {
   'calculate.validation.toleranceInvalid': 'Tolerance must be a valid number.',
   'calculate.validation.toleranceNonNegative': 'Tolerance must be 0 or greater.',
   'calculate.validation.noPhysicalFleet': 'At least one source must have positive physical DT.',
+
+  // Planned Blend Recovery (V2.4 Phase 6) -- see locales/id.js's header
+  // comment for the full note.
+  'calculate.recovery.title': 'Planned Blend Recovery',
+  'calculate.recovery.currentPlannedNi': 'Current Planned Ni',
+  'calculate.recovery.currentPlannedTonnage': 'Current Planned Tonnage',
+  'calculate.recovery.addedDt': 'Added DT',
+  'calculate.recovery.tonnesPerDt': 'Tonnes / DT',
+  'calculate.recovery.calculate': 'Calculate Recovery',
+  'calculate.recovery.minimumNewSourceNi': 'Minimum New Source Ni',
+  'calculate.recovery.qualifyingSources': 'Qualifying Sources',
+  'calculate.recovery.meetsMinimum': 'MEETS MINIMUM',
+  'calculate.recovery.noQualifyingSources': 'No currently entered source meets this minimum Ni yet.',
+  'calculate.recovery.chemicalQualificationHint': 'Only shows that this source\'s recorded Ni meets the chemical requirement -- not a guarantee of available tonnage or physical stock.',
+
+  'calculate.validation.recoveryAddedUnitsRequired': 'Added DT is required.',
+  'calculate.validation.recoveryAddedUnitsInvalid': 'Added DT must be a valid number.',
+  'calculate.validation.recoveryAddedUnitsInteger': 'Added DT must be a whole number.',
+  'calculate.validation.recoveryAddedUnitsPositive': 'Added DT must be greater than 0.',
+  'calculate.validation.recoveryTonnesPerUnitRequired': 'Tonnes / DT is required.',
+  'calculate.validation.recoveryTonnesPerUnitInvalid': 'Tonnes / DT must be a valid number.',
+  'calculate.validation.recoveryTonnesPerUnitPositive': 'Tonnes / DT must be greater than 0.',
 
   'settings.pageTitle': 'Settings',
   'settings.title': 'Personnel Directory',

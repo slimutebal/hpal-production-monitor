@@ -344,6 +344,61 @@ function fleetActionLineTexts(row) {
   return findAll(row, hasClass('calculate-fleet-action-line')).map((line) => line.textContent);
 }
 
+/* ============================================================
+   PLANNED BLEND RECOVERY helpers (V2.4 Phase 6, this task)
+============================================================ */
+function recoverySectionRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recovery-section'));
+}
+
+function recoveryBaselineText(pageEl) {
+  const root = recoverySectionRoot(pageEl);
+  return root ? findOne(root, hasClass('calculate-recovery-baseline')).textContent : null;
+}
+
+function fillRecoveryControls(pageEl, { addedDt, tonnesPerDt } = {}) {
+  if (addedDt !== undefined) typeIntoField(pageEl, 'addedDt', addedDt);
+  if (tonnesPerDt !== undefined) typeIntoField(pageEl, 'tonnesPerDt', tonnesPerDt);
+}
+
+function clickCalculateRecovery(pageEl) {
+  findOne(pageEl, hasClass('calculate-calculate-recovery-btn')).fire('click');
+}
+
+function recoveryResultBox(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recovery-result'));
+}
+
+function recoveryResultValueText(pageEl) {
+  const box = recoveryResultBox(pageEl);
+  return box ? findOne(box, hasClass('calculate-recovery-result-value')).textContent : null;
+}
+
+function recoveryFieldErrorText(pageEl) {
+  const root = recoverySectionRoot(pageEl);
+  return root ? findOne(root, hasClass('calculate-recommendation-field-error')) : null;
+}
+
+function recoveryQualifyingBox(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recovery-qualifying'));
+}
+
+function qualifyingSourceRows(pageEl) {
+  return findAll(pageEl, hasClass('calculate-recovery-qualifying-row'));
+}
+
+// Fixture reused from describe('33. Target Not Achievable...') -- the
+// best-attainable candidate uses ONLY Higher (X, Ni 2.00, 5 DT, 50 t/DT),
+// Lglo (Y, Ni 0.10) fully idle, so the Recovery baseline is a clean,
+// hand-verifiable Ni 2.00% / 250t (never the live sticky Blend summary,
+// which would instead reflect BOTH rows if they were both complete/used).
+function mountRecoveryReadyOn(pageEl) {
+  fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' });
+  fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
+  fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
+  return pageEl;
+}
+
 // Architecture doc / this task's "known fleet example": Higher Grade
 // (SMA, Ni 1.30, 5 DT, 50 t/DT) + LGLO (TII, Ni 1.03, 8 DT, 50 t/DT).
 function fillKnownRecommendationExample(pageEl) {
@@ -1057,15 +1112,26 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
 
     clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
-    // Widening Tolerance legitimately admits the full 5:8 (13/13 DT, 100%
-    // utilization) candidate, which now correctly outranks 1:2 under
-    // recommendation-ranking.js's "maximize fleet utilization first" rule
-    // -- this is the SAME approved behavior the "full-fleet 5:8 (13/13)
-    // allocation is NOT what gets shown as selected" test above already
-    // proves for Tolerance 0.010 alone. It must still be a real,
-    // non-stale, internally-consistent result, never the frozen-looking
-    // Ni 1.120%/1:2 result from before the edit.
-    assert.equal(hopperPatternRatioText(pageEl), '5 : 8');
+    // Widening Tolerance legitimately admits the full PHYSICAL 5:8
+    // (13/13 DT, 100% utilization) candidate, which now correctly outranks
+    // the 12/13-DT candidate under recommendation-ranking.js's "maximize
+    // fleet utilization first" rule -- this is the SAME approved candidate-
+    // selection behavior the "full-fleet 5:8 (13/13) allocation is NOT what
+    // gets shown as selected" test above already proves for Tolerance
+    // 0.010 alone, and it is unaffected by this task's Hopper Pattern
+    // decoupling (V2.4 Phase 6.1) -- fleet utilization stays a PHYSICAL
+    // number. The DISPLAYED Hopper Pattern, however, is now the
+    // independently-derived OPERATIONAL pattern (hopper-pattern.js), which
+    // is smaller/simpler (1:2) than the physical 5:8 active-fleet ratio --
+    // it is never assumed to just be that physical ratio anymore (this
+    // task's Section 24/28: "active fleet ratio does NOT automatically mean
+    // Hopper Pattern", and the old test asserting '5 : 8' here was exactly
+    // the kind of obsolete assumption this task requires fixing). It must
+    // still be a real, non-stale, internally-consistent result, never the
+    // frozen-looking Ni 1.120%/1:2 result from before the edit -- proven
+    // here by the DIFFERENT fleet-utilization figure (13/13 vs the earlier
+    // 12/13), even though the Hopper Pattern digits happen to coincide.
+    assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
   });
@@ -1131,38 +1197,67 @@ function stripComments(source) {
     .join('\n');
 }
 
-describe('22. Non-goals -- no Planned Blend Recovery (Material Action/Fleet Action UI is now IN scope, V2.4 Phase 5)', () => {
+describe('22. Non-goals -- Planned Blend Recovery is now IN scope (V2.4 Phase 6); sampling history / closed-loop actual FPP / hardcoded presets / stockpile inventory remain OUT of scope', () => {
   const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
+  const pureRecoverySource = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'planned-blend-recovery.js'), 'utf8'));
 
   // SUPERSEDED (was: "21. the module's actual code never references
   // Material Action or Fleet Action status concepts" / "USE/LIMIT/STOP/
   // SEPARATE/STANDBY action-status vocabulary does not appear in actual
   // code" / "the rendered Recommendation result never contains USE/LIMIT/
-  // STOP text"). Phase 5 (this task) intentionally adds exactly this --
-  // see describe('26-30. Material Actions...')/describe('31-33. Fleet
-  // Actions...') below for the positive coverage that replaces these three
-  // removed checks. Recovery/New Dome (Section 22) remains out of scope
-  // and is still verified below.
+  // STOP text"). Phase 5 intentionally added exactly this -- see
+  // describe('26-30. Material Actions...')/describe('31-33. Fleet
+  // Actions...') below for that positive coverage.
+  //
+  // SUPERSEDED (was: "22. the module's actual code never references
+  // Planned Blend Recovery / New Dome concepts" / "22. no Planned Blend
+  // Recovery / New Dome UI exists anywhere on the page"). Phase 6 (this
+  // task) intentionally adds exactly this -- see describe('34-38. Planned
+  // Blend Recovery...') below for the positive coverage. What remains a
+  // genuine non-goal (this task's Section 29) is verified below instead:
+  // sampling history, closed-loop actual FPP correction, hardcoded
+  // recovery-tonnage presets, and stockpile/backend coupling.
 
-  test('22. the module\'s actual code never references Planned Blend Recovery / New Dome concepts', () => {
-    for (const forbidden of ['recovery', 'newDome', 'requiredNewNi', 'calculateRequiredNewDomeNi']) {
-      assert.doesNotMatch(source, new RegExp(forbidden, 'i'), `calculate-page.js code must not yet reference ${forbidden}`);
+  test('34. calculate-page.js references the real Recovery API, never a placeholder/New-Dome-only name', () => {
+    assert.match(source, /calculateRequiredNewDomeNi/, 'calculate-page.js must call the real pure Recovery function');
+    assert.match(source, /findQualifyingSources/, 'calculate-page.js must call the real pure matching function');
+  });
+
+  test('29. no sampling history / closed-loop actual FPP correction / hardcoded recovery presets / stockpile inventory / backend coupling anywhere in the Recovery code', () => {
+    for (const file of [
+      path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'),
+      path.join(ROOT, 'js', 'pages', 'calculate', 'planned-blend-recovery.js'),
+    ]) {
+      const fileSource = stripComments(readFileSync(file, 'utf8'));
+      for (const forbidden of [
+        'samplingHistory', 'sampleHistory', 'actualFpp', 'closedLoop',
+        'RECOVERY_PRESET', 'recoveryPreset', 'stockpile', 'remainingShiftTonnage',
+        'plannedShiftTonnage',
+      ]) {
+        assert.doesNotMatch(fileSource, new RegExp(forbidden, 'i'), `${file} must not reference ${forbidden}`);
+      }
     }
   });
 
   test('no localStorage usage anywhere in the Calculate modules\' actual code', () => {
-    for (const file of ['calculate-page.js', 'blend-calculator.js', 'calculate-validation.js', 'blending-recommendation.js', 'recommendation-ranking.js', 'fleet-allocation.js', 'recommendation-actions.js']) {
+    for (const file of ['calculate-page.js', 'blend-calculator.js', 'calculate-validation.js', 'blending-recommendation.js', 'recommendation-ranking.js', 'fleet-allocation.js', 'recommendation-actions.js', 'planned-blend-recovery.js']) {
       const fileSource = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', file), 'utf8'));
       assert.doesNotMatch(fileSource, /localStorage/, `${file} must not use localStorage`);
     }
   });
 
-  test('22. no Planned Blend Recovery / New Dome UI exists anywhere on the page', () => {
+  test('planned-blend-recovery.js is a pure module -- no DOM/i18n/router/license/network references', () => {
+    for (const forbidden of ['document\\.', '\\bt\\(', 'navigateTo', 'hasFullAccess', 'fetch\\(', 'XMLHttpRequest']) {
+      assert.doesNotMatch(pureRecoverySource, new RegExp(forbidden), `planned-blend-recovery.js must not reference ${forbidden}`);
+    }
+  });
+
+  test('22. no Planned Blend Recovery UI renders while the Recommendation is within tolerance', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
-    assert.doesNotMatch(pageEl.textContent, /recovery|new dome/i);
+    assert.doesNotMatch(pageEl.textContent, /recovery/i);
   });
 
   test('no Recommendation result section exists in the rendered DOM before Recommendation has been calculated', () => {
@@ -1438,14 +1533,17 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
   });
 
   // Material Action/Fleet Action keys (calculate.actions.*) are now IN
-  // scope (V2.4 Phase 5, this task) -- see the dedicated key-existence
-  // assertions in describe('26-30. Material Actions...') below. Only
-  // Planned Blend Recovery/New Dome (Phase 6) remains forbidden here.
-  test('no Planned Blend Recovery i18n key family exists yet (Phase 6)', () => {
-    const keys = Object.keys(idCatalog);
-    for (const forbidden of ['calculate.recovery', 'calculate.newDome']) {
-      assert.equal(keys.some((k) => k.startsWith(forbidden)), false, `unexpected Phase 6 key family present: ${forbidden}`);
-    }
+  // scope (V2.4 Phase 5) -- see the dedicated key-existence assertions in
+  // describe('26-30. Material Actions...') below.
+
+  // SUPERSEDED (was: "no Planned Blend Recovery i18n key family exists yet
+  // (Phase 6)"). Phase 6 (this task) intentionally adds calculate.recovery.*
+  // -- verified below instead.
+  test('calculate.recovery.* i18n key family exists in both locales with matching key sets (Phase 6)', () => {
+    const idKeys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.recovery') || k.startsWith('calculate.validation.recovery')).sort();
+    const enKeys = Object.keys(enCatalog).filter((k) => k.startsWith('calculate.recovery') || k.startsWith('calculate.validation.recovery')).sort();
+    assert.ok(idKeys.length > 0, 'id.js must carry calculate.recovery.*/calculate.validation.recovery* keys');
+    assert.deepEqual(idKeys, enKeys, 'id.js and en.js must carry the exact same Recovery key set');
   });
 });
 
@@ -1769,6 +1867,61 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
 });
 
 /* ============================================================
+   26. STANDBY terminology (V2.4 Phase 6.1 -- Owner correction, this
+   task's Part B/Section 26). Reuses the known 5 HG / 8 LGLO scenario,
+   where Higher's own Fleet Action row already carries a STANDBY (1 DT)
+   line (verified above).
+============================================================ */
+describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
+  test('the rendered Fleet Action line shows the localized STANDBY word, with an explanatory hint, never the old PISAHKAN/SEPARATE word', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const higherRow = fleetActionRowFor(pageEl, 'Higher');
+    assert.match(higherRow.textContent, /STANDBY/);
+    assert.doesNotMatch(higherRow.textContent, /PISAHKAN/);
+    assert.match(higherRow.textContent, new RegExp(idCatalog['calculate.actions.fleet.standbyHint']));
+
+    setLocale('en');
+    const higherRowEn = fleetActionRowFor(pageEl, 'Higher');
+    assert.match(higherRowEn.textContent, /STANDBY/);
+    assert.doesNotMatch(higherRowEn.textContent, /\bSEPARATE\b/);
+    assert.match(higherRowEn.textContent, new RegExp(enCatalog['calculate.actions.fleet.standbyHint']));
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  test('the old PISAHKAN/SEPARATE word never appears anywhere on the whole rendered Recommendation result', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /PISAHKAN/);
+  });
+
+  test('ACTIVE/MOVE Fleet Action behavior and cross-Contractor MOVE impossibility are unaffected by the STANDBY rename', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    clickCalculateRecommendation(pageEl);
+
+    const higherLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('Lglo')));
+    const lgloLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Lglo'));
+    assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive']) && l.includes('Higher')));
+
+    // Fleet conservation: every row's own useUnits + moveOutUnits +
+    // standby (separate) units still accounts for its assignedUnits, and
+    // no row anywhere shows a cross-Contractor MOVE/RECEIVE line.
+    fleetActionRows(pageEl).forEach((row) => {
+      const lines = fleetActionLineTexts(row);
+      assert.ok(lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use'])), 'every row always shows its USE line');
+    });
+  });
+});
+
+/* ============================================================
    STALE INVALIDATION CLEARS ACTIONS TOO (this task's Section 27)
 ============================================================ */
 describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet Actions along with the Recommendation result', () => {
@@ -1855,6 +2008,449 @@ describe('33. Target Not Achievable shows the best-attainable action baseline no
 });
 
 /* ============================================================
+   HOPPER PATTERN DECOUPLING (V2.4 Phase 6.1, this task's Part A). Reuses
+   the widened-tolerance scenario from "a genuinely WIDER Tolerance after
+   clearing..." above -- the REAL engine there selects a candidate whose
+   PHYSICAL active fleet is 5:8 (13/13 DT, 100% utilization), while the
+   independently-derived operational Hopper Pattern is the smaller 1:2.
+   This end-to-end (real search -> real ranking -> real Hopper Pattern
+   derivation) scenario is a stronger proof of decoupling than a hand-built
+   fixture, since it exercises the entire pipeline exactly as production
+   code would.
+============================================================ */
+describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () => {
+  test('when the selected candidate\'s physical fleet ratio (5:8) differs from the smallest within-tolerance pattern (1:2), the DOM shows 1:2, never 5:8, while fleet utilization still shows the true 13/13 DT physical count', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    typeIntoField(pageEl, 'tolerance', '0.020');
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
+    assert.notEqual(hopperPatternRatioText(pageEl), '5 : 8', 'the physical 5:8 fleet ratio must never be shown as the Hopper Pattern here');
+  });
+
+  test('the summary-strip Estimasi Akhir Ni and the status-card Estimasi Akhir Ni both match the DISPLAYED 1:2 Hopper Pattern (1.120%), never a different physical-candidate number', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    typeIntoField(pageEl, 'tolerance', '0.020');
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
+    const statusRows = findAll(pageEl, hasClass('calculate-recommendation-status__row'));
+    const estimatedNiRow = statusRows.find((r) => r.textContent.includes(idCatalog['calculate.recommendation.estimatedNi']));
+    assert.match(estimatedNiRow.textContent, /1\.120%/);
+  });
+
+  test('the physical Unit Ratio row (Rasio Unit) still shows the true 5:8 physical active-fleet ratio, simultaneously with the 1:2 Hopper Pattern card', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    typeIntoField(pageEl, 'tolerance', '0.020');
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
+    const ratioItems = findAll(pageEl, hasClass('calculate-recommendation-ratio-item'));
+    const unitRatioItem = ratioItems.find((i) => i.textContent.includes(idCatalog['calculate.recommendation.unitRatio']));
+    assert.match(unitRatioItem.textContent, /5 : 8/);
+  });
+
+  test('Material Actions/Fleet Actions are unaffected by the Hopper Pattern decoupling -- both Higher and Lglo remain Material USE for the known reference scenario', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Higher')), idCatalog['calculate.actions.material.use']);
+    assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Lglo')), idCatalog['calculate.actions.material.use']);
+  });
+});
+
+/* ============================================================
+   27. UI SECTION ORDER (V2.4 Phase 6.1, this task's Part C): Penyesuaian
+   Fleet -> Aksi Fleet -> Aksi Material -> Planned Blend Recovery (when
+   applicable).
+============================================================ */
+describe('27. Recommendation detail section order: Penyesuaian Fleet -> Aksi Fleet -> Aksi Material -> Recovery', () => {
+  function sectionOrder(pageEl) {
+    const root = recommendationResultRoot(pageEl);
+    return root.children
+      .map((c) => (c.className || ''))
+      .map((cls) => {
+        if (cls.includes('calculate-recommendation-relocations')) return 'relocation';
+        if (cls.includes('calculate-fleet-actions')) return 'fleetActions';
+        if (cls.includes('calculate-material-actions')) return 'materialActions';
+        if (cls.includes('calculate-recovery-section')) return 'recovery';
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  test('with a same-Contractor relocation present: relocation, then Fleet Actions, then Material Actions, in that exact order', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(sectionOrder(pageEl), ['relocation', 'fleetActions', 'materialActions']);
+  });
+
+  test('without a relocation: Fleet Actions still comes before Material Actions', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(sectionOrder(pageEl), ['fleetActions', 'materialActions']);
+  });
+
+  test('when TARGET_NOT_ACHIEVABLE: Fleet Actions, then Material Actions, then Recovery last', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(sectionOrder(pageEl), ['fleetActions', 'materialActions', 'recovery']);
+  });
+});
+
+/* ============================================================
+   34-38. PLANNED BLEND RECOVERY (V2.4 Phase 6, this task). Reference
+   fixture: mountRecoveryReadyOn() reuses describe('33. Target Not
+   Achievable...')'s own already-verified best-attainable candidate
+   (Higher/X/Ni 2.00%/5 DT/50 t/DT alone, Lglo/Y fully idle) -- baseline
+   Ni 2.00% / 250t, confirmed against the real engine, never the live
+   sticky Blend summary (which would differ if both rows were active).
+   Reference Recovery scenario throughout: Added DT 5, Tonnes/DT 50 ->
+   AddedTonnage 250 -> RequiredNi = (5.00*500 - 2.00*250)/250 = 8.00%
+   (a clean, hand-verifiable number distinct from the pure module's own
+   1.260% mandatory regression value in tests/planned-blend-recovery.test.mjs).
+============================================================ */
+describe('34. Recovery visibility -- only rendered while Target is unreachable', () => {
+  test('absent before any Recommendation has been calculated', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('absent when the Recommendation is within tolerance (known example)', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('present when the Recommendation is TARGET_NOT_ACHIEVABLE, positioned after Material/Fleet Actions', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const root = recommendationResultRoot(pageEl);
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+    const order = root.children.map((c) => c.className);
+    const fleetIdx = order.findIndex((c) => (c || '').includes('calculate-fleet-actions'));
+    const recoveryIdx = order.findIndex((c) => (c || '').includes('calculate-recovery-section'));
+    assert.ok(fleetIdx >= 0 && recoveryIdx > fleetIdx, 'Recovery must render AFTER Fleet Actions');
+  });
+});
+
+describe('35. Recovery baseline -- best-attainable candidate, never the sticky live Blend summary', () => {
+  test('baseline shows the best-attainable candidate Ni (2.00%) and tonnage (250 t), not a live-summary value', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const text = recoveryBaselineText(pageEl);
+    assert.match(text, /2\.000%/);
+    assert.match(text, /250,00\s*t/);
+    // The live Blend summary, if it were used instead, would reflect BOTH
+    // rows (Higher + Lglo), never just the best-attainable candidate's own
+    // subset -- so this is a meaningfully different assertion, not a
+    // tautology.
+    assert.notEqual(summaryValue(pageEl, 'calculate-final-ni'), '2.000%');
+  });
+});
+
+describe('36. Recovery calculation -- explicit action, reference result, invalid input', () => {
+  test('the required-Ni result is absent until Calculate Recovery is pressed', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+  });
+
+  test('reference scenario: Added DT 5, Tonnes/DT 50 -> required Ni >= 8.000% (>= prefix, minimum framing)', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+
+    clickCalculateRecovery(pageEl);
+
+    assert.equal(recoveryResultBox(pageEl).hidden, false);
+    assert.equal(recoveryResultValueText(pageEl), '≥ 8.000%');
+  });
+
+  test('MONITOR_ONLY: Calculate Recovery is gated by the same FULL_ACCESS action-boundary guard as Calculate Recommendation', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+
+    goMonitorOnly();
+    const win = installMockWindow('#/calculate');
+    clickCalculateRecovery(pageEl);
+
+    assert.equal(win.getHash(), '#/settings');
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+  });
+
+  test('Added DT = 0 shows an inline validation error, never a silent Infinity/NaN result', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '0', tonnesPerDt: '50' });
+
+    clickCalculateRecovery(pageEl);
+
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+    const err = recoveryFieldErrorText(pageEl);
+    assert.equal(err.hidden, false);
+    assert.match(err.textContent, new RegExp(idCatalog['calculate.validation.recoveryAddedUnitsPositive']));
+  });
+
+  test('Tonnes/DT <= 0 shows an inline validation error', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '-1' });
+
+    clickCalculateRecovery(pageEl);
+
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+    assert.match(recoveryFieldErrorText(pageEl).textContent, new RegExp(idCatalog['calculate.validation.recoveryTonnesPerUnitPositive']));
+  });
+});
+
+describe('37. Available Source Matching -- qualifying sources, deterministic ordering, never highest-Ni-first', () => {
+  test('a source with Ni below the required minimum is shown as NOT qualifying (empty list)', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    // Required Ni for this scenario is 8.000% -- neither entered source (2.00%/0.10%) qualifies.
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    assert.equal(qualifyingSourceRows(pageEl).length, 0);
+    assert.match(recoveryQualifyingBox(pageEl).textContent, new RegExp(idCatalog['calculate.recovery.noQualifyingSources']));
+  });
+
+  test('a source with Ni at/above the required minimum qualifies and is listed', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '1.00', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'HighSource', contractor: 'Z', ni: '9.00', units: '3', tonnesPerUnit: '20' });
+    // A tiny tolerance around a target between the two entered Ni values
+    // guarantees no exact-fit combination is found (still
+    // TARGET_NOT_ACHIEVABLE), and a very large Added DT/Tonnes-per-DT
+    // pushes the required Ni close to the Target itself (~2.00%) --
+    // comfortably below HighSource's own 9.00%, so it qualifies (verified
+    // against the real engine, not hand-derived).
+    fillRecommendationControls(pageEl, { targetNi: '2.00', tolerance: '0.0001' });
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
+    clickCalculateRecovery(pageEl);
+
+    const rows = qualifyingSourceRows(pageEl);
+    assert.ok(rows.length >= 1, 'HighSource (Ni 9.00%) should qualify against a required Ni near 2.00%');
+    const ids = rows.map((row) => findOne(row, hasClass('calculate-breakdown-row__id')).textContent);
+    assert.ok(ids.some((t) => t.includes('HighSource')));
+  });
+
+  test('same Pile ID, different Contractor: each is matched independently, never conflated', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'PILE-1', contractor: 'HighCo', ni: '9.00', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'PILE-1', contractor: 'LowCo', ni: '0.10', units: '3', tonnesPerUnit: '20' });
+    fillRecommendationControls(pageEl, { targetNi: '2.00', tolerance: '0.0001' });
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
+    clickCalculateRecovery(pageEl);
+
+    const rows = qualifyingSourceRows(pageEl);
+    const contractors = rows.map((row) => findOne(row, hasClass('calculate-breakdown-row__id')).textContent);
+    assert.ok(contractors.some((t) => t.includes('HighCo')));
+    assert.ok(!contractors.some((t) => t.includes('LowCo')), 'the low-Ni Contractor sharing the same Pile ID must not qualify');
+  });
+
+  test('qualifying sources are never ordered highest-Ni-first', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'VeryHigh', contractor: 'A', ni: '15.00', units: '2', tonnesPerUnit: '10' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'AlsoHigh', contractor: 'B', ni: '9.50', units: '2', tonnesPerUnit: '10' });
+    fillRecommendationControls(pageEl, { targetNi: '8.00', tolerance: '0.0001' });
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
+    clickCalculateRecovery(pageEl);
+
+    const rows = qualifyingSourceRows(pageEl);
+    assert.equal(rows.length, 2, 'both entered sources should qualify against a required Ni near 8.00%');
+    const ids = rows.map((row) => findOne(row, hasClass('calculate-breakdown-row__id')).textContent);
+    assert.ok(ids[0].includes('AlsoHigh'), 'the LOWER-Ni qualifying source (9.50%) must be listed FIRST');
+    assert.ok(ids[1].includes('VeryHigh'), 'the HIGHER-Ni qualifying source (15.00%) must be listed LAST, never first');
+  });
+});
+
+describe('38. Recovery invalidation -- source/Target/Tolerance clears everything; Added DT/Tonnes-per-DT clears ONLY the Recovery result', () => {
+  test('editing a source value clears Recovery along with the whole Recommendation result', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+
+    typeIntoField(gridRows(pageEl)[0], 'ni', '2.50');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('editing Target Ni clears Recovery along with the whole Recommendation result', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    fillRecommendationControls(pageEl, { targetNi: '6.00' });
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('editing Tolerance clears Recovery along with the whole Recommendation result', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    fillRecommendationControls(pageEl, { tolerance: '0.02' });
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('editing Added DT clears ONLY the Recovery result -- Recommendation, Material Actions, Fleet Actions all survive', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+    assert.equal(recoveryResultBox(pageEl).hidden, false);
+
+    fillRecoveryControls(pageEl, { addedDt: '10' });
+
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+    // Untouched by the Added DT edit:
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+    assert.notEqual(materialActionsRoot(pageEl), null);
+    assert.notEqual(fleetActionsRoot(pageEl), null);
+  });
+
+  test('editing Tonnes/DT clears ONLY the Recovery result', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    fillRecoveryControls(pageEl, { tonnesPerDt: '60' });
+
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+  });
+
+  test('recalculating after clearing Recovery via an Added DT edit produces a fresh, current result -- never a stale leftover', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+    assert.equal(recoveryResultValueText(pageEl), '≥ 8.000%');
+
+    fillRecoveryControls(pageEl, { addedDt: '10' });
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+    clickCalculateRecovery(pageEl);
+
+    // AddedTonnage = 10*50 = 500 -> RequiredNi = (5.00*750 - 2.00*250)/500 = (3750-500)/500 = 6.500%
+    assert.equal(recoveryResultValueText(pageEl), '≥ 6.500%');
+  });
+
+  test('once Recommendation recalculates to within tolerance, Recovery disappears completely', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+
+    // Lower Target Ni into the achievable range for this same fleet, then recalculate.
+    fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '1.00' });
+    clickCalculateRecommendation(pageEl);
+
+    assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
+    assert.equal(recoverySectionRoot(pageEl), null);
+  });
+
+  test('if it later becomes TARGET_NOT_ACHIEVABLE again, Recovery shows a FRESH baseline, never a stale one from before', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '1.00' });
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recoverySectionRoot(pageEl), null);
+
+    fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
+    clickCalculateRecommendation(pageEl);
+
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+    // A fresh section never carries over the previous Added DT/Tonnes-per-DT typed values or result.
+    assert.equal(findFieldInput(pageEl, 'addedDt').value, '');
+    assert.equal(findFieldInput(pageEl, 'tonnesPerDt').value, '');
+    assert.equal(recoveryResultBox(pageEl).hidden, true);
+  });
+
+  test('Material Actions and Fleet Actions content is unaffected by Recovery calculation/invalidation', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    const higherBadgeBefore = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
+
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '10' });
+
+    assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Higher')), higherBadgeBefore);
+  });
+
+  test('no sampling-history UI appears anywhere in or around the Recovery section', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    assert.doesNotMatch(recoverySectionRoot(pageEl).textContent, /sampling|actual fpp|closed.?loop/i);
+  });
+});
+
+/* ============================================================
    i18n key existence for the new calculate.actions.* family
 ============================================================ */
 describe('calculate.actions.* localization keys exist and carry the Owner-specified wording', () => {
@@ -1864,7 +2460,10 @@ describe('calculate.actions.* localization keys exist and carry the Owner-specif
     assert.equal(idCatalog['calculate.actions.material.stop'], 'STOP');
     assert.equal(idCatalog['calculate.actions.fleet.use'], 'AKTIF');
     assert.equal(idCatalog['calculate.actions.fleet.move'], 'PINDAH');
-    assert.equal(idCatalog['calculate.actions.fleet.separate'], 'PISAHKAN');
+    // "STANDBY" (V2.4 Phase 6.1 Owner correction) -- was "PISAHKAN",
+    // rejected as user-facing wording because it could be misread as
+    // separating material or permanently removing the unit.
+    assert.equal(idCatalog['calculate.actions.fleet.separate'], 'STANDBY');
   });
 
   test('English wording is the plain domain vocabulary', () => {
@@ -1873,7 +2472,8 @@ describe('calculate.actions.* localization keys exist and carry the Owner-specif
     assert.equal(enCatalog['calculate.actions.material.stop'], 'STOP');
     assert.equal(enCatalog['calculate.actions.fleet.use'], 'ACTIVE');
     assert.equal(enCatalog['calculate.actions.fleet.move'], 'MOVE');
-    assert.equal(enCatalog['calculate.actions.fleet.separate'], 'SEPARATE');
+    // "STANDBY" (V2.4 Phase 6.1 Owner correction) -- was "SEPARATE".
+    assert.equal(enCatalog['calculate.actions.fleet.separate'], 'STANDBY');
   });
 
   test('id.js and en.js still carry the exact same calculate.actions.* key set', () => {
