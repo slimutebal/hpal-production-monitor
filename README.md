@@ -1,720 +1,417 @@
 # HPAL Production Monitor
 
-**HPAL Production Monitor** adalah aplikasi web/PWA untuk membantu monitoring hauling **Limonite** dan pembuatan laporan produksi harian berbasis file Excel timbangan. Aplikasi berjalan langsung di browser, dapat dipasang ke home screen seperti aplikasi, dan mendukung penggunaan offline setelah pertama kali dibuka.
+**HPAL Production Monitor** adalah aplikasi web/PWA untuk monitoring hauling Limonite, perhitungan blending, rekomendasi feeding, dan pembuatan laporan produksi harian dari file Excel timbangan.
 
-**Live app:** [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
+**Live app:** https://slimutebal.github.io/hpal-production-monitor/  
+**Current release:** `v2.4.0 — Calculate & Blending Recommendation`
+
+Aplikasi dapat digunakan langsung dari browser atau dipasang ke Home Screen/Desktop. Perhitungan utama berjalan lokal di perangkat.
 
 ---
 
-## Ringkasan
+## Instalasi
 
-Mulai V2.0, aplikasi ini menjadi aplikasi tiga halaman dengan navigasi bawah (bottom navigation) seperti aplikasi mobile:
+Tidak perlu APK atau installer khusus.
+
+### Android
+
+Gunakan **Google Chrome**.
+
+1. Buka https://slimutebal.github.io/hpal-production-monitor/
+2. Tap menu `⋮`.
+3. Pilih **Install app** atau **Add to Home screen**.
+4. Konfirmasi.
+
+### iPhone / iPad
+
+Gunakan **Safari**.
+
+1. Buka https://slimutebal.github.io/hpal-production-monitor/
+2. Tap **Share**.
+3. Pilih **Add to Home Screen**.
+4. Tap **Add**.
+
+### PC / Laptop
+
+Buka aplikasi melalui Chrome, Edge, atau Safari.
+
+Untuk memasang sebagai aplikasi desktop di Chrome/Edge, klik ikon **Install** di address bar atau pilih **Install this site as an app** dari menu browser.
+
+### Jika update belum muncul
+
+- Buka aplikasi saat online lalu reload.
+- Chrome/Edge: lakukan hard refresh atau hapus site data `slimutebal.github.io`.
+- iPhone/iPad: jika versi lama tetap muncul, hapus aplikasi dari Home Screen lalu pasang kembali dari Safari.
+
+---
+
+## Halaman Aplikasi
 
 | Halaman | Route | Fungsi |
 | --- | --- | --- |
-| **Monitor** | `#/monitor` | Analisis hauling dari file Excel timbangan — fungsi utama yang sudah ada sebelumnya, tidak berubah. |
-| **Report** | `#/report` | Generator laporan produksi harian. Mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan), terdeteksi otomatis dari teks report sebelumnya dan file timbangan. **Memerlukan Lisensi Akses Penuh** (lihat [Lisensi dan Akses](#lisensi-dan-akses)). |
-| **Settings** | `#/settings` | Lisensi, Bahasa, dan Tampilan selalu tersedia. Direktori Personel (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) dengan Add/Edit/Deactivate/Reactivate online, Sync Status, dan Pending Changes **hanya tampil setelah Lisensi Akses Penuh dibuka** -- lihat [Lisensi dan Akses](#lisensi-dan-akses). |
+| **Monitor** | `#/monitor` | Analisis hauling, tonase, ritase, Ni, ore class, dome, contractor, dan perpindahan DT. |
+| **Calculate** | `#/calculate` | Blend Calculator, rekomendasi Target Ni, Hopper Pattern, Fleet Action, Material Action, dan Recovery. |
+| **Report** | `#/report` | Daily Production Geology Report untuk all FPP. |
+| **Settings** | `#/settings` | Bahasa, tampilan, lisensi, Personnel Directory, sync, dan pending changes. |
 
-Fokus utama:
-
-- Monitoring hauling Limonite dari file Excel timbangan (halaman Monitor).
-- Membaca ritase, tonase, ore class, dome, dan kadar Ni.
-- Menampilkan visualisasi kadar Ni dan tonase per jam.
-- Menganalisis penyumbang naik/turun `ΔNI` terhadap base NI.
-- Mendeteksi perpindahan DT antar kontraktor/dome/class.
-- Membuat **Daily Production Geology Report** untuk buyer HYNC, SLNC, dan ESG, dengan buyer terdeteksi otomatis (halaman Report).
-- Menyediakan tampilan mobile-friendly untuk Android, iOS, dan PC.
-- Mendukung PWA/offline cache via GitHub Pages.
-
-Catatan lingkup V2.0:
-
-- Monitor mempertahankan seluruh fungsi yang sudah ada — tidak ada perubahan rumus, parser, atau grafik selama integrasi ke struktur tiga halaman.
-- Report mendukung **HYNC**, **SLNC**, dan **ESG** melalui satu halaman/UI yang sama — buyer terdeteksi otomatis dari teks report sebelumnya (token `FPP HYNC` / `FPP SLNC` / `FPP ESG`) dan dari file timbangan (HYNC/SLNC: kolom `备注`, prefix `SCHY` / `SCSL`; ESG: struktur workbook, dua format didukung — lihat [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg)).
-- Settings masih berupa placeholder — belum ada pengaturan yang bisa diubah pengguna di V2.0.
+Tanpa Full Access, menu yang tersedia adalah **Monitor** dan **Settings**.
 
 ---
 
-## Status rilis terbaru
+## Fitur Utama
 
-**Current release:** `v2.2.0 — ESG Report`
+### Monitor
 
-V2.2 menambahkan:
+Digunakan untuk membaca dan menganalisis data hauling dari file Excel timbangan.
 
-1. Dukungan buyer **ESG** di halaman Report, memakai satu UI/route yang sama dengan HYNC/SLNC (`#/report`) — tidak ada route atau halaman Report terpisah per buyer.
-2. Deteksi otomatis dua format file timbangan ESG (Format A dan Format B) melalui dispatcher workbook baru (`report-workbook-dispatcher.js`) — file timbangan yang secara struktur menyerupai ESG tidak akan lagi dikirim ke parser HYNC/SLNC dan gagal dengan pesan yang membingungkan.
-3. Teks report sebelumnya bersifat **opsional khusus untuk ESG** (laporan pertama / awal periode akumulasi baru → Daily/WTD/MTD/YTD = On Shift); tetap **wajib** untuk HYNC dan SLNC.
-4. Token `FPP ESG` pada teks report sebelumnya, label field `PIC ATQ` / `Manpower ATQ` khusus ESG (menggantikan `PIC AWK` / `Manpower AWK`), tanpa mengganti ID elemen form yang sudah ada.
-5. Popup mismatch dan pesan error diperluas untuk ESG (format tidak didukung, format ambigu, data tidak valid) sambil mempertahankan perilaku popup HYNC/SLNC yang sudah ada.
+- total tonase dan ritase;
+- kadar Ni;
+- breakdown `HGLO`, `MGLO`, `LGLO`;
+- dome dan contractor;
+- analisis Ni per jam;
+- indikasi perubahan `ΔNI`;
+- resume perpindahan contractor;
+- perpindahan DT;
+- sinkronisasi List DT / contractor.
 
-Rilis sebelumnya (`v2.1.0 — HYNC + SLNC Report`) menambahkan dukungan buyer SLNC, deteksi buyer otomatis, dan popup mismatch untuk HYNC/SLNC — lihat [Changelog](#changelog) untuk detail lengkap.
+Ore class:
 
-Detail lengkap fitur Monitor yang dipertahankan ada di bagian [Monitor](#monitor) di bawah, dan detail Report HYNC/SLNC/ESG ada di bagian [Report HYNC, SLNC, dan ESG](#report-hync-slnc-dan-esg).
+```text
+Ni < 1.20        → LGLO
+1.20 ≤ Ni ≤ 1.40 → MGLO
+Ni > 1.40        → HGLO
+```
 
-**V2.3 (dalam pengerjaan, belum dirilis):** Week Report kini dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan (lihat [V2.3 Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) section 15), dan Settings sudah menyediakan Personnel Directory (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) yang disinkron dari Google Sheet — kini termasuk **penambahan, edit, nonaktifkan, dan aktifkan kembali personel secara online** (lihat [Menggunakan Settings](#menggunakan-settings)), bukan lagi read-only. Kartu Man Power & Support di Report kini juga memakai selektor personel terkontrol (SPV SCM, FRM SCM multi-select; Independent Sampler dan PIC 3rd single-select, PIC 3rd otomatis difilter sesuai organisasi sampler yang dipilih) yang diambil dari Personnel Directory yang sama — field bebas ketik (PIC SCM/PIC AWK-ATQ) sudah dihapus, dan Report memblokir pembuatan laporan jika Personnel Directory belum pernah disinkron di Settings. Manpower pihak ketiga (AWK/ATQ/organisasi lain) dan Total Manpower **keduanya input manual angka yang independen** — memilih/membatalkan SPV SCM atau FRM SCM tidak pernah mengubah salah satu nilai tersebut. Label output PIC/Manpower/Total Manpower pada teks laporan yang dihasilkan **selalu mengikuti organisasi Independent Sampler yang dipilih** (mis. `PIC AWK`/`Manpower AWK`/`Total Manpower AWK`, atau `PIC ATQ`/`Manpower ATQ`/`Total Manpower ATQ`, tanpa teks penjelas tambahan), bukan label statis "PIC 3rd". Deteksi Shift (Day/Night) kini menganalisis **seluruh** baris jam timbang yang valid pada file (bukan hanya beberapa baris awal), memutuskan berdasarkan mayoritas Day vs Night, dan memblokir lanjut ke Step 2 (bukan menebak) jika jumlah Day dan Night sama besar atau tidak ada jam yang valid sama sekali. Monitor adalah satu-satunya pemilik sinkronisasi List DT di aplikasi ini — Report tidak lagi melakukan fetch List DT sendiri sama sekali. Setiap kali sinkronisasi List DT Monitor (tombol yang sudah ada di Monitor, tidak berubah) berhasil, hasilnya disimpan ke cache bersama `hpal.contractors.v1` (`js/services/contractor-directory-core.js`, read-only) dan sebuah event internal (`hpal:contractor-directory-updated`) memberi tahu Report agar langsung memuat ulang data dan menghitung ulang breakdown kontraktor dari file yang sedang aktif — tanpa perlu upload ulang. Untuk unit SCM-HLG/SCM-LIM, cache dari Monitor ini bersifat mutlak (authoritative): jika Monitor belum pernah sync, unit-unit tersebut ditandai belum dikenali alih-alih diam-diam memakai data statis bawaan yang mungkin sudah usang; mapping statis bawaan hanya dipakai untuk tipe unit lama di luar direktori SCM (mis. ADT/MIM). Status sumber data (`List DT Monitor: Synced/Cached/Not available`, termasuk jumlah data dan waktu sync terakhir) selalu ditampilkan di kartu Data Timbangan beserta tombol **Buka Monitor** ketika belum ada data — Report memblokir pembuatan laporan akhir bila belum ada cache List DT dari Monitor sama sekali. UI refinement (murni tampilan, tidak ada perubahan logika bisnis): SPV SCM dan FRM SCM di Report kini berupa field ringkas yang membuka modal multi-select (dengan pencarian nama, dan perubahan pilihan baru diterapkan setelah menekan OK — Cancel/Escape/klik di luar modal membatalkan perubahan sementara tanpa mengubah pilihan yang tersimpan); Independent Sampler dan PIC 3rd tetap memakai tampilan radio list seperti sebelumnya karena daftarnya pendek. Settings Personnel Directory kini ringkas di halaman utama (satu kartu ringkasan per role: jumlah aktif/nonaktif dan tombol **Kelola**) — daftar lengkap, pencarian, filter Aktif/Nonaktif/Semua, dan aksi Tambah/Edit/Nonaktifkan/Aktifkan semuanya pindah ke modal pengelolaan per role, sehingga halaman utama Settings jauh lebih pendek di HP. Penulisan personel (Add/Edit/Deactivate/Reactivate) dari Settings kini online dan tersedia — setiap penulisan yang berhasil otomatis memicu sinkronisasi ulang dari Google Sheet sebelum tampilan diperbarui, tidak pernah mengandalkan respons tulis sendiri sebagai sumber kebenaran. Penulisan memakai concurrency control berbasis `version` — penulisan dengan `version` basi ditolak server dengan pesan "Data sudah berubah di server. Sinkronkan ulang sebelum mencoba lagi." dan tidak pernah dicoba ulang otomatis. Penulisan Personnel Directory kini juga mendukung **antrean offline** (V2.3 Phase 5, `js/services/personnel-write-queue.js`): saat perangkat offline, atau saat penulisan online gagal karena kegagalan jaringan murni (bukan kegagalan validasi server), Tambah/Edit/Nonaktifkan/Aktifkan disimpan sebagai antrean lokal (`hpal.personnel.writeQueue.v1`, localStorage) alih-alih gagal langsung — antrean ini murni catatan niat penulisan yang tertunda, bukan salinan otoritatif Personnel Directory, dan tidak pernah membuat data personel tampak sudah tersimpan di server sebelum benar-benar terkirim dan terverifikasi. Antrean dikirim otomatis secara berurutan (FIFO, satu per satu) begitu koneksi kembali (event `online` browser, saat Settings dibuka dalam keadaan online dengan antrean tertunda, atau setelah Sync manual); setiap item yang gagal karena `VERSION_CONFLICT` atau `DUPLICATE_PERSONNEL` (atau error aplikasi lain) ditandai **blocked** dan tidak pernah dicoba ulang otomatis — pengguna harus meninjau lewat panel **Pending Changes** di Settings (Retry atau Hapus). Belum tersedia: autentikasi pengguna (setiap penulisan tercatat di kolom `updated_by` sebagai label audit tetap `OWNER_WEB_APP`, bukan identitas pengguna asli). Teks laporan yang dihasilkan untuk WhatsApp kini memakai spasi kolom yang presisi per baris (bukan satu lebar `padEnd()` generik) — HYNC/SLNC mempertahankan "Number of Truck." (dengan titik), sedangkan buyer ESG kini memakai "Number of Truck" (tanpa titik); nama kontraktor PMS/MRP/TII/REAL memakai lebar kolom literal masing-masing, kontraktor lain tetap memakai lebar generik lama. Seluruh wording yang tampil ke pengguna untuk buyer ESG kini menampilkan **EIEB** (mis. `Buyer: EIEB`, `FPP EIEB`, `Data Timbangan (khusus EIEB)`) — ID internal (`ESG`, `ESG_FORMAT_A`, `ESG_FORMAT_B`, modul `esg-profile.js`) tetap tidak berubah, murni penamaan tampilan yang berubah, mengikuti label buyer yang sudah lebih dulu dipakai Monitor untuk workbook yang sama. Deteksi buyer dari teks report sebelumnya kini menerima baik token lama `FPP ESG` maupun token baru `FPP EIEB` (keduanya diselesaikan ke buyer internal yang sama), supaya laporan yang sudah terlanjur dibuat sebelum perubahan ini tetap bisa dipakai sebagai teks report sebelumnya. Akumulasi Daily/WTD/MTD/YTD kini benar-benar period-aware (bug fix — sebelumnya WTD/MTD/YTD selalu diakumulasi tanpa pernah reset, tidak peduli pergantian minggu/bulan/tahun): WTD reset saat identitas minggu ISO (nomor minggu + tahun-minggu ISO, bukan hanya nomor minggu yang tampil) berubah dari report sebelumnya, MTD reset saat bulan/tahun kalender berubah, YTD reset saat tahun kalender berubah — masing-masing bucket independen, tidak saling terkait, dan tanggal report sebelumnya (bukan angka Week yang tertulis atau jam perangkat) selalu jadi acuan periode; lihat bagian [Ringkasan perhitungan](#ringkasan-perhitungan) untuk detail dan contoh. Kotak "Teks Laporan" di Step 3 kini otomatis menyesuaikan tinggi mengikuti panjang teks yang dihasilkan (tidak ada lagi scrollbar internal tetap) — halaman itu sendiri yang scroll untuk laporan panjang, dan tinggi ikut menyesuaikan saat teks diedit manual atau saat Reset. Settings kini juga menyediakan kartu **Bahasa** (Bahasa Indonesia / English) dan **Tampilan** (Gelap/Terang/Otomatis) — lihat [Menggunakan Settings](#menggunakan-settings) untuk detail cakupan dan perilaku sinkronisasinya dengan toggle tema Monitor yang sudah ada. **V2.3 Phase 8 (Simple Local License and Access Control)** menambahkan gerbang akses `MONITOR_ONLY`/`FULL_ACCESS` di atas seluruh fitur di atas — lihat [Lisensi dan Akses](#lisensi-dan-akses) dan bagian Changelog v2.3.0 di bawah. V2.2 tetap menjadi rilis yang di-deploy secara resmi sampai seluruh fase V2.3 (termasuk Phase 8 ini) diverifikasi dan di-deploy oleh Owner.
+### Calculate
+
+Digunakan untuk menghitung blend dan membuat rekomendasi feeding berdasarkan Target Ni.
+
+Input per source:
+
+- Pile ID
+- Contractor
+- Ni (%)
+- Jumlah Unit / DT
+- Tonase / Unit
+
+`Jumlah Unit / DT` adalah **fleet fisik yang dapat digunakan berulang**, bukan jumlah rit yang habis sekali pakai.
+
+#### Blend Calculator
+
+Perhitungan berlangsung live dan menampilkan:
+
+- **NI SUMPRODUCT**
+- **TOTAL DT**
+- **TOTAL TONASE**
+
+Ni dihitung dengan tonnage-weighted average.
+
+#### Recommendation
+
+Masukkan **Target Ni** dan **Tolerance**. Default tolerance adalah `±0.010%` dan dapat diubah dengan step `0.001`.
+
+Output utama:
+
+- **Hopper Pattern**
+- **Estimated Final Ni**
+- **Fleet Utilization**
+- **Fleet Adjustment**
+- **Fleet Actions**
+- **Material Actions**
+
+Physical fleet ratio tidak selalu sama dengan Hopper Pattern.
+
+```text
+Physical active fleet : 5 : 14
+Operational Hopper    : 1 : 3
+```
+
+Hopper Pattern adalah pola muatan berulang yang lebih praktis dan tetap harus berada dalam Target Ni ± Tolerance.
+
+**Fleet Actions**
+
+- `ACTIVE` — DT digunakan.
+- `MOVE` — DT dipindahkan ke source lain dengan contractor yang sama.
+- `STANDBY` — DT tidak diperlukan pada alokasi feeding saat ini.
+
+**Material Actions**
+
+- `USE`
+- `LIMIT`
+- `STOP`
+
+Aksi material mengikuti kondisi Recommendation saat itu. LGLO tidak otomatis STOP dan HGLO tidak otomatis USE.
+
+#### Planned Blend Recovery
+
+Jika Target tidak dapat dicapai dari source yang tersedia, Recovery menghitung **minimum Ni sumber tambahan** berdasarkan Added DT dan Tonnes/DT.
+
+Recovery menggunakan best-attainable planned blend. Fitur ini bukan cumulative actual FPP dan bukan stockpile inventory.
+
+#### Jika assay berubah
+
+Update nilai Ni source lalu tekan **Hitung Rekomendasi** kembali. Blend live akan berubah dan Recommendation lama otomatis dibersihkan.
+
+### Report
+
+Satu halaman Report digunakan untuk:
+
+- **FPP 1**
+- **FPP 2**
+- **FPP 3**
+
+Alur:
+
+```text
+1. Input
+2. Area Muat
+3. Hasil
+```
+
+Fitur utama:
+
+- buyer/format file terdeteksi otomatis;
+- Week ISO otomatis;
+- Shift Day/Night dari seluruh jam timbang valid;
+- SPV SCM dan FRM SCM dari Personnel Directory;
+- Independent Sampler dan PIC 3rd;
+- area `BR1`, `BR23E`, `BR23W`, `DS`;
+- Daily, WTD, MTD, YTD period-aware;
+- preview dan **Copy Laporan**.
+
+Teks report sebelumnya wajib untuk HYNC/SLNC. Untuk EIEB dapat dikosongkan saat memulai periode akumulasi baru.
+
+### Settings
+
+Settings menyediakan:
+
+- Bahasa Indonesia / English;
+- Dark / Light / Auto;
+- License;
+- Personnel Directory;
+- Sync Status;
+- Pending Changes saat offline.
+
+Personnel Directory mencakup SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd.
+
+---
+
+## Cara Pakai Singkat
+
+### Monitor
+
+1. Buka **Monitor**.
+2. Pilih file Excel timbangan.
+3. Tunggu proses selesai.
+4. Baca ringkasan, grafik, ore class, dan perpindahan DT.
+
+### Calculate
+
+1. Buka **Calculate**.
+2. Isi source/pile.
+3. Periksa NI SUMPRODUCT.
+4. Isi Target Ni dan Tolerance.
+5. Tekan **Hitung Rekomendasi**.
+6. Ikuti Hopper Pattern, Fleet Action, dan Material Action.
+7. Gunakan Recovery jika Target Not Achievable.
+
+### Report
+
+1. Pastikan Personnel Directory sudah tersinkron.
+2. Buka **Report**.
+3. Isi Step 1 dan upload file timbangan.
+4. Pilih area setiap dome pada Step 2.
+5. Periksa hasil pada Step 3.
+6. Tekan **Copy Laporan**.
+
+### Settings
+
+Gunakan Settings untuk Bahasa, Tampilan, License, sync Personnel Directory, dan pengelolaan personel.
+
+---
+
+## Offline / PWA
+
+Service worker V2.4 menyimpan app-shell dan modul Calculate ke cache.
+
+Setelah aplikasi pernah dibuka online, fitur lokal berikut dapat digunakan dari cache:
+
+- Blend Calculator;
+- Recommendation;
+- Hopper Pattern;
+- Fleet Actions;
+- Material Actions;
+- Planned Blend Recovery;
+- halaman aplikasi yang sudah tercache.
+
+Sinkronisasi contractor dan Personnel Directory tetap membutuhkan internet.
+
+File Excel diproses lokal di browser dan tidak dikirim ke backend aplikasi.
+
+---
+
+## Bahasa dan Tampilan
+
+Aplikasi mendukung:
+
+- Bahasa Indonesia / English;
+- Dark;
+- Light;
+- Auto/System.
+
+Preferensi disimpan lokal dan digunakan oleh seluruh aplikasi.
+
+---
+
+## Data dan Privasi
+
+- File Excel diproses di browser.
+- File Monitor dan Report tidak diupload ke server aplikasi.
+- Report tidak menyimpan riwayat permanen di server.
+- Data contractor dan Personnel Directory dapat disinkron melalui Google Sheet / Google Apps Script.
+- Preferensi, cache, license proof, dan antrean offline tertentu disimpan lokal di perangkat/browser.
+
+Repository bersifat public untuk deployment dan maintenance.
+
+---
+
+## Limitasi
+
+- Parser bergantung pada struktur workbook yang dikenali.
+- Perubahan besar pada header/sheet dapat membuat file gagal dibaca.
+- State Report bersifat sesi dan hilang setelah refresh/reset.
+- Calculate tidak menyimpan sampling history.
+- Planned Blend Recovery tidak mengetahui stockpile inventory aktual.
+- Sinkronisasi Google Sheet membutuhkan internet.
+- Offline mode bergantung pada cache browser yang masih tersedia.
 
 ---
 
 ## Lisensi dan Akses
 
-Sejak V2.3 Phase 8, aplikasi memiliki dua tingkat akses:
-
-| Tingkat | Kode internal | Tersedia tanpa lisensi? |
-| --- | --- | --- |
-| Akses Monitor | `MONITOR_ONLY` | Ya -- ini adalah tingkat default. |
-| Akses Penuh | `FULL_ACCESS` | Tidak -- memerlukan kunci akses yang dimiliki Owner. |
-
-**Tanpa lisensi (`MONITOR_ONLY`, default):**
-- Monitor tetap berfungsi penuh -- upload, kalkulasi, grafik, dan sinkronisasi List DT tidak terpengaruh sama sekali.
-- Di Settings, hanya tiga bagian yang tampil: **License**, **Language**, dan **Appearance**. Personnel Directory, Sync Status, dan Pending Changes **tidak dirender ke halaman sama sekali** (bukan sekadar disembunyikan/nonaktif) -- tidak ada ringkasan role, tidak ada status sinkron, tidak ada antrean offline yang terlihat.
-- Menu navigasi bawah **Report** tidak ditampilkan, dan membuka `#/report` langsung akan otomatis dialihkan ke Settings dengan kartu License difokuskan dan pesan "Fitur ini memerlukan Lisensi Akses Penuh." ditampilkan.
-- Bahasa dan Tampilan tetap bisa diganti kapan saja, tanpa lisensi.
-
-**Dengan lisensi (`FULL_ACCESS`):**
-- Report dan seluruh Personnel Directory (termasuk sinkronisasi, Add/Edit/Deactivate/Reactivate, dan antrean offline) langsung tersedia, tanpa reload.
-- Kartu License di Settings menampilkan status "Full Access", tanggal terpasang, dan tombol **Remove License**.
-
-**Cara membuka akses:** buka Settings → kartu **License** → masukkan kunci akses (persis seperti yang diberikan Owner, termasuk huruf besar/kecil -- spasi di awal/akhir akan membuat verifikasi gagal) → tekan **Unlock**. Kunci diverifikasi sepenuhnya di perangkat (PBKDF2-HMAC-SHA-256 via Web Crypto), tidak memerlukan koneksi internet, dan tidak pernah dikirim ke server mana pun. Setelah berhasil, akses tetap **Full Access** pada peluncuran berikutnya (termasuk offline) sampai:
-- **Remove License** ditekan (meminta konfirmasi terlebih dahulu);
-- data situs/penyimpanan browser dihapus, atau PWA di-install ulang; atau
-- penyimpanan lisensi lokal rusak/tidak valid (aplikasi otomatis kembali ke Monitor Access dengan aman).
-
-Menghapus lisensi **tidak** menghapus cache Personnel Directory, antrean penulisan offline yang masih tertunda, atau preferensi Bahasa/Tampilan -- data tersebut tetap tersimpan, hanya tidak dapat diakses lagi dari Settings sampai lisensi dibuka kembali. Antrean offline yang masih tertunda saat lisensi dihapus **tidak** ikut terkirim, ditampilkan, atau dicoba ulang otomatis selama status masih Monitor Access.
-
-**Batasan keamanan, dinyatakan secara eksplisit:** ini adalah aplikasi PWA statis publik tanpa backend. Gerbang akses ini mencegah akses tidak sengaja/kasual dan menjaga kunci akses asli tidak pernah masuk ke source code -- **ini bukan proteksi DRM yang kuat**. Pengguna yang cukup teknis dapat memodifikasi JavaScript yang di-serve untuk melewati pemeriksaan ini. Lisensi bersifat permanen (tidak ada kedaluwarsa) dan tidak terikat ke perangkat tertentu -- kunci akses yang sama bisa dipakai ulang di perangkat/browser lain.
-
----
-
-## Cara pakai
-
-Navigasi antar halaman menggunakan **bottom navigation** (Monitor / Report / Settings) yang selalu terlihat di bagian bawah layar, baik di HP maupun desktop. Berpindah halaman tidak melakukan reload — data yang sudah diisi di satu halaman tetap ada saat kembali dari halaman lain. Menu **Report** hanya tampil setelah lisensi Akses Penuh dibuka (lihat [Lisensi dan Akses](#lisensi-dan-akses)).
-
-### Menggunakan Monitor
-
-1. Buka halaman **Monitor** (default saat aplikasi pertama dibuka).
-2. Klik **Pilih File Excel** pada kartu **Data Timbangan**, lalu pilih file `.xlsx` timbangan (sheet pertama: `过磅明细`).
-3. Aplikasi menampilkan ringkasan hauling/produksi, tonase dan ritase, breakdown ore class, visualisasi kadar Ni, analisis NI per jam, indikasi penyumbang `ΔNI`, resume perpindahan per kontraktor, perpindahan DT, dan sub-baris dome per ore class.
-
-### Menggunakan Report
-
-1. Buka halaman **Report**. Personnel Directory harus sudah pernah disinkron di Settings terlebih dahulu (lihat [Menggunakan Settings](#menggunakan-settings)) — jika belum, Report menampilkan pesan blokir dan tombol untuk membuka Settings.
-2. Di **Step 1 — Input**: paste teks report shift sebelumnya (opsional khusus buyer ESG), upload file timbangan (`.xlsx`/`.xls`, buyer HYNC/SLNC/ESG terdeteksi otomatis; Week ISO otomatis terhitung dari tanggal file, tidak bisa diedit manual; Shift Day/Night otomatis terdeteksi dari seluruh baris jam timbang yang valid pada file — bukan hanya sebagian). Pada kartu **Man Power & Support**, tekan field **SPV SCM** dan **FRM SCM** (field ringkas — menampilkan "Belum dipilih", satu/dua nama, atau "N dipilih" untuk 3+) untuk membuka modal multi-select dengan pencarian nama; centang personel yang diinginkan lalu tekan **OK** untuk menerapkan (Cancel membatalkan tanpa mengubah pilihan tersimpan; minimal satu personel masing-masing), pilih **Independent Sampler** (otomatis ter-default sesuai buyer — AWK untuk HYNC/SLNC, ATQ untuk ESG, tetap bisa diubah manual), pilih **PIC 3rd** (daftar otomatis difilter sesuai organisasi sampler yang dipilih), isi **Manpower** organisasi sampler terpilih dan **Total Manpower** (keduanya input angka manual dan independen — tidak saling memengaruhi dan tidak dipengaruhi oleh pilihan SPV/FRM/sampler/PIC), lalu isi Problem dan Preventive Action.
-3. Di **Step 2 — Area Muat**: pilih area (BR1 / BR23E / BR23W / DS) untuk setiap dome yang terdeteksi dari file.
-4. Di **Step 3 — Hasil**: cek preview laporan, lalu tekan **Copy Laporan** untuk menyalin ke clipboard (siap ditempel ke WA Group).
-
-Upload file di Report terpisah dari upload file di Monitor — keduanya membaca file masing-masing secara independen.
-
-### Menggunakan Settings
-
-0. Kartu paling atas adalah **License** (lihat [Lisensi dan Akses](#lisensi-dan-akses) untuk detail lengkap). Tanpa lisensi, hanya kartu License, Bahasa, dan Tampilan yang tampil di Settings -- langkah 2-8 di bawah (Sync Status, Pending Changes, dan empat kartu Personnel Directory) baru muncul setelah lisensi Akses Penuh dibuka.
-1. Setelah lisensi dibuka, dua kartu berikutnya adalah **Bahasa** (Bahasa Indonesia / English) dan **Tampilan** (Gelap / Terang / Otomatis) — pilihan tersimpan lokal di perangkat (`hpal.preferences.v1`), langsung diterapkan ke seluruh aplikasi tanpa reload, dan bertahan setelah reload/restart PWA. Bahasa Otomatis pada Tampilan mengikuti preferensi sistem/browser dan merespons perubahan sistem secara langsung; toggle tema di header Monitor tetap ada dan otomatis tersinkron dua arah dengan kartu Tampilan (mengubah salah satu langsung memperbarui yang lain). Mengubah Bahasa/Tampilan tidak pernah mereset data Report atau Personnel Directory yang sedang berjalan.
-2. Kartu Sync Status menampilkan sumber data (Remote/Cached/No data), waktu sinkron terakhir, dan total personel.
-3. Tekan **Sync** untuk mengambil direktori terbaru dari Google Sheet (`report_personnel`). Data yang tersimpan dari sinkron sebelumnya langsung tampil begitu Settings dibuka, tanpa perlu menekan Sync.
-4. Di bawah kartu Sync Status, empat kartu ringkasan role (SPV SCM, FRM SCM, Independent Sampler, PIC 3rd) masing-masing hanya menampilkan nama role, jumlah aktif (dan jumlah nonaktif jika ada, mis. "10 aktif · 2 nonaktif"), dan tombol **Kelola** — halaman utama Settings tidak lagi menampilkan seluruh baris personel sekaligus.
-5. Tekan **Kelola** pada salah satu kartu untuk membuka modal pengelolaan role tersebut, berisi: tombol **+ Tambah Personel**, kotak pencarian nama, filter segmented **Aktif / Nonaktif / Semua** (default: Aktif), dan daftar personel (PIC 3rd dikelompokkan per organisasi) yang scroll sendiri di dalam modal — header, tombol Tambah, pencarian, dan filter tetap terlihat. Personel yang dinonaktifkan tetap tersimpan di Google Sheet (tidak pernah dihapus permanen) dan tetap bisa ditinjau lewat filter Nonaktif/Semua.
-6. **+ Tambah Personel** membuka form sesuai field yang relevan untuk role tersebut (SPV SCM/FRM SCM: nama saja, organisasi otomatis SCM; Independent Sampler: nama + organisasi bebas diisi; PIC 3rd: nama + pilih Independent Sampler aktif untuk menentukan organisasinya).
-7. Setiap baris personel di dalam modal pengelolaan memiliki tombol **Edit** (membuka dialog: nama dan organisasi bisa diubah sesuai role — SPV SCM/FRM SCM organisasi tetap terkunci ke SCM; Role, ID, dan Versi bersifat read-only) dan **Nonaktifkan**/**Aktifkan**. Nonaktifkan meminta konfirmasi ("Nonaktifkan {nama} dari Personnel Directory?"); Aktifkan kembali langsung tanpa konfirmasi. Setiap Tambah/Edit/Nonaktifkan/Aktifkan yang berhasil langsung memperbarui modal pengelolaan dan kartu ringkasan di halaman utama dari data terbaru hasil sinkron ulang. Personel yang dinonaktifkan otomatis tidak lagi muncul di selektor Report — Report hanya pernah membaca personel aktif.
-8. Saat perangkat offline, kartu Sync Status menampilkan indikator "Offline — perubahan akan diantrikan." dan Tambah/Edit/Nonaktifkan/Aktifkan tetap bisa ditekan seperti biasa — perubahan disimpan sebagai antrean lokal ("Perubahan disimpan sebagai antrean offline dan akan dikirim saat koneksi kembali.") alih-alih dikirim langsung, dan personel/perubahan yang masih dalam antrean **belum** muncul sebagai data tersimpan di daftar personel maupun di selektor Report sampai benar-benar terkirim. Baris **Pending Changes** di kartu Sync Status menampilkan jumlah item tertunda dan tombol **Review** (muncul saat ada item) untuk membuka daftar antrean (aksi, nama, waktu, status); item yang gagal karena `VERSION_CONFLICT` atau duplikat ditandai **Blocked** dan tidak dicoba ulang otomatis — tekan **Retry** setelah meninjau, atau **Hapus** untuk membatalkan. Antrean terkirim otomatis begitu koneksi kembali (atau setelah Sync manual saat online), satu per satu secara berurutan, masing-masing tetap melalui sinkronisasi ulang dan verifikasi yang sama seperti penulisan online biasa.
-
----
-
-## Panduan instalasi
-
-### Android
-
-Gunakan Chrome Android.
-
-1. Buka link aplikasi:
-
-   [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
-
-2. Tunggu halaman terbuka sempurna.
-3. Tap menu titik tiga di kanan atas Chrome.
-4. Pilih **Add to Home screen** atau **Install app**.
-5. Konfirmasi nama aplikasi.
-6. Aplikasi akan muncul di Home Screen.
-
-Catatan Android:
-
-- Setelah pernah dibuka online, aplikasi bisa dibuka kembali dari cache saat offline.
-- Jika update belum muncul, hapus site data/cache untuk `slimutebal.github.io`, lalu buka ulang.
-- Jika icon masih lama, hapus shortcut/app dari Home Screen lalu install ulang.
-
-### iPhone / iPad
-
-Gunakan Safari. Untuk iOS, instalasi PWA sebaiknya dilakukan dari Safari, bukan dari Chrome.
-
-1. Buka Safari.
-2. Buka link aplikasi:
-
-   [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
-
-3. Tunggu halaman terbuka sempurna.
-4. Tap tombol **Share**.
-5. Pilih **Add to Home Screen**.
-6. Tap **Add**.
-7. Aplikasi akan muncul di Home Screen.
-
-Catatan iOS:
-
-- Jika aplikasi yang sudah dipasang masih menampilkan versi lama, hapus app dari Home Screen lalu tambahkan ulang dari Safari.
-- iOS PWA sering menahan cache dan icon lebih lama dibanding browser biasa.
-- Jika icon tidak berubah setelah update, remove dari Home Screen lalu Add to Home Screen ulang.
-- Tooltip grafik iOS sudah diperbaiki, tetapi chart-related changes tetap perlu dites di mode Safari biasa dan mode Home Screen.
-- Validasi final bottom navigation dan safe-area di perangkat iOS asli masih perlu dilakukan (lihat [Limitasi](#limitasi)).
-
-### PC / Laptop
-
-Bisa digunakan langsung dari browser modern.
-
-Rekomendasi browser:
-
-- Google Chrome.
-- Microsoft Edge.
-- Safari macOS.
-
-Cara menggunakan di PC:
-
-1. Buka link aplikasi:
-
-   [https://slimutebal.github.io/hpal-production-monitor/](https://slimutebal.github.io/hpal-production-monitor/)
-
-2. Gunakan navigasi bawah untuk berpindah antara Monitor, Report, dan Settings.
-3. Upload file Excel sesuai halaman yang digunakan.
-
-Install sebagai aplikasi desktop:
-
-#### Chrome / Edge
-
-1. Buka link aplikasi.
-2. Klik icon install di address bar jika muncul.
-3. Atau buka menu titik tiga.
-4. Pilih **Install HPAL Production Monitor** / **Apps → Install this site as an app**.
-5. Aplikasi akan terbuka seperti aplikasi desktop.
-
-Catatan PC:
-
-- Jika update belum muncul, lakukan hard refresh atau hapus site data/cache.
-- Untuk Chrome/Edge, bisa cek di `Settings → Privacy and security → Site settings → View permissions and data stored across sites`, lalu hapus data untuk `slimutebal.github.io`.
-
----
-
-## Monitor
-
-Monitor adalah halaman analisis hauling yang sudah tersedia sejak sebelum V2.0. **Perilaku Monitor dipertahankan penuh selama integrasi ke struktur app shell V2.0** — tidak ada perubahan rumus, parser Excel, grafik, atau contractor sync. Monitor hanya dipindahkan ke dalam page container dan sistem navigasi baru.
-
-### Data kontraktor bersama via Google Sheet
-
-Data kontraktor tidak hanya bergantung pada data lokal masing-masing device.
-
-- Data kontraktor disinkron dari Google Sheet melalui Google Apps Script Web App.
-- Semua user bisa menerima data kontraktor terbaru yang sama ketika online.
-- Tombol **➕ Update Kontraktor** untuk input No DT + Nama Kontraktor.
-- Tombol **🔄 Sinkron Sekarang** untuk fetch ulang manual.
-- Fitur **📄 Update via File Excel** tetap tersedia sebagai override lokal per-device.
-
-Prioritas sumber data kontraktor:
-
-```text
-Upload Excel manual device ini → Google Sheet bersama → data bawaan aplikasi
-```
-
-### Dukungan offline untuk update kontraktor
-
-- Jika device online saat submit, data langsung terkirim ke Google Sheet.
-- Jika device offline, data tetap berlaku di device itu dan masuk antrean lokal.
-- Saat device online kembali, antrean lokal akan dikirim ke Google Sheet.
-
-### Logika INDIKASI NI per jam
-
-Kolom **INDIKASI** pada tabel `Analisis NI per Jam` menggunakan kontribusi terhadap base NI, bukan sekadar perubahan mix antar jam.
-
-Aturan label:
-
-```text
-abs(ΔNI) < 0.009          → —
-0.009 <= abs(ΔNI) < 0.015 → Mix sedikit berubah
-abs(ΔNI) >= 0.015         → penyumbang utama + faktor penahan opsional
-```
-
-Contoh label (ilustrasi, bukan data operasional):
-
-```text
-↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
-```
-
-Makna label:
-
-- `↓ LGLO -0.030 DOME-12` = penyumbang utama yang menarik NI turun.
-- `↑ HGLO +0.008 DOME-03` = faktor penahan yang membantu menahan penurunan NI.
-
-### Tooltip grafik di iOS PWA
-
-- Tooltip/popup grafik `Analisis NI per Jam` tidak tertahan saat app dibuka dari **Add to Home Screen** di iOS.
-- Tap/click di luar chart akan memaksa tooltip Chart.js hilang.
-- Event yang ditangani: `pointerdown`, `touchstart`, `click`, `scroll`, dan `visibilitychange`.
-
-### Theme dan tampilan
-
-- Dark mode.
-- Light mode.
-- Auto mode mengikuti preferensi sistem/browser.
-- Sub-baris dome collapsible untuk `HGLO`, `MGLO`, dan `LGLO`.
-- Header dan isi cell kolom `ΔNI` rata tengah.
-- `📋 Resume Perpindahan per Kontraktor` tampil sebelum `🔁 Perpindahan DT`.
-
----
-
-## Report HYNC, SLNC, dan ESG
-
-Halaman **Report** (`#/report`) adalah satu UI yang sama untuk buyer **HYNC**, **SLNC**, maupun **ESG** — tidak ada route atau halaman terpisah per buyer. Buyer terdeteksi otomatis, lalu label di UI dan teks laporan yang dihasilkan menyesuaikan:
-
-```text
-DAILY PRODUCTION GEOLOGY REPORT
-HPAL Ore Selling SCM — FPP HYNC
-```
-
-atau
-
-```text
-DAILY PRODUCTION GEOLOGY REPORT
-HPAL Ore Selling SCM — FPP SLNC
-```
-
-atau
-
-```text
-DAILY PRODUCTION GEOLOGY REPORT
-HPAL Ore Selling SCM — FPP EIEB
-```
-
-Buyer di atas diproses secara internal lewat engine ESG (`esg-profile.js`, ID internal tetap `ESG`) — **EIEB** adalah nama tampilan yang dilihat pengguna di UI dan teks laporan, sama seperti label buyer yang sudah lebih dulu dipakai Monitor untuk workbook yang sama.
-
-Seluruh parsing dan perhitungan Report dilakukan **lokal di browser**, sama seperti Monitor. Setiap file timbangan yang diupload melewati satu dispatcher (`report-workbook-dispatcher.js`) yang menentukan apakah file itu HYNC/SLNC atau salah satu dari dua format file timbangan ESG yang didukung — file yang secara struktur menyerupai ESG tidak pernah dikirim ke parser HYNC/SLNC.
-
-### Deteksi buyer otomatis
-
-Buyer dideteksi dari dua sumber, dan progres ke Step 2 baru diizinkan setelah keduanya cocok:
-
-1. **Teks report sebelumnya** — dicari token `FPP HYNC`, `FPP SLNC`, atau `FPP EIEB` (case-insensitive, toleran multi-spasi; token lama `FPP ESG` dari laporan yang dibuat sebelum perubahan penamaan EIEB tetap dikenali juga). Bila teks menyebut lebih dari satu token sekaligus, dianggap ambigu dan diblokir. Bila tidak ada token yang ditemukan, buyer dianggap belum terdeteksi dan diblokir (tidak pernah default diam-diam ke buyer manapun) — **kecuali** teks report sebelumnya memang dikosongkan untuk buyer EIEB (lihat di bawah).
-2. **File timbangan**:
-   - HYNC/SLNC — dibaca dari kolom **备注** (header, bukan asumsi posisi kolom tetap): nilai yang diawali `SCHY` berarti HYNC, diawali `SCSL` berarti SLNC. Hanya prefix yang dibandingkan, bukan kode lengkap — beberapa kode berbeda milik buyer yang sama (mis. `SCSL-0000033` dan `SCSL-0000034` dalam satu file) **valid** dan tidak memicu peringatan. File diblokir jika: ada baris data valid dengan `备注` kosong atau berisi nilai yang tidak dikenali, atau file berisi campuran `SCHY` dan `SCSL` sekaligus.
-   - ESG — dideteksi dari struktur workbook (dua format didukung, lihat bagian ESG di bawah), bukan dari kolom `备注`.
-
-Jika kedua sumber terdeteksi tapi buyer-nya berbeda (atau salah satu sumber tidak valid), aplikasi menampilkan popup informasi yang menjelaskan buyer/format yang terdeteksi dari masing-masing sumber dan memblokir lanjut ke Step 2 sampai diperbaiki. Sebelum kedua sumber lengkap, label UI diperbarui secara sementara (provisional) dari sumber yang sudah ada.
-
-### Alur tiga langkah
-
-#### 1. Input
-
-- Teks report shift sebelumnya — **wajib** untuk HYNC dan SLNC (dipakai untuk ambil tanggal & angka Daily/WTD/MTD/YTD lama, dan untuk deteksi buyer); **boleh kosong khusus untuk EIEB** (berarti laporan pertama / awal periode akumulasi baru — Daily/WTD/MTD/YTD dihitung mulai dari On Shift).
-- File Excel timbangan (wajib; buyer HYNC, SLNC, atau EIEB terdeteksi otomatis).
-- Week — dihitung otomatis (ISO week, Senin–Minggu) dari tanggal file timbangan yang terbaca; read-only, tidak ada input manual. Tanggal file tidak valid/tidak terbaca akan memblokir lanjut ke Step 2.
-- **SPV SCM** — field ringkas yang membuka modal multi-select dari Personnel Directory (pencarian nama, minimal satu, diterapkan setelah menekan OK).
-- **FRM SCM** — field ringkas yang membuka modal multi-select dari Personnel Directory (pencarian nama, minimal satu, diterapkan setelah menekan OK).
-- **Independent Sampler** — pilih dari Personnel Directory (single-select). Otomatis ter-default sesuai buyer yang terdeteksi (AWK untuk HYNC/SLNC, ATQ untuk EIEB) setiap kali buyer berubah; bisa diubah manual kapan saja.
-- **PIC 3rd** — pilih dari Personnel Directory (single-select), daftar otomatis difilter hanya menampilkan PIC 3rd dari organisasi Independent Sampler yang sedang dipilih. Mengganti Independent Sampler akan menghapus pilihan PIC 3rd yang sudah tidak sesuai organisasi. Label field dan label pada teks laporan mengikuti organisasi sampler terpilih (mis. "PIC AWK" / "PIC ATQ"), bukan label statis "PIC 3rd".
-- **Manpower** organisasi Independent Sampler terpilih — input angka manual (label field dan label pada teks laporan menyesuaikan otomatis, mis. "Manpower AWK" / "Manpower ATQ").
-- **Total Manpower** — input angka manual, independen dari jumlah SPV SCM/FRM SCM terpilih (bukan hasil hitungan otomatis); label pada teks laporan juga menyesuaikan organisasi sampler terpilih (mis. "Total Manpower AWK" / "Total Manpower ATQ").
-- Problem (boleh kosong, tampil sebagai `-` di laporan).
-- Preventive Action (boleh kosong, tampil sebagai `-` di laporan).
-
-Semua field personel di atas memakai data dari Personnel Directory yang sudah disinkron di Settings — tidak ada input nama bebas ketik. Jika Personnel Directory belum pernah disinkron (cache lokal kosong), Report menampilkan pesan blokir dan tombol untuk membuka Settings; Report tidak pernah beralih ke input teks bebas sebagai fallback.
-
-Format file HYNC/SLNC yang didukung:
-
-- `.xlsx` atau `.xls`.
-- Sheet yang diutamakan: `过磅明细`.
-- Header kolom yang wajib ada:
-  - `流水号`
-  - `车号`
-  - `净重`
-  - `毛重时间`
-  - `日期`
-  - `规格`
-- Kolom `备注` dibaca untuk deteksi buyer (lihat di atas).
-
-Format file ESG yang didukung — dua format berbeda, keduanya menghasilkan buyer **ESG** yang sama:
-
-- **Format A** — header dua baris (`Vehicle No`, `Date`, `Time Loaded`, `Cargo Weighing`, `Kode Dome`), bukti buyer dari metadata letterhead (`Stockpile ESG`). Berat bersih tersimpan dalam **ton** (bukan kg — dikonversi otomatis).
-- **Format B** — header satu baris (`NO.NOTA`, `NO. DT`, `PENERIMA`, `TIMBANGAN BERSIH`, `JAM TIMBANG ISI`, `TANGGAL`, `KODE ORE`), bukti buyer dari kolom `PENERIMA` (`ESG-FPP`). Berat bersih juga tersimpan dalam **ton**.
-
-Jika file tidak cocok dengan header wajib yang diharapkan, aplikasi menampilkan pesan error yang jelas (menyebut **EIEB** jika file menunjukkan struktur menyerupai workbook ESG namun tidak lengkap) dan tidak melanjutkan ke langkah berikutnya.
-
-#### 2. Area Muat
-
-- Semua dome unik yang terdeteksi dari file ditampilkan.
-- Setiap dome menampilkan nama dome dan ore class.
-- Setiap dome wajib diberi salah satu area: **BR1**, **BR23E**, **BR23W**, atau **DS** sebelum bisa lanjut ke Step 3.
-
-#### 3. Hasil
-
-Menampilkan:
-
-- Tanggal dan shift terdeteksi.
-- On Shift tonnage dan ritase.
-- Jumlah DT dan ADT.
-- Breakdown jumlah truck per kontraktor.
-- Loading point per area (DS / BR1 / BR23E / BR23W).
-- Daily, WTD, MTD, YTD.
-- Problem dan Preventive Action.
-- Preview teks laporan lengkap, dengan tombol **Copy Laporan** untuk menyalin ke clipboard.
-
-### Penyimpanan state Report
-
-Input dan hasil laporan yang sudah dibuat tetap tersimpan selama pengguna berpindah ke Monitor atau Settings lalu kembali ke Report, karena halaman Report tidak dibangun ulang saat berpindah rute. State Report bersifat in-memory (sesi berjalan) — akan hilang saat refresh, tab ditutup, atau tombol Reset ditekan. Report **tidak** menyediakan riwayat laporan permanen di V2.0.
-
-### Ringkasan perhitungan
-
-#### On Shift tonnage
-
-```text
-On Shift tonnage = jumlah seluruh net weight valid / 1000
-```
-
-#### On Shift ritase
-
-```text
-On Shift ritase = jumlah record valid
-```
-
-#### Daily
-
-```text
-Day Shift                                        → Daily = On Shift
-Night Shift, tanggal report sebelumnya sama       → Daily = Previous Daily + On Shift
-Night Shift, tanggal report sebelumnya berbeda     → Daily = On Shift
-```
-
-#### Akumulasi (period-aware, V2.3)
-
-Setiap bucket akumulasi mengecek batas periodenya sendiri secara independen, dibandingkan terhadap tanggal report sebelumnya (bukan jam/tanggal perangkat) — bila batas periode berubah, bucket tersebut **reset ke On Shift saat ini** (bukan literal nol, kecuali On Shift itu sendiri nol); bila tidak, bucket itu **melanjutkan** akumulasi lama:
-
-```text
-WTD = ISO week + ISO week-year sama dengan report sebelumnya  → Previous WTD + On Shift
-      ISO week atau ISO week-year berbeda                     → On Shift
-
-MTD = bulan + tahun kalender sama dengan report sebelumnya    → Previous MTD + On Shift
-      bulan atau tahun berbeda                                → On Shift
-
-YTD = tahun kalender sama dengan report sebelumnya             → Previous YTD + On Shift
-      tahun berbeda                                            → On Shift
-```
-
-Setiap bucket dievaluasi sendiri-sendiri (bug fix — sebelumnya WTD/MTD/YTD selalu diakumulasi tanpa pernah reset sama sekali, tidak peduli batas periode): ganti minggu ISO di bulan yang sama me-reset WTD saja (MTD/YTD tetap lanjut); ganti bulan di tahun yang sama me-reset MTD saja (YTD tetap lanjut); ganti tahun me-reset ketiganya. Identitas minggu ISO selalu dibandingkan sebagai pasangan **nomor minggu + tahun-minggu ISO** (`calculateIsoWeek()`, sumber tunggal, tidak diduplikasi) — Week 1 tahun 2026 dan Week 1 tahun 2027 adalah minggu yang berbeda, dan pergantian tahun kalender tidak selalu berarti pergantian minggu ISO (mis. 31 Desember → 1 Januari bisa saja masih dalam minggu ISO yang sama). Tanggal report sebelumnya (bukan angka "Week" yang tertulis di teks report sebelumnya) selalu jadi acuan; bila keduanya tidak sinkron, Report menampilkan peringatan non-blocking tapi tetap memakai tanggal sebagai acuan. wmt dan Rit direset/dilanjutkan bersamaan untuk bucket yang sama, tidak pernah terpisah. Aturan Daily (Day Shift selalu reset; Night Shift lanjut hanya jika tanggal report sebelumnya sama) tidak berubah dari V2.0/V2.1.
-
-#### Ore class
-
-```text
-Ni > 1.4   → HGLO
-Ni < 1.2   → LGLO
-lainnya    → MGLO
-```
-
----
-
-## Fitur utama
-
-| Fitur | Keterangan |
+| Tier | Menu |
 | --- | --- |
-| Three-page navigation | Monitor, Report, dan Settings melalui bottom navigation ala aplikasi mobile. |
-| Upload Excel | Membaca file `.xlsx` timbangan dari perangkat pengguna (Monitor). |
-| Analisis NI per jam | Menampilkan tonase per ore class dan line kadar NI per jam. |
-| Indikasi ΔNI | Menjelaskan penyumbang utama naik/turun NI dari base. |
-| Sync kontraktor | Mengambil dan mengirim data kontraktor melalui Google Sheet. |
-| Offline queue | Update kontraktor saat offline disimpan lokal lalu dikirim saat online. |
-| Resume kontraktor | Merangkum perpindahan DT per kontraktor. |
-| Perpindahan DT | Menampilkan indikasi perpindahan DT antar dome/class/kontraktor. |
-| Collapsible dome rows | Baris dome per `HGLO`, `MGLO`, dan `LGLO` dapat dibuka/tutup. |
-| Theme mode | Mendukung dark, light, dan auto mode. |
-| Report HYNC, SLNC & ESG | Membuat Daily Production Geology Report untuk buyer HYNC, SLNC, atau ESG (dua format file timbangan, terdeteksi otomatis) dari file timbangan terpisah. |
-| Report state preservation | Input dan laporan yang sudah dibuat tetap ada saat berpindah halaman dalam satu sesi. |
-| Personnel Directory (online write) | Kartu SPV SCM, FRM SCM, Independent Sampler, dan PIC 3rd di Settings, disinkron dari Google Sheet, dengan Add/Edit/Deactivate/Reactivate online (concurrency control berbasis `version`, deteksi duplikat aktif per role, tidak pernah hard-delete) dan filter Aktif/Nonaktif/Semua. |
-| Personnel Directory offline write queue | Saat offline (atau saat gagal karena kegagalan jaringan murni), Tambah/Edit/Nonaktifkan/Aktifkan disimpan sebagai antrean lokal (`js/services/personnel-write-queue.js`, localStorage) alih-alih gagal langsung -- terkirim otomatis dan berurutan (FIFO) saat koneksi kembali, tetap melalui sinkronisasi ulang dan verifikasi yang sama seperti penulisan online. Item yang gagal karena `VERSION_CONFLICT`/duplikat ditandai Blocked dan memerlukan tinjauan manual (Retry/Hapus) lewat panel Pending Changes di Settings -- tidak pernah dicoba ulang otomatis. |
-| Report personnel selectors | Kartu Man Power & Support di Report memakai selektor terkontrol (bukan teks bebas) dari Personnel Directory yang sama: SPV SCM/FRM SCM berupa field ringkas yang membuka modal multi-select (pencarian nama; OK menerapkan, Cancel/Escape/klik luar membatalkan), Independent Sampler default otomatis sesuai buyer (tetap radio list, tidak diubah), PIC 3rd terfilter sesuai organisasi sampler (tetap radio list, tidak diubah). Manpower dan Total Manpower tetap input manual angka yang independen dari pilihan personel. Label PIC/Manpower/Total Manpower pada teks laporan selalu mengikuti organisasi Independent Sampler terpilih. |
-| Settings personnel management UI | Halaman utama Settings ringkas: satu kartu ringkasan per role (jumlah aktif/nonaktif + tombol Kelola) tanpa menampilkan seluruh baris personel. Kelola membuka modal pengelolaan per role (Tambah, pencarian nama, filter Aktif/Nonaktif/Semua, Edit, Nonaktifkan, Aktifkan) yang scroll sendiri di dalam modal. Murni perubahan tampilan — API, skema cache, dan semantik penulisan personel tidak berubah. |
-| Shift detection (full-data) | Deteksi Day/Night Shift menganalisis seluruh baris jam timbang yang valid pada file (mayoritas Day vs Night), bukan hanya sebagian; hasil seri atau tidak ada jam valid akan memblokir lanjut ke Step 2 dengan pesan yang jelas, tidak pernah menebak. |
-| Monitor-owned List DT sync (Report consumer) | Monitor tetap satu-satunya pemilik sinkronisasi List DT; Report tidak melakukan fetch sendiri, hanya membaca cache bersama `hpal.contractors.v1` dan bereaksi pada event `hpal:contractor-directory-updated` -- langsung memuat ulang dan menghitung ulang breakdown kontraktor begitu Monitor sync, tanpa upload ulang. Untuk unit SCM-HLG/SCM-LIM, cache Monitor bersifat mutlak (tidak pernah diam-diam memakai data statis); mapping statis hanya untuk unit lama di luar direktori SCM. Status sumber data selalu terlihat, dengan tombol Buka Monitor saat belum ada data. |
-| PWA/offline | Bisa dipasang ke Home Screen/desktop dan digunakan kembali dari cache. |
-| Language / Localization | Kartu **Bahasa** di Settings (Bahasa Indonesia / English, `js/i18n/i18n.js` + `js/i18n/locales/{id,en}.js`), tersimpan lokal (`hpal.preferences.v1`) dan diterapkan langsung tanpa reload ke seluruh aplikasi. Cakupan: app shell/bottom navigation, seluruh **Monitor** (header, kartu upload, modal Update Kontraktor, status sinkronisasi List DT, dan hasil analisis/tabel yang dihasilkan — lewat bridge `window.i18n` di `js/app.js`, karena skrip Monitor bukan ES module), seluruh **Report** (shell Step 1/2/3, pesan validasi/peringatan dinamis, status buyer, modal personel), dan seluruh **Settings** (shell, pesan sukses/gagal per aksi personel, status antrean offline, pemetaan kode error server ke pesan tampilan). Identifier bisnis stabil (HYNC/SLNC/EIEB/AWK/ATQ/SCM, kolom Excel 中文, `role_type`, dsb.) sengaja tidak pernah diterjemahkan. Teks laporan yang dihasilkan (`buildReportText()`) sama sekali tidak dipengaruhi oleh bahasa UI. |
-| Appearance | Kartu **Tampilan** di Settings (Gelap/Dark, Terang/Light, Otomatis/Auto — `js/services/app-preferences-service.js`), menyatukan sekaligus memperbaiki mekanisme tema Gelap/Terang/Otomatis yang sudah ada di Monitor sejak sebelumnya (toggle header Monitor sebelumnya menyimpan pilihan lewat API `window.storage` yang tidak pernah benar-benar ada di browser produksi, sehingga pilihan tema **tidak pernah tersimpan lintas reload** — kini keduanya membaca/menulis `localStorage` `hpal.preferences.v1` yang sama). Toggle Monitor dan kartu Tampilan Settings tersinkron dua arah secara langsung (event `hpal:preferences-changed`) tanpa reload; Otomatis merespons perubahan preferensi sistem secara langsung. |
-| License / Access control | Kartu **License** di Settings (`js/services/license-service.js`) -- satu kunci akses permanen milik Owner, diverifikasi lokal via PBKDF2-HMAC-SHA-256 (Web Crypto, tanpa koneksi internet). Tanpa lisensi (`MONITOR_ONLY`, default), Monitor tetap penuh, tapi Report tersembunyi dari navigasi dan diblokir baik di level route maupun level aksi; Personnel Directory/Sync Status/Pending Changes sama sekali tidak dirender di Settings. Setelah lisensi dibuka (`FULL_ACCESS`), semua fitur tersebut langsung aktif tanpa reload dan tetap aktif lintas reload/restart PWA sampai dihapus manual. Lihat [Lisensi dan Akses](#lisensi-dan-akses). |
+| `MONITOR_ONLY` | Monitor, Settings |
+| `FULL_ACCESS` | Monitor, Calculate, Report, Settings |
+
+Untuk membuka Full Access:
+
+1. Buka **Settings**.
+2. Buka kartu **License**.
+3. Masukkan kunci akses dari Owner.
+4. Tekan **Unlock**.
+
+Full Access tersimpan lokal sampai license dihapus atau site data dibersihkan.
+
+License adalah access gate lokal pada PWA statis, bukan autentikasi server atau DRM. Jangan simpan access key di repository, dokumentasi, issue, atau screenshot publik.
 
 ---
 
-## Offline mode
+## Arsitektur
 
-Aplikasi mendukung offline mode melalui service worker. Cache app-shell V2.0 mencakup:
+Teknologi utama:
 
-- `index.html`, `manifest.webmanifest`, `contractor-assignment.js`.
-- CSS app shell, bottom navigation, Report, dan Settings (`assets/css/*.css`).
-- JavaScript app shell dan router (`js/app.js`, `js/router.js`, `js/components/bottom-navigation.js`).
-- JavaScript Report (profil HYNC, SLNC, dan ESG berbagi engine inti yang sama; workbook ESG melalui dispatcher + modul ESG tersendiri) dan adapter/direktori kontraktor (`js/pages/report/**`, `js/services/contractor-adapter.js`, `js/services/contractor-directory-core.js`, `js/services/contractor-directory-service.js`).
-- JavaScript halaman Settings (`js/pages/settings/**`) dan layanan lisensi (`js/services/license-service.js`) -- verifikasi lisensi bekerja sepenuhnya offline begitu file ini ter-cache.
-- Icon PWA dan manifest.
+- HTML
+- CSS
+- Vanilla JavaScript / ES Modules
+- Hash routing
+- Service Worker / PWA
+- localStorage
+- Google Apps Script untuk sync data tertentu
 
-```text
-Pertama kali:
-Online → buka GitHub Pages → file aplikasi tersimpan di cache browser
-
-Setelah itu:
-Bisa dibuka dari Home Screen/browser tanpa internet
-```
-
-Catatan penting:
-
-- Yang dicache adalah **file aplikasi** (HTML/CSS/JS/icon) — file Excel operasional (timbangan Monitor maupun Report HYNC/SLNC) **tidak** diupload atau disimpan oleh service worker; file tetap diproses lokal di browser saat dipilih pengguna.
-- Sinkronisasi kontraktor via Google Sheet tetap membutuhkan koneksi internet.
-- Perilaku copy ke clipboard bergantung pada izin/permission browser yang sedang digunakan.
-- Load pertama setelah setiap deployment baru tetap membutuhkan koneksi internet.
-- Jika browser menghapus site data/cache, aplikasi perlu dibuka online lagi.
-- Untuk update besar, terutama di iOS PWA, kadang perlu remove/add ulang dari Home Screen.
-- Validasi final perilaku offline/PWA di perangkat Android dan iOS asli masih perlu dilakukan — lihat [Limitasi](#limitasi).
-
----
-
-## Data dan privasi
-
-Aplikasi ini berjalan di sisi browser.
-
-- File Excel dipilih dari perangkat pengguna.
-- Parsing dan perhitungan file Excel Monitor dilakukan lokal di browser.
-- Parsing Excel timbangan Report (HYNC maupun SLNC) juga dilakukan lokal di browser.
-- Teks report sebelumnya yang di-paste di halaman Report hanya tersimpan di state halaman/sesi saat ini.
-- Teks laporan hasil Report hanya disalin ke clipboard saat pengguna menekan tombol Copy.
-- Tidak ada backend khusus untuk menerima file Excel Monitor maupun file Excel Report.
-- Halaman Report tidak menyediakan riwayat laporan permanen di V2.0.
-- Data kontraktor bawaan tersimpan di file aplikasi.
-- Data kontraktor bersama (Monitor) disinkron melalui Google Sheet / Google Apps Script.
-- Data lokal tambahan menggunakan `localStorage` browser.
-
-Catatan: repository ini public hanya untuk kebutuhan deployment.
-
----
-
-## Struktur file utama
+Struktur ringkas:
 
 ```text
 hpal-production-monitor/
 ├── index.html
 ├── manifest.webmanifest
 ├── service-worker.js
-├── contractor-assignment.js
-├── assets/
-│   └── css/
-│       ├── app-shell.css
-│       ├── bottom-navigation.css
-│       ├── report-hync.css
-│       └── settings.css
+├── assets/css/
 ├── js/
-│   ├── app.js
-│   ├── router.js
 │   ├── components/
-│   │   └── bottom-navigation.js
 │   ├── services/
-│   │   ├── contractor-adapter.js
-│   │   ├── contractor-directory-core.js
-│   │   ├── contractor-directory-service.js
-│   │   ├── personnel-directory-service.js
-│   │   ├── personnel-write-queue.js
-│   │   ├── app-preferences-service.js
-│   │   └── license-service.js
 │   ├── i18n/
-│   │   ├── i18n.js
-│   │   └── locales/
-│   │       ├── id.js
-│   │       └── en.js
+│   ├── shared/
 │   └── pages/
+│       ├── calculate/
 │       ├── report/
-│       │   ├── report-page.js
-│       │   ├── report-state.js
-│       │   ├── report-utils.js
-│       │   └── profiles/
-│       │       ├── profile-registry.js
-│       │       ├── shared-report-profile.js
-│       │       ├── hync-profile.js
-│       │       ├── slnc-profile.js
-│       │       ├── report-workbook-dispatcher.js
-│       │       ├── esg-profile.js
-│       │       ├── esg-workbook-detector.js
-│       │       └── adapters/
-│       │           ├── esg-adapter-utils.js
-│       │           ├── esg-format-a-adapter.js
-│       │           └── esg-format-b-adapter.js
 │       └── settings/
-│           ├── settings-page.js
-│           └── settings-personnel.js
 ├── docs/
-│   ├── V2.0_ARCHITECTURE_AND_ROADMAP.md
-│   ├── V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md
-│   ├── V2.2_ESG_REPORT_ARCHITECTURE.md
-│   ├── V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md
-│   ├── apps-script/
-│   │   └── Code.gs
-│   └── references/
 └── icons/
 ```
 
-Catatan:
-
-- `docs/apps-script/Code.gs` adalah **proposal** kontrak server (`addReportPersonnel`/`updateReportPersonnel`/`setReportPersonnelActive`, plus `includeInactive` pada `listReportPersonnel`) untuk digabungkan secara manual ke proyek Google Apps Script Owner yang sesungguhnya — proyek tersebut berada di luar repository ini dan tidak pernah di-deploy dari sini; bukan bagian dari app shell dan tidak dicache oleh service worker.
-- `docs/references/` berisi referensi implementasi (mis. generator HYNC dan ESG sumber) yang dipakai sebagai acuan perilaku Report — bukan bagian dari app shell produksi, **local-only, dan di-ignore oleh Git**, dan tidak dicache oleh service worker.
-- Report HYNC, SLNC, dan ESG semuanya sudah tersedia sejak v2.2.0.
-- Arsitektur as-built Report HYNC/SLNC didokumentasikan di [V2.1 HYNC and SLNC Report Architecture](docs/V2.1_HYNC_SLNC_REPORT_ARCHITECTURE.md); arsitektur as-built Report ESG (dua format workbook, dispatcher, previous report opsional) didokumentasikan di [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
-- **`v2.2.0` remains the current implemented and deployed release.** [V2.3 Automatic Week and Personnel Directory Architecture](docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md) is the **planned** (not yet implemented) architecture baseline for the next release — Automatic Week, a role-based Personnel Directory, Google Sheet personnel sync, Report personnel-output migration, Indonesian/English localization, Appearance settings, and an offline signed-license (`MONITOR_ONLY`/`FULL_ACCESS`) model.
+Dokumen lengkap ada di folder `docs/`, termasuk arsitektur V2.0 sampai V2.4.
 
 ---
 
 ## Changelog
 
-### v2.3.0 (Phase 8) — Simple Local License and Access Control
+### v2.4.0 — Calculate & Blending Recommendation
 
-- Added a two-tier access model: `MONITOR_ONLY` (default, no license) and `FULL_ACCESS` (unlocked with the Owner-held access key). Monitor is fully usable in both tiers; Report and the Personnel Directory require `FULL_ACCESS`.
-- Added `js/services/license-service.js`: PBKDF2-HMAC-SHA-256 (Web Crypto, 210,000 iterations, 256-bit output) verification against a fixed local salt/verifier -- never the plaintext key -- with a local proof (`hpal.license.v1`), fully offline, no server, no per-license identifier, no signed-token/License Generator (an earlier, Owner-superseded plan).
-- Added a route guard (`router.js`'s `registerRouteGuard()`, wired in `app.js`) blocking `#/report` under `MONITOR_ONLY`, always redirecting to `#/settings` with the License card opened/focused.
-- Added independent action-boundary guards (not just UI hiding) in `report-page.js` (Step 1→2, Step 2→3/Generate, workbook upload) and in `personnel-directory-service.js`/`personnel-write-queue.js` (sync, add/edit/deactivate/reactivate, offline-queue flush/retry) -- a pending offline personnel write queued before `MONITOR_ONLY` stays dormant (never flushed, shown, or retried) until `FULL_ACCESS` is restored.
-- Rebuilt `settings-page.js` into a tier-dependent shell: under `MONITOR_ONLY`, only License/Language/Appearance are rendered -- Personnel Directory, Sync Status, and Pending Changes are not present in the DOM at all, not merely disabled. `bottom-navigation.js`'s Report item is likewise absent, not just hidden via CSS, and both update live (no reload) on Unlock/Remove License.
-- Added Indonesian/English localization for the License card, the "Full Access required" message, and the removal-confirmation dialog.
-- See [Lisensi dan Akses](#lisensi-dan-akses) for usage and this repository's `docs/V2.3_AUTO_WEEK_AND_PERSONNEL_DIRECTORY_ARCHITECTURE.md` (Sections 6-11) for the full design, including the explicit, Owner-approved security limitations of a client-side-only gate.
+- Calculate route dan live Blend Calculator.
+- Recommendation Engine berbasis Target Ni dan Tolerance.
+- Operational Hopper Pattern terpisah dari physical fleet ratio.
+- Fleet Adjustment dan ACTIVE / MOVE / STANDBY.
+- Material USE / LIMIT / STOP.
+- Planned Blend Recovery.
+- Calculate ID/EN, Dark/Light/Auto, dan offline PWA cache.
 
-### v2.2.0 — ESG Report
+### v2.3.0
 
-- Added ESG as a third Report buyer profile, sharing the same Report UI/route as HYNC/SLNC (`#/report`) — no separate route or duplicated page per buyer.
-- Added a deterministic workbook dispatcher (`js/pages/report/profiles/report-workbook-dispatcher.js`) that routes every upload to HYNC/SLNC or ESG based on positive structural evidence, never by elimination — fixes the previous bug where an ESG workbook was silently sent to the HYNC/SLNC parser and failed with a misleading `Kolom "流水号" tidak ditemukan` error.
-- Added support for two distinct real ESG workbook formats (Format A: 2-row header, "Stockpile ESG" letterhead evidence; Format B: 1-row header, `PENERIMA` column evidence), both resolving to the same `ESG` buyer.
-- Added an ESG aggregation layer (`esg-profile.js`) producing the same parsed-result shape the existing Report page already expects, so the existing dome/contractor/output rendering needed no new per-buyer branching.
-- Added `FPP ESG` previous-report token detection (three-way ambiguity check alongside `FPP HYNC` / `FPP SLNC`).
-- Made the previous-report text optional for ESG only (first report / new accumulation period → Daily/WTD/MTD/YTD = On Shift); HYNC and SLNC remain unchanged (previous report still required).
-- Added ESG-specific dynamic field labels (`PIC ATQ` / `Manpower ATQ` in place of `PIC AWK` / `Manpower AWK`) without renaming any existing form-element ID.
-- Extended the buyer mismatch/invalid-workbook popup and file-success/error messages with ESG-specific content (detected format, sheet name, source-row numbers), while leaving the existing HYNC/SLNC message paths untouched.
-- Added one additive, default-safe `partnerLabel` parameter to the shared report-text builder (`shared-report-profile.js`) — HYNC/SLNC output is unchanged when the parameter isn't passed.
-- Reused the existing approved contractor mapping (`contractor-adapter.js`, unchanged) for ESG trucks via the same DT-normalization approach already proven for SLNC.
+- Automatic ISO Week.
+- Personnel Directory dan controlled Report selectors.
+- Online/offline personnel changes.
+- Full-data Shift detection.
+- Period-aware Daily/WTD/MTD/YTD.
+- Localization dan Appearance settings.
+- `MONITOR_ONLY` / `FULL_ACCESS`.
 
-### v2.1.0 — HYNC + SLNC Report
+### v2.2.0
 
-- Added SLNC as a second Report buyer profile, sharing the same Report UI/route as HYNC (`#/report`) — no separate route or duplicated page per buyer.
-- Added automatic buyer detection from the previous-report text (`FPP HYNC` / `FPP SLNC` token, case-insensitive) and from the workbook's `备注` column (`SCHY` → HYNC, `SCSL` → SLNC prefix match).
-- Added a buyer-resolution state machine (`unknown` / `pendingWorkbook` / `pendingPreviousReport` / `confirmed` / `mismatch` / `invalidWorkbook` / `ambiguousPreviousReport`) gating progression to Step 2.
-- Added an accessible, Report-scoped mismatch/invalid-workbook popup (role="dialog", Escape support, focus management) shown when the previous-report buyer and workbook buyer disagree, or when the workbook's `备注` column is mixed, blank, or unrecognized on a valid row.
-- Confirmed multiple distinct FPP codes for the same buyer in one workbook (e.g. several different `SCSL-xxxxxxx` values) are normal and do not trigger a warning — only buyer identity (the prefix) is validated, never the full code.
-- Extracted the shared parsing/calculation/report-text engine into `js/pages/report/profiles/shared-report-profile.js`, with buyer identity/config in `hync-profile.js` and the new `slnc-profile.js`, selected via `profile-registry.js`. HYNC's output and calculations are unchanged.
-- Extended the 规格 (spec) parser to accept both `DOME ( NI:1.25 )` and `DOME (1.25)` without changing ore-class thresholds or any previously-valid HYNC result.
-- Dynamic, buyer-aware UI labels (eyebrow, subtitle, workbook card title/hint, footnote, generated report header and "Ore Delivered to FPP …" line) with neutral text before a buyer is detected.
-- Reused Monitor's existing DT-normalization logic (`index.html`) so SLNC truck ids resolve against the existing approved contractor mapping instead of a second table.
-- Updated PWA app-shell cache for the new profile modules.
+- FPP 3 Report.
+- Dua format workbook ESG.
+- Automatic workbook dispatch.
 
-### v2.0.0 — Three-Page App Shell + HYNC Production Report
+### v2.1.0
 
-- Added Monitor, Report, and Settings routes (`#/monitor`, `#/report`, `#/settings`).
-- Added fixed bottom navigation for mobile and desktop.
-- Preserved existing Monitor behavior during the app-shell integration.
-- Added modular HYNC report generator (Input → Area Muat → Hasil).
-- Added HYNC weighbridge Excel validation (sheet + required headers).
-- Added previous-report text parsing (date, Daily, WTD, MTD, YTD).
-- Added dome area assignment (BR / BR 23 / DS).
-- Added Daily/WTD/MTD/YTD calculations for the HYNC report.
-- Added report preview and clipboard copy with fallback.
-- Preserved Report state (step, input, generated report) across route changes within a session.
-- Added scoped Report CSS (`#page-report`) and isolated ES modules (no global variable/function collisions with Monitor).
-- Updated PWA app-shell cache for the new V2.0 files.
-- Settings remains a placeholder in V2.0 — no CRUD, no license logic.
-- ESG and SLNC report profiles are planned for V2.1.
+- FPP 2 Report.
+- Buyer detection dan mismatch protection.
+- Shared Report profile engine.
 
-### v1.6.x — Contractor Sync + Icon Fix
+### v2.0.0
 
-- Added shared contractor data sync through Google Sheet / Google Apps Script.
-- Added contractor update popup.
-- Added manual sync button.
-- Added offline queue for contractor updates.
-- Fixed service worker cache behavior so cross-origin Google Apps Script requests are not cached.
-- Restored PWA manifest/icon links in `index.html`.
-- Restored `apple-touch-icon` and mobile web app metadata.
+- App shell, routing, bottom navigation.
+- FPP 1 Report.
+- PWA integration.
 
-### NI Indikasi Fix
+### v1.x
 
-- Improved `INDIKASI` logic in `Analisis NI per Jam`.
-- Replaced simple mix-change indication with contribution-based explanation against base NI.
-- Added threshold logic:
-  - `abs(ΔNI) < 0.009` → `—`
-  - `0.009 <= abs(ΔNI) < 0.015` → `Mix sedikit berubah`
-  - `abs(ΔNI) >= 0.015` → contributor analysis
-- Added compact contributor label format:
-
-```text
-↓ LGLO -0.030 DOME-12; ↑ HGLO +0.008 DOME-03
-```
-
-- Added optional holding-factor display when the counter-contribution is meaningful.
-
-### iOS PWA Tooltip Fix
-
-- Fixed sticky Chart.js tooltip/popup on iOS when the app is launched from **Add to Home Screen**.
-- Added outside-tap handling to clear active chart elements.
-- Added support for `pointerdown`, `touchstart`, `click`, `scroll`, and `visibilitychange` events.
-- Preserved browser behavior where tooltip disappears when tapping outside the chart.
-
-### Dark / Light / Auto UI Update
-
-- Added dark, light, and auto theme modes.
-- Updated embedded contractor data to 705 entries.
-- Added collapsible dome sub-rows for `HGLO`, `MGLO`, and `LGLO`.
-- Center-aligned `ΔNI` column header and cells.
-- Moved `Resume Perpindahan per Kontraktor` above `Perpindahan DT`.
-- Preserved Android chart rendering fix.
-- Preserved PWA/offline support.
-
-### Mobile PWA ChartFix
-
-- Fixed Android Chrome/WebView chart rendering issue.
-- Added guard against missing Chart.js geometry/chart area during first draw.
-- Prevented error: `Cannot read properties of undefined (reading 'top')`.
-
-### Initial PWA Release
-
-- Published app through GitHub Pages.
-- Added PWA manifest.
-- Added service worker offline cache.
-- Added mobile install support via Chrome/Safari.
+- Initial Monitor/PWA.
+- Contractor sync.
+- NI indication improvements.
+- Mobile/PWA chart fixes.
 
 ---
 
-## Catatan Penting
+## Development Notes
 
-- Cache dan ikon PWA di iOS bersifat persisten. Jika pembaruan yang di-deploy tidak muncul, hapus aplikasi dari Home Screen lalu tambahkan kembali.
-- Android/Chrome biasanya menerima pembaruan service worker lebih cepat, tetapi data situs/cache mungkin tetap perlu dibersihkan setelah pembaruan besar.
-- Perilaku tooltip berbeda antara tab browser biasa dan mode PWA standalone, sehingga kedua mode tersebut harus diuji setelah ada perubahan terkait grafik (chart).
-- Deployment GitHub Pages dapat sesekali mengalami stuck atau queued. Jika aplikasi live masih berjalan, deployment terakhir yang sukses akan tetap aktif.
+- Production branch: `main`
+- Deployment: GitHub Pages
+- V2.4 verified test baseline: `985 / 985 PASS`
+- Calculate berjalan client-side tanpa backend.
 
----
-
-## Limitasi
-
-- Report mendukung buyer **HYNC**, **SLNC**, dan **ESG** (dua format file timbangan).
-- Deteksi buyer dari teks report sebelumnya hanya mengenali token `FPP HYNC` / `FPP SLNC` / `FPP ESG` — bukan kode FPP lengkap (teks report sebelumnya tidak memuat kode tersebut).
-- Deteksi buyer HYNC/SLNC dari file timbangan hanya membandingkan prefix kolom `备注` (`SCHY`/`SCSL`), bukan kode lengkap; beberapa kode berbeda milik buyer yang sama dalam satu file dianggap valid. Deteksi buyer ESG dari file timbangan bersifat struktural (bukan berbasis kolom `备注`), lihat [V2.2 ESG Report Architecture](docs/V2.2_ESG_REPORT_ARCHITECTURE.md).
-- Settings menyediakan Personnel Directory dengan Add/Edit/Deactivate/Reactivate online (sinkron dari Google Sheet) dan antrean tulis offline (V2.3 Phase 5) untuk keempat aksi tersebut saat perangkat offline atau saat kegagalan jaringan murni; item antrean yang gagal karena `VERSION_CONFLICT`/duplikat memerlukan tinjauan manual (Retry/Hapus), tidak pernah dicoba ulang otomatis. Belum ada autentikasi pengguna nyata (setiap penulisan tercatat dengan label audit tetap, bukan identitas asli); pengaturan lisensi masih placeholder untuk versi berikutnya.
-- Language/Localization (V2.3 Phase 7) kini mencakup app shell/bottom navigation, seluruh **Monitor** (termasuk `index.html`'s classic script -- lewat bridge `window.i18n` yang diekspos `js/app.js`, karena skrip Monitor bukan ES module dan tidak bisa `import` `js/i18n/i18n.js` langsung), seluruh **Report** (shell statis maupun pesan validasi/peringatan/status dinamis), dan seluruh **Settings** (shell, pesan sukses/gagal per aksi personel, status antrean offline, pemetaan kode error server → pesan tampilan via `errors.personnel.*`). Identifier bisnis stabil (HYNC/SLNC/EIEB, AWK/ATQ/SCM, `role_type`, nama kolom Excel 中文, ID `localStorage`, nama event, dan sejenisnya) tidak pernah diterjemahkan -- diverifikasi lewat `tests/localization-coverage.test.mjs` dan `tests/bilingual-coverage.test.mjs`. Teks laporan yang dihasilkan (`buildReportText()`) tidak pernah dipengaruhi oleh bahasa UI, diverifikasi eksplisit lewat `tests/report-output-locale-invariance.test.mjs` (output byte-identik untuk locale id vs en, lintas buyer HYNC/SLNC/EIEB).
-- Appearance (V2.3 Phase 7) menyatukan mekanisme tema Gelap/Terang/Otomatis yang sudah ada sejak sebelumnya di Monitor, dan sekaligus memperbaiki bug tersembunyi: penyimpanan pilihan tema sebelumnya bergantung pada API `window.storage` yang tidak pernah ada di browser produksi, sehingga pilihan tema sebenarnya tidak pernah tersimpan lintas reload sebelum perbaikan ini (toggle Monitor tetap berfungsi visual per sesi, hanya persistensinya yang rusak). Sekarang keduanya (toggle Monitor dan kartu Tampilan Settings) membaca/menulis `localStorage` `hpal.preferences.v1` yang sama dan tersinkron dua arah lewat event `hpal:preferences-changed`.
-- Parsing Report bergantung pada header workbook yang sesuai format yang diharapkan (HYNC/SLNC: satu format; ESG: dua format berbeda yang sudah dikonfirmasi).
-- Teks report sebelumnya wajib diisi untuk HYNC dan SLNC agar Daily/WTD/MTD/YTD bisa dihitung secara akumulatif. Untuk ESG, teks report sebelumnya boleh dikosongkan (Daily/WTD/MTD/YTD dihitung mulai dari On Shift); belum ada contoh teks report sebelumnya ESG asli yang dipakai untuk memverifikasi format baris akumulasinya secara independen.
-- State Report bersifat sesi/in-memory saja — tidak disimpan permanen.
-- Riwayat laporan tidak disimpan secara permanen.
-- Mapping kontraktor untuk Report (HYNC, SLNC, dan ESG) saat ini memakai mapping statis dari referensi Report yang sudah disetujui, terpisah dari direktori kontraktor live milik Monitor. SLNC dan ESG truck id dinormalisasi ke format yang sama sebelum dicocokkan (lihat `normalizeDT` di Monitor). Sebagian truck ID pada sample file timbangan ESG tidak ditemukan di mapping kontraktor saat ini (tetap tampil sebagai peringatan, tidak memblokir Report).
-- Aplikasi bergantung pada struktur Excel yang dikenali parser (Monitor maupun Report).
-- File Excel dengan format kolom/sheet yang berubah jauh bisa gagal dibaca.
-- Offline mode bergantung pada cache browser.
-- Sinkronisasi data kontraktor Monitor membutuhkan koneksi internet.
-- Validasi akhir PWA di perangkat Android/iOS asli mungkin masih diperlukan.
+Detail keputusan domain dan implementasi tersedia di dokumen arsitektur dalam folder `docs/`.
 
 ---
 
-## License
+## Legal License
 
 This project is proprietary and not open source.
 
 Copyright © 2026 Illofiajie. All rights reserved.
 
-Public visibility on GitHub is provided only for deployment and maintenance purposes.  
+Public visibility on GitHub is provided only for deployment and maintenance purposes.
+
 Use, copying, modification, redistribution, rebranding, resale, or ownership claims are prohibited without prior written permission.
 
 Authorized use is limited to the approved internal company/work environment only.
