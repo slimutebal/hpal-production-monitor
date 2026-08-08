@@ -359,6 +359,22 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 <link rel="stylesheet" href="./assets/css/settings.css">
 <link rel="stylesheet" href="./assets/css/calculate.css">
 <script type="module" src="./js/app.js"></script>
+<script>
+// V2.4 Phase 8 -- PWA/offline integration. service-worker.js/
+// manifest.webmanifest already existed but were never actually registered,
+// so none of Calculate's offline-caching work (service-worker.js's
+// APP_SHELL) took effect in a real browser. Feature-detected, deferred to
+// window 'load' (never blocks first paint/interactivity), same-origin
+// only (the browser enforces this for service workers regardless).
+// Registration failure is swallowed -- the app remains fully usable
+// online without a service worker; this is a progressive enhancement,
+// never a requirement to load the page.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+  });
+}
+</script>
 </head>
 <body>
 <main id="app-pages">

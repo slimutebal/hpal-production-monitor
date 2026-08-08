@@ -103,7 +103,10 @@ export default {
   'calculate.recommendation.assigned': 'Assigned',
   'calculate.recommendation.active': 'Active',
   'calculate.recommendation.surplus': 'Surplus',
-  'calculate.recommendation.relocation': 'Fleet Reallocation',
+  // "Fleet Adjustment" (V2.4 Phase 8 terminology audit) -- was "Fleet
+  // Reallocation"; aligned to the Owner-approved EN term pairing with
+  // Indonesian "Penyesuaian Fleet".
+  'calculate.recommendation.relocation': 'Fleet Adjustment',
 
   'calculate.recommendation.unitRatio': 'Unit Ratio',
   'calculate.recommendation.tonnageRatio': 'Tonnage Ratio',

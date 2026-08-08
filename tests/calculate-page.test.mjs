@@ -1713,6 +1713,52 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
 });
 
 /* ============================================================
+   V2.4 PHASE 8 -- Appearance (Dark/Light/Auto) theme-token audit (this
+   task's Section 16/31). Calculate must never define/persist its own
+   theme state and must never introduce a hardcoded, isolated,
+   dark-only/light-only surface -- every color in calculate.css must
+   resolve through one of the app's existing shared CSS custom
+   properties (defined once, in index.html, for both themes).
+============================================================ */
+describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calculate-only or dark-only palette', () => {
+  const cssSourceRaw = readFileSync(path.join(ROOT, 'assets', 'css', 'calculate.css'), 'utf8');
+  // CSS uses /* ... */ block comments -- stripped here (this file's own
+  // header/section comments explicitly discuss "no backdrop-filter", which
+  // would otherwise false-positive a naive substring search).
+  const cssSource = cssSourceRaw.replace(/\/\*[\s\S]*?\*\//g, '');
+  const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+
+  test('no backdrop-filter/blur anywhere in calculate.css\' actual rules', () => {
+    assert.doesNotMatch(cssSource, /backdrop-filter/);
+  });
+
+  test('calculate.css defines no new --custom-property theme token of its own (it only ever CONSUMES var(--x), never declares --x:)', () => {
+    assert.doesNotMatch(cssSource, /^\s*--[a-zA-Z0-9-]+:/m);
+  });
+
+  test('every var(--token) referenced in calculate.css is one of the app\'s existing shared tokens, defined for BOTH Dark and Light in index.html', () => {
+    const usedTokens = [...new Set([...cssSource.matchAll(/var\((--[a-zA-Z0-9-]+)/g)].map((m) => m[1]))];
+    assert.ok(usedTokens.length > 0, 'expected calculate.css to actually use shared tokens');
+
+    const darkBlockStart = indexHtml.indexOf(':root, html[data-theme="dark"]');
+    const lightBlockStart = indexHtml.indexOf('html[data-theme="light"]');
+    assert.ok(darkBlockStart >= 0 && lightBlockStart > darkBlockStart, 'expected distinct dark/light token blocks in index.html');
+    const darkBlock = indexHtml.slice(darkBlockStart, indexHtml.indexOf('}', darkBlockStart));
+    const lightBlock = indexHtml.slice(lightBlockStart, indexHtml.indexOf('}', lightBlockStart));
+
+    for (const token of usedTokens) {
+      assert.match(darkBlock, new RegExp(`${token}:`), `${token} must be defined in the Dark theme block`);
+      assert.match(lightBlock, new RegExp(`${token}:`), `${token} must be defined in the Light theme block`);
+    }
+  });
+
+  test('Calculate never reads/writes localStorage directly for appearance -- it has no theme state of its own', () => {
+    const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
+    assert.doesNotMatch(source, /localStorage|appearance|matchMedia|data-theme/i);
+  });
+});
+
+/* ============================================================
    26-30 (this task's Section 18/20-21/25/32). MATERIAL ACTIONS UI
 ============================================================ */
 describe('26. Material Actions section renders after a successful Recommendation, with correct USE/LIMIT/STOP labels', () => {
@@ -2447,6 +2493,126 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     clickCalculateRecovery(pageEl);
 
     assert.doesNotMatch(recoverySectionRoot(pageEl).textContent, /sampling|actual fpp|closed.?loop/i);
+  });
+});
+
+/* ============================================================
+   V2.4 PHASE 8 -- latest-assay / manual-recalculation workflow (this
+   task's Section 14/30 items 5/7). Phase 7's standalone sampling feature
+   was intentionally NOT implemented -- the approved workflow remains:
+   new assay arrives -> user edits source Ni -> live Blend updates -> old
+   Recommendation clears -> user presses Hitung Rekomendasi -> the fresh
+   result uses the LATEST edited Ni, never a stale value. No sampling
+   history/timestamp/auto-recalculation exists anywhere in this file.
+============================================================ */
+describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actually uses', () => {
+  test('editing a source Ni updates the live Blend summary immediately (no explicit action needed)', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.20', units: '10', tonnesPerUnit: '50' });
+    assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.200%');
+
+    typeIntoField(gridRows(pageEl)[0], 'ni', '1.45');
+    assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.450%');
+  });
+
+  test('a new Recommendation calculated after editing Ni uses the FRESH value end-to-end, not the value from when it was first calculated', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl); // known scenario: Higher Ni 1.30, Lglo Ni 1.03, Target 1.120
+    clickCalculateRecommendation(pageEl);
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
+
+    // Simulate "a new assay arrives": Higher's Ni is updated (10:00 -> 14:00
+    // style update from the architecture doc's own Section 17 example).
+    typeIntoField(gridRows(pageEl)[0], 'ni', '2.00');
+    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the old (now-stale) Recommendation result must disappear immediately');
+
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    // A materially different Higher Ni (2.00 instead of 1.30) must produce
+    // a materially different Estimated Ni -- proving the fresh calculation
+    // genuinely read the newly-typed value, not a cached 1.30-based result.
+    assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
+  });
+
+  test('no sampling history, assay timestamp, or "sampling mode" UI exists anywhere on the page', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.doesNotMatch(pageEl.textContent, /sampling|assay|timestamp/i);
+  });
+
+  test('Recommendation is never calculated automatically while typing -- only Hitung Rekomendasi triggers it', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.20', units: '10', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '0.01' });
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'typing complete inputs alone must never auto-run Recommendation');
+  });
+});
+
+/* ============================================================
+   V2.4 PHASE 8 -- no raw i18n key ever rendered (this task's Section
+   30 item 20). A missing/mistyped key would otherwise silently render as
+   its own literal dot-path string (e.g. "calculate.recommendation.foo")
+   -- this scans the FULLY rendered Recommendation + Recovery result (the
+   most i18n-key-dense subtree on the page) for that shape.
+============================================================ */
+describe('V2.4 Phase 8 -- no raw translation key is ever rendered', () => {
+  test('the rendered Recommendation result (within-tolerance scenario) never contains a raw "calculate.xxx.yyy"-shaped string', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
+  });
+
+  test('the rendered Recommendation + Recovery result (TARGET_NOT_ACHIEVABLE scenario) never contains a raw key', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
+    clickCalculateRecovery(pageEl);
+
+    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
+  });
+
+  test('English locale rendering also never contains a raw key (a locale-specific missing translation would otherwise fall through silently)', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    setLocale('en');
+
+    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
+    setLocale(DEFAULT_LOCALE);
+  });
+});
+
+/* ============================================================
+   V2.4 PHASE 8 -- terminology audit (this task's Section 9). "Fleet
+   Adjustment" (was "Fleet Reallocation") is the Owner-approved EN pairing
+   for Indonesian "Penyesuaian Fleet".
+============================================================ */
+describe('V2.4 Phase 8 -- terminology audit: Fleet Adjustment / Penyesuaian Fleet', () => {
+  test('Indonesian: Penyesuaian Fleet (unchanged)', () => {
+    assert.equal(idCatalog['calculate.recommendation.relocation'], 'Penyesuaian Fleet');
+  });
+
+  test('English: Fleet Adjustment (corrected from the old "Fleet Reallocation")', () => {
+    assert.equal(enCatalog['calculate.recommendation.relocation'], 'Fleet Adjustment');
+  });
+
+  test('the relocation/adjustment section heading actually renders "Fleet Adjustment" in English', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    clickCalculateRecommendation(pageEl);
+    setLocale('en');
+
+    assert.match(recommendationResultRoot(pageEl).textContent, /Fleet Adjustment/);
+    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /Fleet Reallocation/);
+    setLocale(DEFAULT_LOCALE);
   });
 });
 
