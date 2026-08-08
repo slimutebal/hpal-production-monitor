@@ -120,6 +120,27 @@ export default {
   // source rows -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'No complete sources are available to calculate yet. Complete at least one source row (Pile ID, Contractor, Ni, DT, t/DT).',
 
+  // Material Action / Fleet Action (V2.4 Phase 5) -- see locales/id.js's
+  // header comment for the full note.
+  'calculate.actions.materialTitle': 'MATERIAL ACTIONS',
+  'calculate.actions.fleetTitle': 'FLEET ACTIONS',
+
+  'calculate.actions.material.use': 'USE',
+  'calculate.actions.material.limit': 'LIMIT',
+  'calculate.actions.material.stop': 'STOP',
+  'calculate.actions.material.useReason': 'Used in the primary recommendation.',
+  'calculate.actions.material.limitReason': 'Additional material from this source would move the blend farther from Target Ni.',
+  'calculate.actions.material.stopReason': 'Not needed in the current pattern, and one additional load would move Ni farther from target.',
+
+  'calculate.actions.fleet.use': 'ACTIVE',
+  'calculate.actions.fleet.move': 'MOVE',
+  'calculate.actions.fleet.receive': 'RECEIVE',
+  'calculate.actions.fleet.separate': 'SEPARATE',
+  'calculate.actions.fleet.toPileSuffix': '→ {pileId}',
+  'calculate.actions.fleet.fromPileSuffix': '← {pileId}',
+
+  'calculate.actions.bestAttainableNote': 'Actions based on the best attainable result',
+
   'calculate.validation.targetNiRequired': 'Target Ni is required.',
   'calculate.validation.targetNiInvalid': 'Target Ni must be a valid number.',
   'calculate.validation.targetNiPositive': 'Target Ni must be greater than 0.',

@@ -355,6 +355,19 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
       targetNi: targetNiValue,
       tolerance: toleranceValue,
       candidateCount: candidates.length,
+      // Material Action Phase 5 (this task's Section 9): a compact DERIVED
+      // set -- normalizeSourceIdentity() keys of every source that has
+      // activeUnits > 0 in AT LEAST ONE within-tolerance candidate, not
+      // only the one actually selected above. This is what lets
+      // recommendation-actions.js's STOP condition 3 ("no feasible
+      // within-tolerance recommendation requires that source") be answered
+      // without re-running a second, inconsistent search or exposing the
+      // full `candidates`/`withinTolerance` arrays (which can be large,
+      // Section 19) to any caller. Built from the exact same
+      // `withinTolerance` array `best` was already picked from -- zero
+      // extra search work, and it can never disagree with `best` about
+      // which candidates are within tolerance.
+      sourcesInAnyWithinToleranceCandidate: collectActiveSourceIdentities(withinTolerance),
     };
   }
 
@@ -368,5 +381,27 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     bestAttainableNi: best.estimatedNi,
     gap: best.deviation,
     candidateCount: candidates.length,
+    // Always empty here BY DEFINITION -- reaching this branch already
+    // means withinTolerance.length === 0 (see above), so no within-
+    // tolerance candidate exists for ANY source to participate in.
+    // Included (rather than omitted) so every 'ok: true' result carries
+    // the same field shape regardless of status, and recommendation-
+    // actions.js never needs a status-specific branch just to read it.
+    sourcesInAnyWithinToleranceCandidate: new Set(),
   };
+}
+
+// Compact derived participation set (this task's Section 9) -- a Set of
+// normalizeSourceIdentity(pileId, contractor) keys, never the raw
+// candidate objects themselves.
+function collectActiveSourceIdentities(candidateList) {
+  const identities = new Set();
+  candidateList.forEach((candidate) => {
+    candidate.sources.forEach((source) => {
+      if (source.activeUnits > 0) {
+        identities.add(normalizeSourceIdentity(source.pileId, source.contractor));
+      }
+    });
+  });
+  return identities;
 }

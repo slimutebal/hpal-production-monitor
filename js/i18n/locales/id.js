@@ -137,8 +137,9 @@ export default {
   // visible directly below the source grid (no mode switch -- Phase 4.1).
   // targetNi*/tolerance*/noPhysicalFleet below are the exact i18n KEYS the
   // pure engine (blending-recommendation.js, Phase 3) already returns.
-  // Material Action (USE/LIMIT/STOP) and Planned Blend Recovery wording
-  // remain deliberately absent -- Phase 5/6.
+  // Material Action (USE/LIMIT/STOP) and Fleet Action (AKTIF/PINDAH/
+  // PISAHKAN) wording is added below (calculate.actions.*, V2.4 Phase 5).
+  // Planned Blend Recovery wording remains deliberately absent -- Phase 6.
   'calculate.recommendation.title': 'Rekomendasi Blending',
   'calculate.recommendation.dtHint': 'DT = unit fisik aktif yang dapat berulang hauling.',
 
@@ -177,6 +178,46 @@ export default {
   // Shown when Hitung Rekomendasi is pressed with zero complete source
   // rows (this task's Section 12) -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'Belum ada sumber lengkap untuk dihitung. Lengkapi minimal satu baris sumber (Pile ID, Kontraktor, Ni, DT, t/DT).',
+
+  // Material Action / Fleet Action (V2.4 Phase 5) -- derived from the
+  // already-selected primary Recommendation candidate
+  // (recommendation-actions.js), rendered as two separate sections below
+  // the existing Recommendation result. Pure domain constants stay
+  // USE/LIMIT/STOP and USE/MOVE/SEPARATE (recommendation-actions.js) --
+  // only the UI-facing label wording is localized here, per this task's
+  // Section 20 ("do not change pure domain constants merely for
+  // translation").
+  'calculate.actions.materialTitle': 'AKSI MATERIAL',
+  'calculate.actions.fleetTitle': 'AKSI FLEET',
+
+  'calculate.actions.material.use': 'GUNAKAN',
+  'calculate.actions.material.limit': 'BATASI',
+  'calculate.actions.material.stop': 'STOP',
+  // Concise, fixed per-action wording (this task's Section 21) -- never a
+  // per-source parameterized raw score/number ("do not expose raw
+  // internal scoring").
+  'calculate.actions.material.useReason': 'Digunakan pada rekomendasi utama.',
+  'calculate.actions.material.limitReason': 'Tambahan material ini akan menjauhkan blend dari Target Ni.',
+  'calculate.actions.material.stopReason': 'Tidak diperlukan pada pola saat ini dan tambahan 1 load menjauhkan Ni dari target.',
+
+  'calculate.actions.fleet.use': 'AKTIF',
+  'calculate.actions.fleet.move': 'PINDAH',
+  'calculate.actions.fleet.receive': 'TERIMA',
+  'calculate.actions.fleet.separate': 'PISAHKAN',
+  // {pileId}-templated suffixes (this task's Section 12) -- e.g.
+  // "1 DT PINDAH → L12" / "1 DT TERIMA ← L30". Arrows are kept identical
+  // across locales (a stable visual glyph, not translated text), matching
+  // this codebase's existing convention for other locale-identical
+  // symbols (e.g. calculate.grid.headerPile).
+  'calculate.actions.fleet.toPileSuffix': '→ {pileId}',
+  'calculate.actions.fleet.fromPileSuffix': '← {pileId}',
+
+  // Shown above the Material/Fleet Actions sections only when the primary
+  // Recommendation status is TARGET_NOT_ACHIEVABLE (architecture doc
+  // Section 23.3, this task's Section 25) -- never lets the operator
+  // mistake a best-attainable baseline for a successful within-tolerance
+  // result.
+  'calculate.actions.bestAttainableNote': 'Aksi berdasarkan hasil terbaik yang dapat dicapai',
 
   'calculate.validation.targetNiRequired': 'Target Ni wajib diisi.',
   'calculate.validation.targetNiInvalid': 'Target Ni harus berupa angka yang valid.',

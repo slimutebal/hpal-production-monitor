@@ -54,6 +54,7 @@ import { classifyOre } from '../../shared/ore-classification.js';
 import { calculatePileTonnage, calculateWeightedBlend } from './blend-calculator.js';
 import { validatePiles, toNumericPile, isRowBlank } from './calculate-validation.js';
 import { findBlendRecommendations, DEFAULT_RECOMMENDATION_TOLERANCE } from './blending-recommendation.js';
+import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT, MATERIAL_ACTION_STOP } from './recommendation-actions.js';
 
 const ORE_CLASSES = ['HGLO', 'MGLO', 'LGLO'];
 const EM_DASH = '—';
@@ -915,6 +916,17 @@ function buildRecommendationResultChildren(result) {
     nodes.push(buildRelocationSection(candidate));
   }
 
+  // MATERIAL ACTIONS / FLEET ACTIONS (V2.4 Phase 5) -- always derived
+  // fresh from THIS `result` (the already-selected primary Recommendation
+  // candidate), never cached separately -- see recommendation-actions.js's
+  // own header comment for the hard "derived after selection, never
+  // circular" rule this maintains. Rendered last, after Hopper Pattern and
+  // every other existing Recommendation detail (this task's Section 29:
+  // "Hopper Pattern remains more visually prominent than action detail").
+  const actions = deriveRecommendationActions(result);
+  nodes.push(buildMaterialActionsSection(actions));
+  nodes.push(buildFleetActionsSection(actions));
+
   return nodes;
 }
 
@@ -1196,6 +1208,176 @@ function buildRelocationRow(relocation) {
   row.appendChild(path);
 
   return row;
+}
+
+/* ============================================================
+   MATERIAL ACTIONS / FLEET ACTIONS (V2.4 Phase 5). Two separate sections
+   (this task's Sections 2/18/19) -- never merged into one status. Both are
+   entirely derived from `deriveRecommendationActions(result)`
+   (recommendation-actions.js, a pure module) -- nothing here recomputes
+   USE/LIMIT/STOP or fleet quantities; this file only formats/localizes
+   already-decided values for display, the same DOM/pure split every other
+   section on this page already follows.
+============================================================ */
+function buildMaterialActionsSection(actions) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-actions-section calculate-material-actions';
+
+  const title = document.createElement('h3');
+  title.className = 'calculate-subsection-label';
+  title.textContent = t('calculate.actions.materialTitle');
+  wrap.appendChild(title);
+
+  // Target Not Achievable (architecture doc Section 23.3, this task's
+  // Section 25) -- actions below are evaluated against the best-attainable
+  // candidate, never presented as though an unreachable target had been
+  // met.
+  if (actions.status === 'TARGET_NOT_ACHIEVABLE') {
+    const note = document.createElement('p');
+    note.className = 'calculate-actions-baseline-note';
+    note.textContent = t('calculate.actions.bestAttainableNote');
+    wrap.appendChild(note);
+  }
+
+  const list = document.createElement('div');
+  list.className = 'calculate-actions-list';
+  actions.materialActions.forEach((entry) => list.appendChild(buildMaterialActionRow(entry)));
+  wrap.appendChild(list);
+
+  return wrap;
+}
+
+function materialActionLabelKey(action) {
+  if (action === MATERIAL_ACTION_USE) return 'calculate.actions.material.use';
+  if (action === MATERIAL_ACTION_LIMIT) return 'calculate.actions.material.limit';
+  return 'calculate.actions.material.stop';
+}
+
+function materialActionReasonKey(action) {
+  if (action === MATERIAL_ACTION_USE) return 'calculate.actions.material.useReason';
+  if (action === MATERIAL_ACTION_LIMIT) return 'calculate.actions.material.limitReason';
+  return 'calculate.actions.material.stopReason';
+}
+
+// action is always exactly one of MATERIAL_ACTION_USE/LIMIT/STOP
+// (recommendation-actions.js's own return contract) -- used verbatim as a
+// lowercased CSS modifier so USE/LIMIT/STOP map onto --use/--limit/--stop
+// without a second hand-maintained lookup table.
+function buildMaterialActionRow(entry) {
+  const row = document.createElement('div');
+  row.className = `calculate-breakdown-row calculate-action-row calculate-material-action-row calculate-material-action-row--${entry.action.toLowerCase()}`;
+
+  const main = document.createElement('div');
+  main.className = 'calculate-breakdown-row__main';
+  const idEl = document.createElement('span');
+  idEl.className = 'calculate-breakdown-row__id';
+  idEl.textContent = `${entry.contractor} · ${entry.pileId}`;
+  main.appendChild(idEl);
+
+  // Status must include text, never color alone (this task's Section 18).
+  const badge = document.createElement('span');
+  badge.className = `calculate-action-badge calculate-action-badge--${entry.action.toLowerCase()}`;
+  badge.textContent = t(materialActionLabelKey(entry.action));
+  main.appendChild(badge);
+  row.appendChild(main);
+
+  const meta = document.createElement('div');
+  meta.className = 'calculate-breakdown-row__meta';
+  meta.appendChild(buildMetaSpan(`${entry.oreClass || EM_DASH} · ${t('calculate.fields.ni')} ${entry.ni.toFixed(3)}%`));
+  row.appendChild(meta);
+
+  // Short, fixed explanation (this task's Section 21) -- never a raw
+  // internal score/deviation number.
+  const reason = document.createElement('p');
+  reason.className = 'calculate-action-reason';
+  reason.textContent = t(materialActionReasonKey(entry.action));
+  row.appendChild(reason);
+
+  return row;
+}
+
+function buildFleetActionsSection(actions) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-actions-section calculate-fleet-actions';
+
+  const title = document.createElement('h3');
+  title.className = 'calculate-subsection-label';
+  title.textContent = t('calculate.actions.fleetTitle');
+  wrap.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'calculate-actions-list';
+  actions.fleetActions.forEach((entry) => list.appendChild(buildFleetActionRow(entry)));
+  wrap.appendChild(list);
+
+  return wrap;
+}
+
+// Physical DT breakdown for one source -- USE/MOVE/RECEIVE/SEPARATE are
+// independent QUANTITIES, never a single enum (unlike Material Action),
+// per this task's Section 2/11-13. Only nonzero lines render (Section 19:
+// "do not show zero-value rows unless useful"); useUnits is the one
+// exception shown even at zero, so a fully-relocated-away or fully-idle
+// source never renders an empty-looking row.
+function buildFleetActionRow(entry) {
+  const row = document.createElement('div');
+  row.className = 'calculate-breakdown-row calculate-action-row calculate-fleet-action-row';
+
+  const main = document.createElement('div');
+  main.className = 'calculate-breakdown-row__main';
+  const idEl = document.createElement('span');
+  idEl.className = 'calculate-breakdown-row__id';
+  idEl.textContent = `${entry.contractor} · ${entry.pileId}`;
+  main.appendChild(idEl);
+  row.appendChild(main);
+
+  const lines = document.createElement('div');
+  lines.className = 'calculate-fleet-action-row__lines';
+
+  lines.appendChild(buildFleetActionLine('use', `${fmtRit(entry.useUnits)} DT`));
+
+  // Same-Contractor MOVE only -- the engine (fleet-allocation.js's
+  // planContractorRelocations()) never produces a cross-Contractor
+  // relocation in the first place (this task's Section 15), so there is
+  // nothing to filter out here.
+  entry.relocationsOut.forEach((relocation) => {
+    const suffix = t('calculate.actions.fleet.toPileSuffix', { pileId: relocation.toPileId });
+    lines.appendChild(buildFleetActionLine('move', `${fmtRit(relocation.units)} DT ${suffix}`));
+  });
+
+  // Optional RECEIVE clarity line (this task's Section 12) -- purely a
+  // display convenience; the underlying Fleet Action model (useUnits/
+  // moveOutUnits/moveInUnits/separateUnits) stays the same either way.
+  entry.relocationsIn.forEach((relocation) => {
+    const suffix = t('calculate.actions.fleet.fromPileSuffix', { pileId: relocation.fromPileId });
+    lines.appendChild(buildFleetActionLine('receive', `${fmtRit(relocation.units)} DT ${suffix}`));
+  });
+
+  if (entry.separateUnits > 0) {
+    lines.appendChild(buildFleetActionLine('separate', `${fmtRit(entry.separateUnits)} DT`));
+  }
+
+  row.appendChild(lines);
+  return row;
+}
+
+const FLEET_ACTION_LABEL_KEYS = {
+  use: 'calculate.actions.fleet.use',
+  move: 'calculate.actions.fleet.move',
+  receive: 'calculate.actions.fleet.receive',
+  separate: 'calculate.actions.fleet.separate',
+};
+
+function buildFleetActionLine(kind, valueText) {
+  const line = document.createElement('div');
+  line.className = `calculate-fleet-action-line calculate-fleet-action-line--${kind}`;
+  const label = document.createElement('span');
+  label.textContent = t(FLEET_ACTION_LABEL_KEYS[kind]);
+  const value = document.createElement('strong');
+  value.textContent = valueText;
+  line.appendChild(label);
+  line.appendChild(value);
+  return line;
 }
 
 // Action-boundary guard for Calculate actions (architecture doc Section

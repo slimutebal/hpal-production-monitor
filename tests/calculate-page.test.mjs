@@ -298,6 +298,52 @@ function relocationRows(pageEl) {
   return findAll(pageEl, hasClass('calculate-recommendation-relocation-row'));
 }
 
+/* ============================================================
+   MATERIAL ACTIONS / FLEET ACTIONS helpers (V2.4 Phase 5, this task)
+============================================================ */
+function materialActionsRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-material-actions'));
+}
+
+function fleetActionsRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-fleet-actions'));
+}
+
+function materialActionRows(pageEl) {
+  return findAll(pageEl, hasClass('calculate-material-action-row'));
+}
+
+// Matches on the row's OWN id label only (never the whole row's
+// textContent) -- a Fleet Action row can legitimately mention ANOTHER
+// source's Pile ID in its own MOVE/RECEIVE line (e.g. Higher's own row
+// says "-> Lglo"), so a whole-row substring search could match the wrong
+// row entirely.
+function materialActionRowFor(pageEl, pileId) {
+  return materialActionRows(pageEl).find((row) => {
+    const idEl = findOne(row, hasClass('calculate-breakdown-row__id'));
+    return idEl && idEl.textContent.includes(pileId);
+  });
+}
+
+function materialActionBadgeText(row) {
+  return findOne(row, hasClass('calculate-action-badge')).textContent;
+}
+
+function fleetActionRows(pageEl) {
+  return findAll(pageEl, hasClass('calculate-fleet-action-row'));
+}
+
+function fleetActionRowFor(pageEl, pileId) {
+  return fleetActionRows(pageEl).find((row) => {
+    const idEl = findOne(row, hasClass('calculate-breakdown-row__id'));
+    return idEl && idEl.textContent.includes(pileId);
+  });
+}
+
+function fleetActionLineTexts(row) {
+  return findAll(row, hasClass('calculate-fleet-action-line')).map((line) => line.textContent);
+}
+
 // Architecture doc / this task's "known fleet example": Higher Grade
 // (SMA, Ni 1.30, 5 DT, 50 t/DT) + LGLO (TII, Ni 1.03, 8 DT, 50 t/DT).
 function fillKnownRecommendationExample(pageEl) {
@@ -1085,18 +1131,18 @@ function stripComments(source) {
     .join('\n');
 }
 
-describe('21/22. Non-goals -- no Material Action UI, no Planned Blend Recovery', () => {
+describe('22. Non-goals -- no Planned Blend Recovery (Material Action/Fleet Action UI is now IN scope, V2.4 Phase 5)', () => {
   const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
 
-  test('21. the module\'s actual code never references Material Action or Fleet Action status concepts', () => {
-    for (const forbidden of ['materialAction', 'fleetAction']) {
-      assert.doesNotMatch(source, new RegExp(forbidden, 'i'), `calculate-page.js code must not yet reference ${forbidden}`);
-    }
-  });
-
-  test('21. USE/LIMIT/STOP/SEPARATE/STANDBY action-status vocabulary does not appear in actual code', () => {
-    assert.doesNotMatch(source, /\bUSE\b|\bLIMIT\b|\bSTOP\b|\bSEPARATE\b|\bSTANDBY\b/);
-  });
+  // SUPERSEDED (was: "21. the module's actual code never references
+  // Material Action or Fleet Action status concepts" / "USE/LIMIT/STOP/
+  // SEPARATE/STANDBY action-status vocabulary does not appear in actual
+  // code" / "the rendered Recommendation result never contains USE/LIMIT/
+  // STOP text"). Phase 5 (this task) intentionally adds exactly this --
+  // see describe('26-30. Material Actions...')/describe('31-33. Fleet
+  // Actions...') below for the positive coverage that replaces these three
+  // removed checks. Recovery/New Dome (Section 22) remains out of scope
+  // and is still verified below.
 
   test('22. the module\'s actual code never references Planned Blend Recovery / New Dome concepts', () => {
     for (const forbidden of ['recovery', 'newDome', 'requiredNewNi', 'calculateRequiredNewDomeNi']) {
@@ -1105,18 +1151,10 @@ describe('21/22. Non-goals -- no Material Action UI, no Planned Blend Recovery',
   });
 
   test('no localStorage usage anywhere in the Calculate modules\' actual code', () => {
-    for (const file of ['calculate-page.js', 'blend-calculator.js', 'calculate-validation.js', 'blending-recommendation.js', 'recommendation-ranking.js', 'fleet-allocation.js']) {
+    for (const file of ['calculate-page.js', 'blend-calculator.js', 'calculate-validation.js', 'blending-recommendation.js', 'recommendation-ranking.js', 'fleet-allocation.js', 'recommendation-actions.js']) {
       const fileSource = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', file), 'utf8'));
       assert.doesNotMatch(fileSource, /localStorage/, `${file} must not use localStorage`);
     }
-  });
-
-  test('21. the rendered Recommendation result never contains USE/LIMIT/STOP text', () => {
-    const pageEl = mountFullAccess();
-    mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
-
-    assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bUSE\b|\bLIMIT\b|\bSTOP\b/);
   });
 
   test('22. no Planned Blend Recovery / New Dome UI exists anywhere on the page', () => {
@@ -1399,14 +1437,14 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
     }
   });
 
-  test('no Material Action / Planned Blend Recovery i18n key families exist yet (Phase 5/6)', () => {
+  // Material Action/Fleet Action keys (calculate.actions.*) are now IN
+  // scope (V2.4 Phase 5, this task) -- see the dedicated key-existence
+  // assertions in describe('26-30. Material Actions...') below. Only
+  // Planned Blend Recovery/New Dome (Phase 6) remains forbidden here.
+  test('no Planned Blend Recovery i18n key family exists yet (Phase 6)', () => {
     const keys = Object.keys(idCatalog);
-    for (const forbidden of [
-      'calculate.action.use', 'calculate.action.limit', 'calculate.action.stop',
-      'calculate.action.move', 'calculate.action.separate', 'calculate.action.standby',
-      'calculate.recovery', 'calculate.status.targetNotAchievable', 'calculate.newDome',
-    ]) {
-      assert.equal(keys.some((k) => k.startsWith(forbidden)), false, `unexpected Phase 5/6 key family present: ${forbidden}`);
+    for (const forbidden of ['calculate.recovery', 'calculate.newDome']) {
+      assert.equal(keys.some((k) => k.startsWith(forbidden)), false, `unexpected Phase 6 key family present: ${forbidden}`);
     }
   });
 });
@@ -1573,5 +1611,275 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
     const itemRule = cssSource.slice(itemRuleStart, cssSource.indexOf('}', itemRuleStart));
     assert.match(itemRule, /padding:\s*8px 6px;/);
     assert.match(itemRule, /border-radius:\s*10px;/);
+  });
+});
+
+/* ============================================================
+   26-30 (this task's Section 18/20-21/25/32). MATERIAL ACTIONS UI
+============================================================ */
+describe('26. Material Actions section renders after a successful Recommendation, with correct USE/LIMIT/STOP labels', () => {
+  test('appears only once a Recommendation result exists, titled AKSI MATERIAL', () => {
+    const pageEl = mountFullAccess();
+    assert.equal(materialActionsRoot(pageEl), null, 'no Material Actions section before Recommendation is calculated');
+
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const root = materialActionsRoot(pageEl);
+    assert.notEqual(root, null);
+    assert.match(root.textContent, new RegExp(idCatalog['calculate.actions.materialTitle']));
+  });
+
+  test('17/known 5 HG / 8 LGLO scenario: both Higher and Lglo are Material USE, with the localized GUNAKAN label', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const higherRow = materialActionRowFor(pageEl, 'Higher');
+    const lgloRow = materialActionRowFor(pageEl, 'Lglo');
+    assert.notEqual(higherRow, undefined);
+    assert.notEqual(lgloRow, undefined);
+    assert.equal(materialActionBadgeText(higherRow), idCatalog['calculate.actions.material.use']);
+    assert.equal(materialActionBadgeText(lgloRow), idCatalog['calculate.actions.material.use']);
+    assert.equal(idCatalog['calculate.actions.material.use'], 'GUNAKAN');
+  });
+
+  test('English locale: the same known scenario renders the USE label', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    setLocale('en');
+    clickCalculateRecommendation(pageEl);
+
+    const higherRow = materialActionRowFor(pageEl, 'Higher');
+    assert.equal(materialActionBadgeText(higherRow), enCatalog['calculate.actions.material.use']);
+    assert.equal(enCatalog['calculate.actions.material.use'], 'USE');
+
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  // A third, unfavorable-Ni source forces a real STOP under the real
+  // engine+ranking (never a hand-picked fixture) -- Target/Tolerance are
+  // exactly the known example's own values, so Higher/Lglo still land on
+  // their proven 4/8 active split; the third source can only ever worsen
+  // an already-exact (deviation 0) match.
+  test('a genuinely unfavorable third source renders STOP with the localized label', () => {
+    const pageEl = mountFullAccess();
+    fillKnownRecommendationExample(pageEl);
+    fillRow(gridRows(pageEl)[2], { pileId: 'Off', contractor: 'ZZZ', ni: '0.10', units: '3', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+
+    clickCalculateRecommendation(pageEl);
+
+    const offRow = materialActionRowFor(pageEl, 'Off');
+    assert.notEqual(offRow, undefined);
+    assert.equal(materialActionBadgeText(offRow), idCatalog['calculate.actions.material.stop']);
+    assert.equal(idCatalog['calculate.actions.material.stop'], 'STOP');
+    // Every Material Action row includes a short reason (this task's
+    // Section 21) -- never left blank.
+    assert.ok(offRow.textContent.length > materialActionBadgeText(offRow).length);
+  });
+});
+
+describe('27. LIMIT is contextual, never a static LGLO/HGLO rule (this task\'s Section 22)', () => {
+  test('a low-Ni third source that would move the blend TOWARD a lower Target renders LIMIT, not STOP', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '12', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Off', contractor: 'ZZZ', ni: '1.10', units: '3', tonnesPerUnit: '50' });
+    // Target well below both, but reachable via the full Higher fleet
+    // alone within tolerance -- Off (1.10) is a step TOWARD this lower
+    // Target relative to the 1.30 baseline, so it must never be STOP.
+    fillRecommendationControls(pageEl, { targetNi: '1.290', tolerance: '0.050' });
+
+    clickCalculateRecommendation(pageEl);
+
+    const offRow = materialActionRowFor(pageEl, 'Off');
+    assert.notEqual(materialActionBadgeText(offRow), idCatalog['calculate.actions.material.stop']);
+  });
+});
+
+/* ============================================================
+   31-33 (this task's Section 19-20/32). FLEET ACTIONS UI
+============================================================ */
+describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE/SEPARATE labels', () => {
+  test('appears only once a Recommendation result exists, titled AKSI FLEET, separate from Material Actions', () => {
+    const pageEl = mountFullAccess();
+    assert.equal(fleetActionsRoot(pageEl), null);
+
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const root = fleetActionsRoot(pageEl);
+    assert.notEqual(root, null);
+    assert.match(root.textContent, new RegExp(idCatalog['calculate.actions.fleetTitle']));
+    assert.notEqual(materialActionsRoot(pageEl), fleetActionsRoot(pageEl), 'Material and Fleet Actions must be two distinct sections');
+  });
+
+  test('known 5 HG / 8 LGLO scenario: Higher shows ACTIVE 4 DT + SEPARATE 1 DT (cross-Contractor, no MOVE); Lglo shows ACTIVE 8 DT only', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const higherRow = fleetActionRowFor(pageEl, 'Higher');
+    const higherLines = fleetActionLineTexts(higherRow);
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('4')));
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.separate']) && l.includes('1')));
+    assert.ok(!higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move'])), 'cross-Contractor Higher/Lglo must never show a MOVE line');
+
+    const lgloRow = fleetActionRowFor(pageEl, 'Lglo');
+    const lgloLines = fleetActionLineTexts(lgloRow);
+    assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('8')));
+    assert.equal(lgloLines.length, 1, 'a fully-active source with no relocation shows only its USE line');
+  });
+
+  test('same-Contractor relocation scenario: Higher shows MOVE 1 DT -> Lglo, Lglo shows RECEIVE 1 DT <- Higher', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+
+    clickCalculateRecommendation(pageEl);
+
+    const higherLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('1') && l.includes('Lglo')));
+
+    const lgloLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Lglo'));
+    assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive']) && l.includes('1') && l.includes('Higher')));
+
+    // English labels for the same scenario.
+    setLocale('en');
+    const higherLinesEn = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
+    assert.ok(higherLinesEn.some((l) => l.includes('MOVE') && l.includes('Lglo')));
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  test('cross-Contractor case never renders a MOVE or RECEIVE line anywhere on the page', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '7', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+
+    clickCalculateRecommendation(pageEl);
+
+    fleetActionRows(pageEl).forEach((row) => {
+      const lines = fleetActionLineTexts(row);
+      assert.ok(!lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move'])));
+      assert.ok(!lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive'])));
+    });
+  });
+});
+
+/* ============================================================
+   STALE INVALIDATION CLEARS ACTIONS TOO (this task's Section 27)
+============================================================ */
+describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet Actions along with the Recommendation result', () => {
+  test('a source edit removes both action sections immediately, without pressing Hitung Rekomendasi', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    assert.notEqual(materialActionsRoot(pageEl), null);
+    assert.notEqual(fleetActionsRoot(pageEl), null);
+
+    typeIntoField(gridRows(pageEl)[0], 'ni', '1.35');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(materialActionsRoot(pageEl), null, 'no stale Material Actions section may remain in the DOM');
+    assert.equal(fleetActionsRoot(pageEl), null, 'no stale Fleet Actions section may remain in the DOM');
+  });
+
+  test('a Target Ni edit clears both action sections', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(pageEl, 'targetNi', '1.130');
+
+    assert.equal(materialActionsRoot(pageEl), null);
+    assert.equal(fleetActionsRoot(pageEl), null);
+  });
+
+  test('a Tolerance edit clears both action sections', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(pageEl, 'tolerance', '0.020');
+
+    assert.equal(materialActionsRoot(pageEl), null);
+    assert.equal(fleetActionsRoot(pageEl), null);
+  });
+
+  test('recalculating after an edit renders fresh, current actions -- never a leftover from before the edit', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    const higherBefore = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
+
+    typeIntoField(gridRows(pageEl)[0], 'ni', '1.30'); // no-op edit (same value) still clears+recomputes
+    clickCalculateRecommendation(pageEl);
+
+    const higherAfter = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
+    assert.equal(higherAfter, higherBefore, 'recomputed from the same valid inputs must reproduce the same action');
+  });
+});
+
+/* ============================================================
+   33 (this task's Section 25). TARGET NOT ACHIEVABLE ACTION BASELINE
+============================================================ */
+describe('33. Target Not Achievable shows the best-attainable action baseline note', () => {
+  test('the best-attainable note appears above Material Actions, and actions are still rendered', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
+
+    clickCalculateRecommendation(pageEl);
+
+    assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.targetNotAchievable']));
+    const root = materialActionsRoot(pageEl);
+    assert.notEqual(root, null);
+    assert.match(root.textContent, new RegExp(idCatalog['calculate.actions.bestAttainableNote']));
+
+    // The best-attainable candidate (highest Ni alone) is Material USE;
+    // never silently treated as though the unreachable Target were met.
+    const higherRow = materialActionRowFor(pageEl, 'Higher');
+    assert.equal(materialActionBadgeText(higherRow), idCatalog['calculate.actions.material.use']);
+  });
+
+  test('the best-attainable note is ABSENT once Target is actually achievable', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    assert.doesNotMatch(materialActionsRoot(pageEl).textContent, new RegExp(idCatalog['calculate.actions.bestAttainableNote']));
+  });
+});
+
+/* ============================================================
+   i18n key existence for the new calculate.actions.* family
+============================================================ */
+describe('calculate.actions.* localization keys exist and carry the Owner-specified wording', () => {
+  test('Indonesian wording matches this task\'s Section 20', () => {
+    assert.equal(idCatalog['calculate.actions.material.use'], 'GUNAKAN');
+    assert.equal(idCatalog['calculate.actions.material.limit'], 'BATASI');
+    assert.equal(idCatalog['calculate.actions.material.stop'], 'STOP');
+    assert.equal(idCatalog['calculate.actions.fleet.use'], 'AKTIF');
+    assert.equal(idCatalog['calculate.actions.fleet.move'], 'PINDAH');
+    assert.equal(idCatalog['calculate.actions.fleet.separate'], 'PISAHKAN');
+  });
+
+  test('English wording is the plain domain vocabulary', () => {
+    assert.equal(enCatalog['calculate.actions.material.use'], 'USE');
+    assert.equal(enCatalog['calculate.actions.material.limit'], 'LIMIT');
+    assert.equal(enCatalog['calculate.actions.material.stop'], 'STOP');
+    assert.equal(enCatalog['calculate.actions.fleet.use'], 'ACTIVE');
+    assert.equal(enCatalog['calculate.actions.fleet.move'], 'MOVE');
+    assert.equal(enCatalog['calculate.actions.fleet.separate'], 'SEPARATE');
+  });
+
+  test('id.js and en.js still carry the exact same calculate.actions.* key set', () => {
+    const idKeys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.actions.')).sort();
+    const enKeys = Object.keys(enCatalog).filter((k) => k.startsWith('calculate.actions.')).sort();
+    assert.deepEqual(idKeys, enKeys);
+    assert.ok(idKeys.length > 0);
   });
 });

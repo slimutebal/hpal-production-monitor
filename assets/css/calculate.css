@@ -717,3 +717,127 @@
     font-size: 0.78rem;
   }
 }
+
+/* ==================================================
+   MATERIAL ACTIONS / FLEET ACTIONS (V2.4 Phase 5). Compact source
+   action rows/cards, reusing .calculate-breakdown-row/__main/__id/__meta
+   (the same visual language as the existing Source Fleet Breakdown/
+   Relocation detail above) rather than a second card system -- and the
+   same --good/--bad/--accent2 theme tokens the rest of this app already
+   uses for status coloring (--good = within tolerance, --bad = errors,
+   --accent2 = surplus), never an isolated Calculate-only palette. Status
+   is never color alone -- every badge/line always carries its own text
+   (calculate-page.js). Deliberately placed at the very end of the
+   Recommendation result (this task's Section 29): Hopper Pattern, higher
+   up the page, stays the single most visually prominent element.
+================================================== */
+#page-calculate .calculate-actions-section {
+  margin-top: 14px;
+}
+
+#page-calculate .calculate-actions-baseline-note {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--muted, #8fa3bd);
+}
+
+#page-calculate .calculate-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ---- Material Action (USE/LIMIT/STOP) -- one badge, colored + worded,
+   never color alone. ---- */
+#page-calculate .calculate-action-badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+#page-calculate .calculate-action-badge--use {
+  background: rgba(52, 211, 153, 0.16);
+  color: var(--good, #34d399);
+}
+#page-calculate .calculate-action-badge--limit {
+  background: rgba(251, 191, 36, 0.16);
+  color: var(--accent2, #fbbf24);
+}
+#page-calculate .calculate-action-badge--stop {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--bad, #f87171);
+}
+
+/* A subtle left accent bar per Material Action state -- reinforces the
+   badge color at a glance while scrolling a long list, still never the
+   ONLY signal (the badge text is always present too). */
+#page-calculate .calculate-material-action-row {
+  border-left: 3px solid transparent;
+}
+#page-calculate .calculate-material-action-row--use {
+  border-left-color: var(--good, #34d399);
+}
+#page-calculate .calculate-material-action-row--limit {
+  border-left-color: var(--accent2, #fbbf24);
+}
+#page-calculate .calculate-material-action-row--stop {
+  border-left-color: var(--bad, #f87171);
+}
+
+#page-calculate .calculate-action-reason {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted, #8fa3bd);
+}
+
+/* ---- Fleet Action (USE/MOVE/RECEIVE/SEPARATE) -- independent quantity
+   lines under one source row, never a single status badge (this task's
+   Section 2/11-13: Material Action and Fleet Action are different
+   questions about the same source). ---- */
+#page-calculate .calculate-fleet-action-row__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+#page-calculate .calculate-fleet-action-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+#page-calculate .calculate-fleet-action-line span {
+  color: var(--muted, #8fa3bd);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+#page-calculate .calculate-fleet-action-line strong {
+  color: var(--text, inherit);
+}
+#page-calculate .calculate-fleet-action-line--use span {
+  color: var(--good, #34d399);
+}
+#page-calculate .calculate-fleet-action-line--move span,
+#page-calculate .calculate-fleet-action-line--receive span {
+  color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-fleet-action-line--separate span {
+  color: var(--accent2, #fbbf24);
+}
+
+@media (max-width: 374px) {
+  #page-calculate .calculate-action-badge {
+    font-size: 0.62rem;
+    padding: 3px 8px;
+  }
+  #page-calculate .calculate-fleet-action-line {
+    font-size: 0.72rem;
+  }
+}
