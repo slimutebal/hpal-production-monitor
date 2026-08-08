@@ -19,15 +19,6 @@
   margin-bottom: 18px;
 }
 
-#page-settings .settings-eyebrow {
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--accent, #38bdf8);
-  margin-bottom: 6px;
-  font-weight: 700;
-}
-
 #page-settings .settings-title {
   font-size: 1.2rem;
   font-weight: 800;
@@ -532,4 +523,50 @@
   #settings-modal-overlay .settings-modal-actions .settings-btn {
     flex: 1 1 auto;
   }
+}
+
+/* ============================================================
+   V2.3 Phase 8 -- License card + section labels (MONITOR_ONLY/FULL_ACCESS
+   access gate). See settings-page.js's buildLicenseCardMarkup() and
+   buildMarkup()'s "Access"/"Preferences"/"Operational Data" grouping.
+============================================================ */
+#page-settings .settings-section-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted, #8fa3bd);
+  font-weight: 700;
+  margin: 18px 2px 8px;
+}
+#page-settings .settings-section-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Personnel Directory intro (Settings UI refinement): the heading +
+   description that used to sit in the page header now introduces the
+   Operational Data section instead -- reuses .settings-title/.settings-subtitle
+   as-is (see settings-page.js's buildOperationalMarkup()), this wrapper
+   only controls the spacing around that pair. FULL_ACCESS only; never
+   rendered under MONITOR_ONLY. */
+#page-settings .settings-section-intro {
+  margin: 18px 2px 0;
+}
+
+#page-settings .settings-license-status {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text, inherit);
+  margin: 0 0 12px;
+}
+
+#page-settings .settings-license-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+#page-settings .settings-license-input-row .settings-input {
+  flex: 1 1 auto;
+}
+#page-settings .settings-license-input-row .settings-btn {
+  flex: 0 0 auto;
 }

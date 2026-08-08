@@ -30,6 +30,7 @@ import {
   updateReportPersonnel,
   setReportPersonnelActive,
 } from './personnel-directory-service.js';
+import { hasFullAccess } from './license-service.js';
 
 const QUEUE_KEY = 'hpal.personnel.writeQueue.v1';
 const QUEUE_CORRUPTED_BACKUP_KEY = 'hpal.personnel.writeQueue.v1.corrupted';
@@ -360,6 +361,12 @@ export function removeQueueItem(queueId) {
 // already-pending item has no meaning (it will be attempted on the next
 // flush regardless).
 export function retryQueueItem(queueId) {
+  // V2.3 Phase 8: retrying re-enables an eventual server write for this
+  // item, so it is gated the same as every other Personnel Directory
+  // write action -- under MONITOR_ONLY the item must stay 'blocked' and
+  // dormant, never quietly re-armed for the next flush.
+  if (!hasFullAccess()) return false;
+
   const queue = loadWriteQueue();
   const item = queue.items.find((it) => it.queueId === queueId);
   if (!item || item.status !== 'blocked') return false;
@@ -458,6 +465,17 @@ async function performFlush(options) {
 // 'online' event firing while a manual "Review" flush is already running)
 // are guaranteed to share one flush rather than racing.
 export function flushPersonnelWriteQueue(options = {}) {
+  // V2.3 Phase 8: guarded here, at the flush action boundary itself, not
+  // only by Settings hiding the Pending Changes UI under MONITOR_ONLY --
+  // this is what makes the 'online' event, startup auto-flush, and a
+  // manual Sync all correctly leave every pending/blocked item untouched
+  // (queued items "remain dormant locally") whenever the device is
+  // unlicensed, regardless of which of those three triggers fired. Queue
+  // items are never inspected, attempted, or mutated in this branch --
+  // this returns before loadWriteQueue() is even called.
+  if (!hasFullAccess()) {
+    return Promise.resolve({ processed: 0, succeeded: 0, blocked: 0, stopped: true, stopReason: 'unlicensed' });
+  }
   if (flushInFlight) return flushInFlight;
   flushInFlight = performFlush(options).finally(() => {
     flushInFlight = null;

@@ -38,8 +38,10 @@ import {
   getActivePersonnelByRole,
   clearPersonnelDirectoryCache,
 } from '../js/services/personnel-directory-service.js';
+import { initializeLicense, _buildValidLicenseRecordForTests } from '../js/services/license-service.js';
 
 const QUEUE_KEY = 'hpal.personnel.writeQueue.v1';
+const LICENSE_KEY = 'hpal.license.v1';
 
 function createMockStorage() {
   const map = new Map();
@@ -54,9 +56,21 @@ function createMockStorage() {
   };
 }
 
+// V2.3 Phase 8: flushPersonnelWriteQueue()/retryQueueItem() now
+// independently check licenseService.hasFullAccess() (see that module's
+// own header comment). This file predates licensing and tests the
+// queue's OWN behavior in isolation, so every test here runs under a
+// FULL_ACCESS baseline installed via license-service.js's
+// _buildValidLicenseRecordForTests() fixture -- which verifies against
+// the real production verifier WITHOUT ever needing the actual plaintext
+// key (see that helper's own doc comment). License-guard behavior itself
+// (MONITOR_ONLY blocking these same functions) has its own dedicated
+// coverage in tests/personnel-write-queue-license-guard.test.mjs.
 function installMockStorage() {
   const storage = createMockStorage();
   globalThis.localStorage = storage;
+  storage.setItem(LICENSE_KEY, JSON.stringify(_buildValidLicenseRecordForTests()));
+  initializeLicense();
   return storage;
 }
 

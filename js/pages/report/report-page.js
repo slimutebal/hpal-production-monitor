@@ -39,6 +39,7 @@ import {
 } from '../../services/contractor-directory-service.js';
 import { onRouteChange, navigateTo } from '../../router.js';
 import { t, onLocaleChange, translatePage } from '../../i18n/i18n.js';
+import { hasFullAccess, requestFullAccessAttention } from '../../services/license-service.js';
 import {
   sortRecords,
   resolveSelectedPersonnel,
@@ -1154,6 +1155,8 @@ function handleTotalManpowerInput() {
    STEP 1: FILE UPLOAD
 ============================================================ */
 function handleFileChange(event) {
+  if (!requireFullAccessForReportAction()) return;
+
   const file = event.target.files[0];
   if (!file) return;
 
@@ -1307,9 +1310,29 @@ function handleContractorDirectoryUpdatedEvent() {
 }
 
 /* ============================================================
+   LICENSE ACTION GUARD (V2.3 Phase 8). Report is a FULL_ACCESS-only
+   feature -- the route guard (router.js/app.js) already blocks reaching
+   #/report at all under MONITOR_ONLY, and the bottom nav hides the Report
+   item entirely, but neither stops a direct programmatic call into this
+   module (e.g. from DevTools) that bypasses the router. One reusable
+   check, called at every action boundary the architecture doc calls out
+   (Step 1 -> 2, Step 2 -> 3/Generate) rather than scattered ad hoc
+   throughout the file. On denial it performs the exact same redirect the
+   route guard performs (never a silent no-op, never a dead end).
+============================================================ */
+function requireFullAccessForReportAction() {
+  if (hasFullAccess()) return true;
+  navigateTo('settings');
+  requestFullAccessAttention('report-action');
+  return false;
+}
+
+/* ============================================================
    STEP 1 -> 2
 ============================================================ */
 function goToStep2() {
+  if (!requireFullAccessForReportAction()) return;
+
   const errors = [];
 
   const prevTextRaw = els.prevText.value;
@@ -1448,6 +1471,8 @@ function handleDomeAreaChange(event) {
    STEP 2 -> 3: GENERATE
 ============================================================ */
 function goToStep3() {
+  if (!requireFullAccessForReportAction()) return;
+
   if (reportState.buyerValidationStatus !== BUYER_STATUS.CONFIRMED || !reportState.resolvedBuyer) {
     renderAlert(els.step2Errors, ['Buyer belum terkonfirmasi. Kembali ke Step 1 dan pastikan teks report serta file timbangan berasal dari buyer yang sama.']);
     return;

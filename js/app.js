@@ -1,9 +1,15 @@
 // V2.0 app shell bootstrap. Wires the router to the bottom navigation and
 // the Settings placeholder. Monitor itself is untouched — it keeps running
 // its own inline script exactly as before.
-import { initRouter, onRouteChange } from './router.js';
+import { initRouter, onRouteChange, registerRouteGuard, navigateTo, getCurrentRoute } from './router.js';
 import { initAppPreferences } from './services/app-preferences-service.js';
 import { initI18n, t, getLocale, onLocaleChange, translatePage } from './i18n/i18n.js';
+import {
+  initializeLicense,
+  hasFullAccess,
+  subscribeAccessChange,
+  requestFullAccessAttention,
+} from './services/license-service.js';
 import {
   mountBottomNavigation,
   updateBottomNavigation,
@@ -25,6 +31,14 @@ function init() {
   // why both converge on the same `hpal.preferences.v1` storage key.
   initAppPreferences();
   initI18n();
+
+  // V2.3 Phase 8 (Simple Local License and Access Control): license state
+  // must resolve before the router/nav/pages mount, so the very first
+  // render already reflects the correct access tier -- never a flash of
+  // Report/Personnel Directory controls that then disappear once the
+  // license check catches up (see this file's own startup-order comment
+  // at the bottom of this function).
+  initializeLicense();
 
   // Monitor's own <script> in index.html is a classic (non-module) script
   // -- it cannot `import` js/i18n/i18n.js directly (V2.3 full-localization
@@ -60,6 +74,37 @@ function init() {
     // so this reuses that existing handler instead of touching Monitor code.
     if (route === 'monitor') {
       window.dispatchEvent(new Event('resize'));
+    }
+  });
+
+  // V2.3 Phase 8 -- the one and only #/report route guard (architecture
+  // doc section 5/10): MONITOR_ONLY is always denied, FULL_ACCESS is always
+  // allowed. On deny, deterministically redirect to #/settings and ask it
+  // to open/focus the License card with the "requires Full Access" message
+  // -- never to #/monitor, never an unspecified fallback. This is a
+  // route-level guard only; report-page.js's own goToStep2()/goToStep3()
+  // independently re-check hasFullAccess() at the action boundary, so a
+  // direct programmatic call (bypassing the router entirely) is still
+  // blocked even if this guard were somehow skipped.
+  registerRouteGuard(
+    'report',
+    () => hasFullAccess(),
+    () => {
+      navigateTo('settings');
+      requestFullAccessAttention('route-report');
+    },
+  );
+
+  // If a license is removed while Report is the active route (Settings'
+  // own Remove License action, the only way FULL_ACCESS can be revoked
+  // without a route change), the route guard above never re-runs on its
+  // own -- nothing changed window.location.hash. This explicitly performs
+  // the "if currently on Report: redirect immediately to Settings"
+  // requirement for that specific case; the route guard still handles
+  // every other unlicensed #/report entry attempt.
+  subscribeAccessChange(() => {
+    if (!hasFullAccess() && getCurrentRoute() === 'report') {
+      navigateTo('settings');
     }
   });
 

@@ -34,6 +34,21 @@
 // See verifyRecordAdded/verifyRecordUpdated/verifyRecordActiveState below
 // and their use inside writeAndResync().
 
+// V2.3 Phase 8: Personnel Directory reads/writes are a FULL_ACCESS-only
+// feature (architecture doc section 10). Settings never renders any
+// personnel control under MONITOR_ONLY, but every exported network action
+// below also checks hasFullAccess() independently, so a direct
+// programmatic call (bypassing Settings' UI entirely) cannot reach the
+// network -- same "guard the action boundary, not just the UI" posture as
+// report-page.js's requireFullAccessForReportAction(). loadCachedPersonnelDirectory()
+// (a pure local read, no network) is deliberately NOT gated here -- it is
+// safe to keep the in-memory snapshot warm; what must never happen is
+// exposing it through Settings' MONITOR_ONLY UI (settings-page.js's own
+// concern) or writing/fetching it over the network without a license.
+import { hasFullAccess } from './license-service.js';
+
+const LICENSE_REQUIRED_ERROR = { code: 'LICENSE_REQUIRED', message: 'This feature requires a Full Access License.' };
+
 const PERSONNEL_ENDPOINT = 'https://script.google.com/macros/s/AKfycbz-MHU0nRMFMVJbS0h_oMPKsmcCCHTlGARD8e7GlmUogVPOqGfVQQOcuajPfgHXL2xqzQ/exec';
 const CACHE_KEY = 'hpal.personnel.v1';
 const CACHE_VERSION = 1;
@@ -343,6 +358,9 @@ async function performSync(fetchImpl) {
 // back-to-back in the same tick (e.g. a doubled click event) are guaranteed
 // to see the same in-flight promise rather than racing to start two fetches.
 export function syncPersonnelDirectory(options = {}) {
+  if (!hasFullAccess()) {
+    return Promise.resolve({ ok: false, error: 'License required.', snapshot: getPersonnelDirectorySnapshot() });
+  }
   if (inFlightSync) return inFlightSync;
 
   const fetchImpl = options.fetchImpl || getFetch();
@@ -545,7 +563,15 @@ async function writeAndResync(fetchImpl, body, verifyMutation) {
     version: writeResult.record.version,
   });
 
-  const syncResult = await syncPersonnelDirectory({ fetchImpl });
+  // Calls performSync() directly, NOT the exported/guarded
+  // syncPersonnelDirectory() -- the outer add/update/setActive functions
+  // already checked hasFullAccess() before ever reaching writeAndResync(),
+  // so re-checking here would be redundant; more importantly, going
+  // through the guarded wrapper would make a write that already succeeded
+  // on the server incorrectly report LICENSE_REQUIRED during its own
+  // required post-write resync if the license happened to be removed in
+  // the brief window between the two calls.
+  const syncResult = await performSync(fetchImpl);
   if (!syncResult.ok) {
     return {
       ok: false,
@@ -591,6 +617,7 @@ function logPersonnelDirectory(label, details) {
 // the only caller-supplied fields -- id, created_at, updated_at, version,
 // and active are all server-generated (architecture doc, action A).
 export function addReportPersonnel({ role_type, name, organization }, options = {}) {
+  if (!hasFullAccess()) return Promise.resolve({ ok: false, error: LICENSE_REQUIRED_ERROR });
   const fetchImpl = options.fetchImpl || getFetch();
   return writeAndResync(fetchImpl, {
     action: 'addReportPersonnel',
@@ -607,6 +634,7 @@ export function addReportPersonnel({ role_type, name, organization }, options = 
 // `expected_version` is required so the server can reject a stale edit as
 // a VERSION_CONFLICT instead of silently overwriting a concurrent change.
 export function updateReportPersonnel({ id, name, organization, expected_version }, options = {}) {
+  if (!hasFullAccess()) return Promise.resolve({ ok: false, error: LICENSE_REQUIRED_ERROR });
   const fetchImpl = options.fetchImpl || getFetch();
   return writeAndResync(fetchImpl, {
     action: 'updateReportPersonnel',
@@ -623,6 +651,7 @@ export function updateReportPersonnel({ id, name, organization, expected_version
 // is required for the same optimistic-concurrency reason as
 // updateReportPersonnel above.
 export function setReportPersonnelActive({ id, active, expected_version }, options = {}) {
+  if (!hasFullAccess()) return Promise.resolve({ ok: false, error: LICENSE_REQUIRED_ERROR });
   if (!isBoolean(active)) {
     return Promise.resolve({ ok: false, error: { code: 'VALIDATION_ERROR', message: 'active must be a boolean.' } });
   }

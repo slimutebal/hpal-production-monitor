@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hpal-production-monitor-v2.3.0-full-localization-appearance';
+const CACHE_NAME = 'hpal-production-monitor-v2.3.0-simple-license';
 const APP_SHELL = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const APP_SHELL = [
   './js/services/personnel-directory-service.js',
   './js/services/personnel-write-queue.js',
   './js/services/app-preferences-service.js',
+  './js/services/license-service.js',
   './js/i18n/i18n.js',
   './js/i18n/locales/id.js',
   './js/i18n/locales/en.js',

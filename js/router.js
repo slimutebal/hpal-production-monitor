@@ -10,6 +10,22 @@ const ROUTE_PATTERN = /^#\/(monitor|report|settings)$/;
 let currentRoute = null;
 const listeners = new Set();
 
+// V2.3 Phase 8 (Simple Local License and Access Control) -- route guards.
+// One guard function per gated route, registered by app.js at bootstrap
+// (registerRouteGuard('report', ...)). guardFn(route) returns true (allow)
+// or false (deny); on deny, applyRoute() calls the guard's own onDeny(route)
+// instead of activating the page, and never falls through to render it.
+// This is a route-level guard only -- callers invoking a licensed page's
+// functions directly (bypassing the router) are still independently
+// blocked at the action boundary (see report-page.js/personnel-directory-
+// service.js's own hasFullAccess() checks), per the "guard both layers"
+// requirement.
+const routeGuards = new Map();
+
+export function registerRouteGuard(route, guardFn, onDeny) {
+  routeGuards.set(route, { guardFn, onDeny });
+}
+
 function parseRoute(hash) {
   const match = ROUTE_PATTERN.exec(hash || '');
   return match ? match[1] : DEFAULT_ROUTE;
@@ -23,6 +39,16 @@ function applyRoute() {
     // Empty or unknown hash: redirect to the resolved route. This triggers
     // another hashchange, which re-enters applyRoute with a matching hash.
     window.location.hash = normalizedHash;
+    return;
+  }
+
+  const guard = routeGuards.get(resolved);
+  if (guard && !guard.guardFn(resolved)) {
+    // The guard itself decides (and performs) the deny behavior -- e.g.
+    // redirecting to #/settings and focusing the License card -- rather
+    // than this module assuming any particular fallback route. It must
+    // never redirect back to the same denied route, which would loop.
+    guard.onDeny(resolved);
     return;
   }
 

@@ -8,6 +8,7 @@
 // nav is rebuilt (not just re-labeled) on every locale change so the
 // aria-label and visible text always agree.
 import { t, onLocaleChange } from '../i18n/i18n.js';
+import { hasFullAccess, subscribeAccessChange } from '../services/license-service.js';
 
 // Every icon below uses only <rect>, <line>, <circle>, and <polyline> with
 // comma-separated coordinates — no <path> arc/line command strings — so
@@ -25,6 +26,14 @@ const NAV_ITEMS = [
   {
     route: 'report',
     labelKey: 'nav.report',
+    // V2.3 Phase 8: Report is a FULL_ACCESS-only feature (Owner UX
+    // requirement) -- hidden entirely under MONITOR_ONLY, not merely
+    // disabled. This is UX only, never the actual security boundary: the
+    // route guard (app.js/router.js) and report-page.js's own
+    // action-boundary checks are what actually block access, since a
+    // hidden nav item alone would do nothing against a direct #/report
+    // hash entry or a programmatic call.
+    fullAccessOnly: true,
     icon:
       '<svg viewBox="0 0 24 24" aria-hidden="true">' +
       '<rect x="5" y="3" width="14" height="18" rx="2"/>' +
@@ -53,8 +62,9 @@ function renderNavMarkup() {
   if (!nav) return;
 
   const activeRoute = nav.querySelector('.bottom-nav__item.is-active')?.dataset.route || null;
+  const fullAccess = hasFullAccess();
 
-  nav.innerHTML = NAV_ITEMS.map((item) => {
+  nav.innerHTML = NAV_ITEMS.filter((item) => !item.fullAccessOnly || fullAccess).map((item) => {
     const label = t(item.labelKey);
     return `
       <a href="#/${item.route}" class="bottom-nav__item" data-route="${item.route}" aria-label="${label}">
@@ -73,6 +83,11 @@ function renderNavMarkup() {
 export function mountBottomNavigation() {
   renderNavMarkup();
   onLocaleChange(renderNavMarkup);
+  // V2.3 Phase 8: a live Unlock makes the Report item appear immediately
+  // (no reload); a live Remove License makes it disappear immediately --
+  // both just re-run the same render this already does for a locale
+  // change, since NAV_ITEMS filtering is re-evaluated fresh every call.
+  subscribeAccessChange(renderNavMarkup);
 }
 
 export function updateBottomNavigation(activeRoute) {
