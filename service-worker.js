@@ -1,10 +1,10 @@
-// V2.5.1: bumped once for the WHOLE Offline-First Cold Startup and
-// Background Contractor Sync patch (startup audit -- local-first
-// navigation below, plus the two vendor library files this release adds
-// to APP_SHELL) -- evicts every older cache via the existing
+// V2.5.2: bumped once for the Report Excel Lazy-Load Regression Hotfix
+// (report-page.js now awaits the same SheetJS loader Monitor uses --
+// no APP_SHELL entries changed, xlsx.min.js/chart.umd.min.js were already
+// precached by V2.5.1) -- evicts every older cache via the existing
 // activate-time cleanup (no second version source; this is the ONE place
 // a release's cache identity is declared).
-const CACHE_NAME = 'hpal-production-monitor-v2.5.1-offline-first-startup';
+const CACHE_NAME = 'hpal-production-monitor-v2.5.2-report-excel-hotfix';
 const APP_SHELL = [
   './',
   './index.html',

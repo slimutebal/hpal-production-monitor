@@ -632,7 +632,16 @@ function mt(key, vars){
    tag is never appended twice. On failure, the shared promise resets so
    a later retry (e.g. the user selects a file again) can try again
    instead of staying permanently rejected. */
-let monitorVendorLibrariesPromise = null;
+// V2.5.2 (Report Excel Lazy-Load Regression Hotfix): split into one
+// promise PER LIBRARY -- V2.5.1 originally had a single
+// monitorVendorLibrariesPromise covering both XLSX and Chart.js together,
+// which worked for Monitor (the only caller at the time) but gave Report
+// no way to request "XLSX only" without also pulling in Chart.js, which
+// Report never needs just to parse a workbook. ensureMonitorVendorLibraries()
+// below is kept as a thin Promise.all() over both, so Monitor's existing
+// two call sites (handleFile()/handleContractorFile()) are UNCHANGED.
+let xlsxLibraryPromise = null;
+let chartLibraryPromise = null;
 
 function loadVendorScriptOnce(src){
   return new Promise((resolve, reject) => {
@@ -659,27 +668,60 @@ function loadVendorScriptOnce(src){
   });
 }
 
-// Returns a shared Promise that resolves once both vendor libraries are
-// ready (loading only whichever of the two isn't already present).
-// Loading both together on the first Monitor workbook operation is
-// deliberate (this task's Section 10): Chart.js is only needed once
-// results render, slightly after XLSX parses the file, but a single
-// shared load keeps the loader/await contract simple at both of Monitor's
-// call sites (handleFile(), handleContractorFile()) without meaningfully
-// changing when either library is actually needed relative to eager
-// page-load.
-function ensureMonitorVendorLibraries(){
-  if(!monitorVendorLibrariesPromise){
-    monitorVendorLibrariesPromise = Promise.all([
-      typeof XLSX === 'undefined' ? loadVendorScriptOnce('./assets/vendor/xlsx.min.js') : Promise.resolve(),
-      typeof Chart === 'undefined' ? loadVendorScriptOnce('./assets/vendor/chart.umd.min.js') : Promise.resolve(),
-    ]).catch((err) => {
-      monitorVendorLibrariesPromise = null; // allow a later retry instead of staying rejected forever
-      throw err;
-    });
+// Returns a shared Promise that resolves once XLSX (SheetJS) is ready --
+// loading it only if it isn't already present. This is the ONE source of
+// truth for loading SheetJS; both Monitor (via ensureMonitorVendorLibraries()
+// below) and Report (via the window.HPALVendorLibraries bridge, see
+// below) call this exact function -- there is no second/duplicate
+// script-tag-appending path anywhere else in the app.
+function ensureXlsxLibrary(){
+  if(!xlsxLibraryPromise){
+    xlsxLibraryPromise = (typeof XLSX === 'undefined' ? loadVendorScriptOnce('./assets/vendor/xlsx.min.js') : Promise.resolve())
+      .catch((err) => {
+        xlsxLibraryPromise = null; // allow a later retry instead of staying rejected forever
+        throw err;
+      });
   }
-  return monitorVendorLibrariesPromise;
+  return xlsxLibraryPromise;
 }
+
+// Same pattern, Chart.js. Monitor-specific (result rendering) -- Report
+// never calls this, since parsing a workbook never needs Chart.js
+// (this task's Section 7).
+function ensureChartLibrary(){
+  if(!chartLibraryPromise){
+    chartLibraryPromise = (typeof Chart === 'undefined' ? loadVendorScriptOnce('./assets/vendor/chart.umd.min.js') : Promise.resolve())
+      .catch((err) => {
+        chartLibraryPromise = null; // allow a later retry instead of staying rejected forever
+        throw err;
+      });
+  }
+  return chartLibraryPromise;
+}
+
+// Returns a shared Promise that resolves once BOTH vendor libraries are
+// ready. Loading both together on the first Monitor workbook operation
+// remains deliberate (V2.5.1's own Section 10): Chart.js is only needed
+// once results render, slightly after XLSX parses the file, but a single
+// shared await keeps the loader contract simple at both of Monitor's call
+// sites (handleFile(), handleContractorFile()), which are UNCHANGED by
+// this hotfix.
+function ensureMonitorVendorLibraries(){
+  return Promise.all([ensureXlsxLibrary(), ensureChartLibrary()]);
+}
+
+// V2.5.2 -- narrow bridge so Report (an ES module, and therefore unable to
+// `import` this classic script) can reach the SAME ensureXlsxLibrary()
+// Monitor uses, without duplicating any script-tag-loading logic of its
+// own. Deliberately minimal: only the three functions callers actually
+// need are exposed, never xlsxLibraryPromise/chartLibraryPromise
+// themselves or loadVendorScriptOnce() -- callers await readiness, they
+// never need to inspect or mutate the loader's internal state.
+window.HPALVendorLibraries = {
+  ensureXlsx: ensureXlsxLibrary,
+  ensureChart: ensureChartLibrary,
+  ensureMonitor: ensureMonitorVendorLibraries,
+};
 
 /* ---------------- ROBUST FILE READER (iOS-compatible) ---------------- */
 // Reads an Excel file and returns a parsed XLSX workbook via callbacks.

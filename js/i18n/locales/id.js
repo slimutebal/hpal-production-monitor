@@ -561,6 +561,7 @@ export default {
   'report.file.readingFile': '⏳ Membaca {filename}...',
   'report.file.readSuccess': '✓ {filename}',
   'report.file.readError': 'Gagal membaca file: {message}',
+  'report.file.libraryLoadError': 'Library Excel tidak dapat dimuat. Coba lagi.',
   'report.file.noValidRows': 'Tidak ada baris valid ditemukan pada file yang diupload.',
 
   // Monitor (index.html) -- static markup (data-i18n) and dynamic

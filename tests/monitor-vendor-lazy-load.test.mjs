@@ -143,13 +143,26 @@ describe('10/12. handleFile()/handleContractorFile() await the vendor loader bef
    3. ensureMonitorVendorLibraries() ARCHITECTURE -- behavioral proof via
       the real, extracted loader source run in a sandboxed vm context.
 ============================================================ */
-describe('10. ensureMonitorVendorLibraries() -- behavioral proof (idempotent, Promise-returning, retry-on-failure)', () => {
-  // The loader's own module-level cache variable, declared just above
-  // both functions in index.html -- extracted verbatim (not re-declared
-  // by hand) so the sandbox reflects the exact real closure state.
-  const promiseVarMatch = indexHtml.match(/let monitorVendorLibrariesPromise = null;/);
-  assert.ok(promiseVarMatch, 'expected `let monitorVendorLibrariesPromise = null;` in index.html');
-  const loaderSource = `${promiseVarMatch[0]}\n${extractFunctionSource(indexHtml, 'loadVendorScriptOnce')}\n${extractFunctionSource(indexHtml, 'ensureMonitorVendorLibraries')}`;
+describe('10. ensureXlsxLibrary()/ensureChartLibrary()/ensureMonitorVendorLibraries() -- behavioral proof (V2.5.2: one promise per library, idempotent, Promise-returning, retry-on-failure)', () => {
+  // The loader's own module-level cache variables, declared just above
+  // the three functions in index.html -- extracted verbatim (not
+  // re-declared by hand) so the sandbox reflects the exact real closure
+  // state. V2.5.2 (Report Excel Lazy-Load Regression Hotfix) split the
+  // single V2.5.1 `monitorVendorLibrariesPromise` into one promise PER
+  // library specifically so Report can await XLSX alone without pulling
+  // in Chart.js.
+  const xlsxVarMatch = indexHtml.match(/let xlsxLibraryPromise = null;/);
+  const chartVarMatch = indexHtml.match(/let chartLibraryPromise = null;/);
+  assert.ok(xlsxVarMatch, 'expected `let xlsxLibraryPromise = null;` in index.html');
+  assert.ok(chartVarMatch, 'expected `let chartLibraryPromise = null;` in index.html');
+  const loaderSource = [
+    xlsxVarMatch[0],
+    chartVarMatch[0],
+    extractFunctionSource(indexHtml, 'loadVendorScriptOnce'),
+    extractFunctionSource(indexHtml, 'ensureXlsxLibrary'),
+    extractFunctionSource(indexHtml, 'ensureChartLibrary'),
+    extractFunctionSource(indexHtml, 'ensureMonitorVendorLibraries'),
+  ].join('\n');
 
   function createMockDocument() {
     const created = [];
@@ -185,6 +198,74 @@ describe('10. ensureMonitorVendorLibraries() -- behavioral proof (idempotent, Pr
     vm.runInContext(loaderSource, context);
     return { context, doc };
   }
+
+  /* --------------------------------------------------------------
+     ensureXlsxLibrary() ALONE -- this is the exact function Report's
+     ensureReportXlsxLibrary() bridge calls (this task's Sections 17-20).
+  -------------------------------------------------------------- */
+  test('ensureXlsxLibrary(): requests ONLY xlsx.min.js, never chart.umd.min.js', async () => {
+    const { context, doc } = buildSandbox({});
+    const p = vm.runInContext('ensureXlsxLibrary()', context);
+    assert.equal(doc._created.length, 1, 'exactly one <script> for XLSX, none for Chart.js');
+    assert.equal(doc._created[0].src, './assets/vendor/xlsx.min.js');
+    doc._created[0].dataset.loaded = 'true';
+    doc._created[0]._onload();
+    await assert.doesNotReject(p);
+  });
+
+  test('ensureXlsxLibrary(): already-loaded XLSX resolves immediately, appends no <script> at all', async () => {
+    const { context, doc } = buildSandbox({ XLSX: { read: () => {} } });
+    await vm.runInContext('ensureXlsxLibrary()', context);
+    assert.equal(doc._created.length, 0, 'XLSX already exists -- no network/cache request should be made');
+  });
+
+  test('ensureXlsxLibrary(): concurrent callers before the first load resolves share the same in-flight Promise -- only one <script>/one load', async () => {
+    const { context, doc } = buildSandbox({});
+    const p1 = vm.runInContext('ensureXlsxLibrary()', context);
+    const p2 = vm.runInContext('ensureXlsxLibrary()', context);
+    assert.equal(doc._created.length, 1, 'still only one <script> across both concurrent callers');
+    doc._created[0].dataset.loaded = 'true';
+    doc._created[0]._onload();
+    await Promise.all([p1, p2]); // both callers resolve from the SAME load
+  });
+
+  test('ensureXlsxLibrary(): on failure the promise resets so a later retry can succeed (never permanently stuck rejected)', async () => {
+    const { context, doc } = buildSandbox({});
+    const p1 = vm.runInContext('ensureXlsxLibrary()', context);
+    doc._created[0]._onerror();
+    await assert.rejects(p1);
+
+    const p2 = vm.runInContext('ensureXlsxLibrary()', context);
+    assert.equal(doc._created.length, 2, 'a retry after failure must append a fresh <script> element');
+    doc._created[1].dataset.loaded = 'true';
+    doc._created[1]._onload();
+    await assert.doesNotReject(p2);
+  });
+
+  test('ensureXlsxLibrary(): does not touch Chart.js at all, even after multiple calls/retries', async () => {
+    const { context, doc } = buildSandbox({});
+    const p1 = vm.runInContext('ensureXlsxLibrary()', context);
+    doc._created[0]._onerror();
+    await assert.rejects(p1);
+    const p2 = vm.runInContext('ensureXlsxLibrary()', context);
+    doc._created[1].dataset.loaded = 'true';
+    doc._created[1]._onload();
+    await p2;
+    assert.ok(doc._created.every((el) => el.src === './assets/vendor/xlsx.min.js'), 'no chart.umd.min.js request must ever be made by ensureXlsxLibrary()');
+  });
+
+  /* --------------------------------------------------------------
+     ensureChartLibrary() ALONE -- Monitor-specific, mirrors ensureXlsxLibrary().
+  -------------------------------------------------------------- */
+  test('ensureChartLibrary(): requests ONLY chart.umd.min.js, never xlsx.min.js', async () => {
+    const { context, doc } = buildSandbox({});
+    const p = vm.runInContext('ensureChartLibrary()', context);
+    assert.equal(doc._created.length, 1);
+    assert.equal(doc._created[0].src, './assets/vendor/chart.umd.min.js');
+    doc._created[0].dataset.loaded = 'true';
+    doc._created[0]._onload();
+    await assert.doesNotReject(p);
+  });
 
   test('returns a Promise', () => {
     const { context } = buildSandbox({});

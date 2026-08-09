@@ -1154,17 +1154,60 @@ function handleTotalManpowerInput() {
 /* ============================================================
    STEP 1: FILE UPLOAD
 ============================================================ */
-function handleFileChange(event) {
+// V2.5.2 -- the single source of truth for loading SheetJS is
+// index.html's classic-script loader (ensureXlsxLibrary(), see that
+// file's own header comment), exposed narrowly as
+// window.HPALVendorLibraries.ensureXlsx. Report is an ES module and
+// cannot `import` a classic script, so this is the bridge call -- it
+// never appends its own <script> tag, never duplicates
+// loadVendorScriptOnce()'s logic, and deliberately never touches
+// window.HPALVendorLibraries.ensureChart/ensureMonitor (Chart.js is
+// Monitor-specific; parsing a workbook never needs it). A missing bridge
+// (e.g. under Node tests, where index.html's classic script never runs)
+// resolves immediately -- the typeof XLSX guard inside handleFileChange's
+// reader.onload below is what prevents a raw ReferenceError from ever
+// reaching the user in that edge case.
+function ensureReportXlsxLibrary() {
+  if (typeof window !== 'undefined' && window.HPALVendorLibraries && typeof window.HPALVendorLibraries.ensureXlsx === 'function') {
+    return window.HPALVendorLibraries.ensureXlsx();
+  }
+  return Promise.resolve();
+}
+
+async function handleFileChange(event) {
   if (!requireFullAccessForReportAction()) return;
 
   const file = event.target.files[0];
   if (!file) return;
 
+  // V2.5.2 (Report Excel Lazy-Load Regression Hotfix): V2.5.1 removed
+  // SheetJS's blocking inline <script> and made it load on demand via
+  // Monitor's own loader, but never wired Report through that loader --
+  // so Report failed with "Library Excel belum siap" whenever it was the
+  // FIRST feature to need XLSX after a cold launch (Monitor's own upload
+  // path always worked, since it already awaited its loader). This awaits
+  // the exact same SheetJS readiness Monitor uses (never Chart.js -- see
+  // ensureReportXlsxLibrary()'s own header comment) before doing anything
+  // else with the already-captured `file`, so the selection is never lost
+  // and the user never has to re-select it.
+  try {
+    await ensureReportXlsxLibrary();
+  } catch (err) {
+    renderFileStatus(false, t('report.file.libraryLoadError'));
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (evt) => {
     try {
+      // Belt-and-suspenders, matching Monitor's own readExcelFile() --
+      // in practice unreachable now that the loader above is awaited
+      // first, but if it somehow still is (e.g. the bridge below is
+      // missing), this is what turns it into the same localized message
+      // above instead of a raw "ReferenceError: XLSX is not defined"
+      // leaking to the user.
       if (typeof XLSX === 'undefined') {
-        throw new Error('Library Excel belum siap. Muat ulang aplikasi lalu coba lagi.');
+        throw new Error(t('report.file.libraryLoadError'));
       }
       const data = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(data, { type: 'array' });

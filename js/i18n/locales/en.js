@@ -429,6 +429,7 @@ export default {
   'report.file.readingFile': '⏳ Reading {filename}...',
   'report.file.readSuccess': '✓ {filename}',
   'report.file.readError': 'Failed to read file: {message}',
+  'report.file.libraryLoadError': 'Excel library could not be loaded. Please try again.',
   'report.file.noValidRows': 'No valid rows found in the uploaded file.',
 
   'monitor.themeToggle.groupLabel': 'Choose display theme',
