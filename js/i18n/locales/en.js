@@ -468,6 +468,8 @@ export default {
   'monitor.contractorStatus.syncedBadge': '✅ {count} DT units (connected to central server)',
   'monitor.contractorStatus.offlineBadge': '⚠ {count} DT units (offline — using saved data)',
   'monitor.contractorStatus.syncingBadge': '{count} DT units (syncing...)',
+  'monitor.contractorStatus.cachedSyncingBadge': '{count} DT units (last local data · syncing...)',
+  'monitor.contractorStatus.cachedOfflineBadge': '⚠ {count} DT units (offline · last local data)',
   'monitor.contractorStatus.localOverrideBadge': '📄 local override: {filename}',
   'monitor.contractorStatus.pendingBadge': '⏳ {count} entries not yet synced',
   'monitor.contractorStatus.addButton': '➕ Update Contractor',

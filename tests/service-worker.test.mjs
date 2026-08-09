@@ -1,23 +1,31 @@
 // service-worker.js / manifest.webmanifest tests (V2.4 Phase 8 -- PWA
-// integration). See this task's Sections 21-26.
+// integration; V2.5.1 -- Offline-First Cold Startup local-first
+// navigation, see this task's Sections 4-8/36/43).
 //
 // Run with Node's built-in test runner:
 //
 //   node --test tests/service-worker.test.mjs
 //
 // service-worker.js is a classic (non-module) worker script that expects
-// `self`/`caches`/`clients` globals unavailable under Node -- these tests
-// therefore never `import`/execute it, only inspect its SOURCE TEXT
-// (semantic assertions: extracted array contents, presence/absence of
-// specific handler logic), the same "source-level assertion, not a full-
-// file string snapshot" convention already used elsewhere in this suite
-// (e.g. tests/calculate-page.test.mjs's CSS-source assertions).
+// `self`/`caches`/`clients` globals unavailable under Node, so it can
+// never be `import`ed directly. Most assertions below inspect its SOURCE
+// TEXT (extracted array contents, presence/absence of specific handler
+// logic) -- the same convention already used elsewhere in this suite
+// (e.g. tests/calculate-page.test.mjs's CSS-source assertions). The
+// "4/43. Local-first navigation" describe block goes further: it extracts
+// the real fetch handler's function BODY (brace-matching, the same
+// technique tests/monitor-contractor-bridge.test.mjs already uses for
+// index.html) and actually RUNS it via Node's vm module against a minimal
+// mock of self/caches/fetch -- real behavioral proof of the new
+// cache-first-with-background-refresh navigation contract, not just a
+// pattern match against the source text.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const swSource = readFileSync(path.join(ROOT, 'service-worker.js'), 'utf8');
@@ -26,9 +34,14 @@ const manifest = JSON.parse(readFileSync(path.join(ROOT, 'manifest.webmanifest')
 
 // `//` line comments are stripped first so an apostrophe inside a comment
 // (e.g. a possessive "file's") can never be misread as a string-literal
-// delimiter by the extraction regex below.
+// delimiter by the extraction regex below. Splits on /\r\n|\n/ (not a bare
+// '\n') so a CRLF-checked-out working tree (this repo's convention -- see
+// .gitattributes-less core.autocrlf) never leaves a trailing '\r' on each
+// line: `.` in a JS regex excludes line terminators (CR included), so an
+// un-stripped trailing '\r' would silently make `/\/\/.*$/` fail to match
+// at all on that line, leaving the "stripped" comment fully intact.
 function stripLineComments(source) {
-  return source.split('\n').map((line) => line.replace(/\/\/.*$/, '')).join('\n');
+  return source.split(/\r\n|\n/).map((line) => line.replace(/\/\/.*$/, '')).join('\n');
 }
 
 // Extracts the APP_SHELL array's string literals without executing the
@@ -49,15 +62,49 @@ function extractCacheName(source) {
 const appShell = extractAppShell(swSource);
 const cacheName = extractCacheName(swSource);
 
-describe('22/40. Cache version bumped exactly once for the whole V2.5 patch', () => {
-  test('CACHE_NAME reflects the V2.5 release, not the old V2.4.1 name', () => {
+describe('V2.5.1. Cache version bumped exactly once for the whole Offline-First Startup patch', () => {
+  test('CACHE_NAME reflects the V2.5.1 release, not V2.4.1 or the earlier V2.5.0', () => {
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.1-mobile-input-sticky');
-    assert.match(cacheName, /^hpal-production-monitor-v2\.5\.0/);
+    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.0-operational-continuity');
+    assert.match(cacheName, /^hpal-production-monitor-v2\.5\.1/);
   });
 
   test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
     const occurrences = [...swSource.matchAll(/const CACHE_NAME = /g)];
     assert.equal(occurrences.length, 1);
+  });
+});
+
+describe('9/11/36. Vendor library files (SheetJS/Chart.js) are precached and actually exist on disk', () => {
+  test('assets/vendor/xlsx.min.js and assets/vendor/chart.umd.min.js are both listed in APP_SHELL', () => {
+    assert.ok(appShell.includes('./assets/vendor/xlsx.min.js'));
+    assert.ok(appShell.includes('./assets/vendor/chart.umd.min.js'));
+  });
+
+  test('every APP_SHELL entry resolves to a real file on disk (cache.addAll() must never fail on install due to a wrong path)', () => {
+    const missing = [];
+    for (const entry of appShell) {
+      if (entry === './') continue; // resolves to index.html at the server level, not a distinct file
+      const relPath = entry.replace(/^\.\//, '');
+      const absPath = path.join(ROOT, relPath);
+      if (!existsSync(absPath)) missing.push(entry);
+    }
+    assert.deepEqual(missing, [], `APP_SHELL entries with no file on disk: ${missing.join(', ')}`);
+  });
+
+  test('the relocated vendor files preserve their original library license banners (this task\'s Section 9: relocation only, never a version change)', () => {
+    const xlsxSource = readFileSync(path.join(ROOT, 'assets', 'vendor', 'xlsx.min.js'), 'utf8');
+    const chartSource = readFileSync(path.join(ROOT, 'assets', 'vendor', 'chart.umd.min.js'), 'utf8');
+    assert.match(xlsxSource, /SheetJS/);
+    assert.match(chartSource, /Chart\.js v4\.5\.1/);
+    assert.match(chartSource, /Released under the MIT License/);
+  });
+
+  test('neither vendor file contains a leftover <script> wrapper tag from the extraction', () => {
+    const xlsxSource = readFileSync(path.join(ROOT, 'assets', 'vendor', 'xlsx.min.js'), 'utf8');
+    const chartSource = readFileSync(path.join(ROOT, 'assets', 'vendor', 'chart.umd.min.js'), 'utf8');
+    assert.doesNotMatch(xlsxSource, /<\/?script>/);
+    assert.doesNotMatch(chartSource, /<\/?script>/);
   });
 });
 
@@ -173,10 +220,226 @@ describe('23/28. Offline shell behavior and cache policy preserved', () => {
     assert.match(swSource, /request\.method\s*!==\s*'GET'/);
   });
 
-  test('navigation requests stay network-first with an index.html fallback (unchanged offline-shell strategy)', () => {
-    const navBlock = swSource.match(/request\.mode === 'navigate'[\s\S]*?return;\s*\}/);
+  test("V2.5.1: navigation is now LOCAL-FIRST, not network-first (startup audit Root Cause A) -- the cached index.html key/identity is preserved", () => {
+    const navBlock = swSource.match(/request\.mode === 'navigate'[\s\S]*?return;\s*\n\s*\}/);
     assert.ok(navBlock);
-    assert.match(navBlock[0], /caches\.match\('\.\/index\.html'\)/);
+    // Same cache identity as before (and as APP_SHELL's own install-time
+    // entry) -- this task's Section 5: never a second/duplicate key.
+    const indexHtmlKeyOccurrences = navBlock[0].match(/'\.\/index\.html'/g) || [];
+    assert.ok(indexHtmlKeyOccurrences.length >= 2, 'expected both the cache read and the cache write to use the literal \'./index.html\' key');
+    // The cache lookup must happen, and the response must be usable,
+    // BEFORE the fetch() promise is awaited/resolved -- i.e. cache-first,
+    // not network-first. A `caches.match(...)` that is `await`ed ahead of
+    // any `fetch(request)` call in the same block is the source-level
+    // signature of that ordering.
+    const cacheMatchIdx = navBlock[0].indexOf("caches.match('./index.html')");
+    const fetchIdx = navBlock[0].indexOf('fetch(request)');
+    assert.ok(cacheMatchIdx !== -1 && fetchIdx !== -1);
+    assert.ok(cacheMatchIdx < fetchIdx, 'the cache lookup must be issued before the network fetch, not after (cache-first, not network-first)');
+    // The background refresh must be handed to event.waitUntil(), and the
+    // cached response must be returned WITHOUT awaiting it.
+    assert.match(navBlock[0], /event\.waitUntil\(/);
+    const waitUntilIdx = navBlock[0].indexOf('event.waitUntil(');
+    const returnCachedIdx = navBlock[0].indexOf('return cachedResponse;');
+    assert.ok(waitUntilIdx !== -1 && returnCachedIdx !== -1 && waitUntilIdx < returnCachedIdx);
+  });
+});
+
+/* ============================================================
+   V2.5.1 -- BEHAVIORAL proof of the new local-first navigation contract
+   (this task's Section 4/43), not just a source-text pattern match.
+   service-worker.js still cannot be `import`ed under Node (it references
+   `self`/`caches`/`clients`), so the fetch handler's actual arrow-function
+   BODY is extracted verbatim (brace-matching, the same technique
+   tests/monitor-contractor-bridge.test.mjs already uses for index.html's
+   classic-script functions) and evaluated via Node's vm module against a
+   minimal, purpose-built mock of `self`/`caches`/`fetch` -- this actually
+   RUNS the real, shipped fetch-handling logic, not a re-implementation of
+   it.
+============================================================ */
+describe('4/43. Local-first navigation -- behavioral proof', () => {
+  function extractFetchHandlerBody(source) {
+    const marker = "self.addEventListener('fetch', (event) => {";
+    const startIdx = source.indexOf(marker);
+    assert.ok(startIdx !== -1, "expected self.addEventListener('fetch', (event) => { ... in service-worker.js");
+    const bodyStart = startIdx + marker.length;
+    let depth = 1;
+    let i = bodyStart;
+    for (; i < source.length && depth > 0; i++) {
+      if (source[i] === '{') depth++;
+      else if (source[i] === '}') depth--;
+    }
+    assert.equal(depth, 0, 'unbalanced braces extracting the fetch handler body');
+    return source.slice(bodyStart, i - 1);
+  }
+
+  const fetchHandlerBody = extractFetchHandlerBody(swSource);
+
+  // A tiny in-memory Cache/CacheStorage mock -- just enough surface
+  // (`match`/`open`→`{put}`) for the real fetch handler body to run
+  // against, keyed by the exact string/URL the handler itself passes in.
+  function createMockCaches(initialEntries) {
+    const store = new Map(Object.entries(initialEntries || {}));
+    const putCalls = [];
+    const cache = {
+      put: async (key, response) => {
+        const k = typeof key === 'string' ? key : key.url;
+        store.set(k, response);
+        putCalls.push({ key: k, response });
+      },
+    };
+    return {
+      match: async (key) => store.get(typeof key === 'string' ? key : key.url),
+      open: async () => cache,
+      _store: store,
+      _putCalls: putCalls,
+    };
+  }
+
+  function createMockResponse(tag, status = 200) {
+    const resp = { status, type: 'basic', _tag: tag };
+    resp.clone = () => ({ ...resp });
+    return resp;
+  }
+
+  // Runs the real fetch handler body against a mock request/fetch/caches,
+  // resolving once respondWith() has been called, and returns both the
+  // eventual respondWith() value and every waitUntil() promise (already
+  // settled, failures swallowed) so the test can assert on both the
+  // immediate response AND the background work.
+  async function runFetchHandler({ request, fetchImpl, cacheEntries }) {
+    const mockCaches = createMockCaches(cacheEntries);
+    let respondWithValue;
+    let respondWithSettled = false;
+    const waitUntilPromises = [];
+    const event = {
+      request,
+      respondWith(promiseOrValue) {
+        respondWithValue = Promise.resolve(promiseOrValue).then((v) => {
+          respondWithSettled = true;
+          return v;
+        });
+      },
+      waitUntil(promiseOrValue) {
+        waitUntilPromises.push(Promise.resolve(promiseOrValue).catch(() => {}));
+      },
+    };
+    const sandbox = {
+      event,
+      self: { location: { origin: 'https://example.test' } },
+      caches: mockCaches,
+      fetch: fetchImpl,
+      URL,
+      console,
+      // CACHE_NAME is a free variable the real handler body closes over
+      // from service-worker.js's own module scope (it's declared outside
+      // the extracted fetch-handler body) -- reuse the real, extracted
+      // value so this sandbox matches actual runtime scoping exactly.
+      CACHE_NAME: cacheName,
+    };
+    const context = vm.createContext(sandbox);
+    // Wrapped in an IIFE: the extracted body is a function BODY (it
+    // contains top-level `return;` statements from the real handler,
+    // e.g. the non-GET/early-return guard), which is only legal syntax
+    // inside an actual function, not at vm.runInContext()'s top level.
+    vm.runInContext(`(function(){\n${fetchHandlerBody}\n})();`, context);
+    const response = await respondWithValue;
+    return { response, respondWithSettled, waitUntilPromises, mockCaches };
+  }
+
+  function navigateRequest(url = 'https://example.test/') {
+    return { method: 'GET', mode: 'navigate', url };
+  }
+
+  test('A. cached index exists: the cached response is returned WITHOUT waiting for the network (a hung fetch() never delays it)', async () => {
+    const cached = createMockResponse('cached');
+    let fetchStarted = false;
+    const hungFetch = () => {
+      fetchStarted = true;
+      return new Promise(() => {}); // never resolves -- simulates a hung/very slow network
+    };
+
+    const { response, respondWithSettled } = await runFetchHandler({
+      request: navigateRequest(),
+      fetchImpl: hungFetch,
+      cacheEntries: { './index.html': cached },
+    });
+
+    assert.equal(respondWithSettled, true);
+    assert.equal(response._tag, 'cached');
+    assert.equal(fetchStarted, true, 'the background network refresh must still have been started (independently requested), just never awaited for the response');
+  });
+
+  test('B. network refresh runs in the background (event.waitUntil) and updates the SAME cache entry once it resolves', async () => {
+    const cached = createMockResponse('cached');
+    const fresh = createMockResponse('fresh');
+    const fetchImpl = async () => fresh;
+
+    const { waitUntilPromises, mockCaches } = await runFetchHandler({
+      request: navigateRequest(),
+      fetchImpl,
+      cacheEntries: { './index.html': cached },
+    });
+
+    assert.equal(waitUntilPromises.length, 1, 'the background refresh must be registered via event.waitUntil()');
+    await waitUntilPromises[0];
+    assert.equal(mockCaches._putCalls.length, 1);
+    assert.equal(mockCaches._putCalls[0].key, './index.html');
+    assert.equal(mockCaches._putCalls[0].response._tag, 'fresh');
+  });
+
+  test('C. no cached index exists: falls back to the network (first-ever load / cleared cache)', async () => {
+    const fresh = createMockResponse('fresh');
+    const fetchImpl = async () => fresh;
+
+    const { response } = await runFetchHandler({
+      request: navigateRequest(),
+      fetchImpl,
+      cacheEntries: {},
+    });
+
+    assert.equal(response._tag, 'fresh');
+  });
+
+  test('D. network failure WITH a cached index: the cached index is still returned, the failure is swallowed (never an uncaught rejection)', async () => {
+    const cached = createMockResponse('cached');
+    const fetchImpl = async () => { throw new Error('network down'); };
+
+    const { response, waitUntilPromises } = await runFetchHandler({
+      request: navigateRequest(),
+      fetchImpl,
+      cacheEntries: { './index.html': cached },
+    });
+
+    assert.equal(response._tag, 'cached');
+    // The failed background refresh must not reject -- runFetchHandler's
+    // waitUntil tracking already .catch()es it the same way a real SW
+    // runtime would need to for an unhandled rejection not to surface;
+    // awaiting it here must not throw.
+    await assert.doesNotReject(async () => { await waitUntilPromises[0]; });
+  });
+
+  test('cross-origin requests still bypass the cache entirely (Google Apps Script contractor sync must never be cached)', async () => {
+    const fetchImpl = async () => createMockResponse('cross-origin-response');
+    const { response, mockCaches } = await runFetchHandler({
+      request: { method: 'GET', mode: 'no-cors', url: 'https://script.google.com/macros/s/xyz/exec' },
+      fetchImpl,
+      cacheEntries: {},
+    });
+    assert.equal(response._tag, 'cross-origin-response');
+    assert.equal(mockCaches._putCalls.length, 0);
+  });
+
+  test('non-navigation same-origin GET requests keep the pre-existing cache-first strategy (static assets unaffected by this task)', async () => {
+    const cached = createMockResponse('cached-asset');
+    const fetchImpl = async () => createMockResponse('network-asset');
+    const { response, mockCaches } = await runFetchHandler({
+      request: { method: 'GET', mode: 'cors', url: 'https://example.test/js/app.js' },
+      fetchImpl,
+      cacheEntries: { 'https://example.test/js/app.js': cached },
+    });
+    assert.equal(response._tag, 'cached-asset');
+    assert.equal(mockCaches._putCalls.length, 0, 'a cache hit must never trigger a redundant network fetch/cache.put for static assets');
   });
 });
 

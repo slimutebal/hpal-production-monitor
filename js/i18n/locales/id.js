@@ -611,6 +611,8 @@ export default {
   'monitor.contractorStatus.syncedBadge': '✅ {count} unit DT (tersambung ke server pusat)',
   'monitor.contractorStatus.offlineBadge': '⚠ {count} unit DT (offline — pakai data tersimpan)',
   'monitor.contractorStatus.syncingBadge': '{count} unit DT (menyinkron...)',
+  'monitor.contractorStatus.cachedSyncingBadge': '{count} unit DT (data lokal terakhir · menyinkronkan...)',
+  'monitor.contractorStatus.cachedOfflineBadge': '⚠ {count} unit DT (offline · data lokal terakhir)',
   'monitor.contractorStatus.localOverrideBadge': '📄 override lokal: {filename}',
   'monitor.contractorStatus.pendingBadge': '⏳ {count} entri belum sinkron',
   'monitor.contractorStatus.addButton': '➕ Update Kontraktor',

@@ -81,7 +81,14 @@ describe('1. Monitor\'s visible "Sinkron Sekarang" button wiring', () => {
   });
 
   test('fetchSheetContractors is also called unconditionally at startup (loadContractorData) and on the browser "online" event', () => {
-    assert.match(indexHtml, /await fetchSheetContractors\(\);\s*\/\/ coba sinkron ke Google Sheet begitu app dibuka/);
+    // V2.5.1 (startup audit Root Cause A/this task's Section 24): no
+    // longer `await`ed -- loadContractorData() itself is called
+    // fire-and-forget from the DOMContentLoaded listener, and Google sync
+    // must stay fire-and-forget relative to it too, so a slow/hung Sheet
+    // request can never delay anything else in loadContractorData() (it
+    // is already the last statement, so this only matters if something
+    // is ever added after it).
+    assert.match(indexHtml, /(?<!await )fetchSheetContractors\(\);\s*\/\/ coba sinkron ke Google Sheet begitu app dibuka/);
     assert.match(indexHtml, /window\.addEventListener\('online',\s*\(\)\s*=>\s*fetchSheetContractors\(\)\)/);
   });
 });
