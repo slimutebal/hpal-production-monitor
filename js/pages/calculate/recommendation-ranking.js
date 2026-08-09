@@ -11,7 +11,13 @@
 // explicit "use an ordered comparison rather than arbitrary hidden numeric
 // weights" requirement (Section 18.2). The FIRST rule that distinguishes
 // two candidates decides the outcome; ties fall through to the next rule.
-import { simplicityKey } from './fleet-allocation.js';
+// isOperationalLoadingPointAllocation is imported from fleet-allocation.js
+// (its V3.0 Phase 2 single source of truth -- see that module's own
+// header comment) rather than operational-continuity.js, even though the
+// latter still re-exports it for backward compatibility: this is
+// production code, so it goes straight to the canonical source rather
+// than through a compatibility re-export hop.
+import { simplicityKey, isOperationalLoadingPointAllocation } from './fleet-allocation.js';
 // Contractor continuity (V2.5, this task's Section 7) -- see
 // operational-continuity.js's own header comment for why NO separate
 // "existing-dome reallocation search" is needed: this ranking change is
@@ -20,7 +26,7 @@ import { simplicityKey } from './fleet-allocation.js';
 // tolerance candidate keeps each Contractor's fleet productive, instead of
 // only ever maximizing the GLOBAL total active unit count regardless of
 // how unevenly it is distributed per Contractor.
-import { calculateContractorStandbyMetrics, MINOR_STANDBY_RATIO, isOperationalLoadingPointAllocation } from './operational-continuity.js';
+import { calculateContractorStandbyMetrics, MINOR_STANDBY_RATIO } from './operational-continuity.js';
 
 function byNumberAscending(readValue) {
   return (a, b) => readValue(a) - readValue(b);
@@ -100,16 +106,24 @@ function contractorsRequiringMitigationCount(candidate) {
   return contractorMetricsFor(candidate).filter((m) => m.standbyRatio > MINOR_STANDBY_RATIO).length;
 }
 
-// V2.5.1 corrective pass (this task's Sections 2/5/6/22) -- a candidate
-// can have PERFECT aggregate Contractor utilization (zero standby, so
-// rules A-E above never distinguish it) while still leaving an individual
+// V2.5.1 corrective pass -- originally needed because a candidate could
+// have PERFECT aggregate Contractor utilization (zero standby, so rules
+// A-E above never distinguish it) while still leaving an individual
 // loading point at an operationally unacceptable 1-5 active DT (e.g. a
-// 34/1 split across two same-Contractor domes). This count uses the SAME
-// single shared predicate operational-continuity.js's
-// deriveContractorContinuityPlan() also checks (never a second, possibly-
-// diverging copy of the 0-or->=6 rule) -- memoized alongside the
-// contractor metrics for the same performance reason (this task's Section
-// 37).
+// 34/1 split across two same-Contractor domes).
+//
+// V3.0 Phase 2 made 0-or->=6 a GENERATION-time feasibility rule (fleet-
+// allocation.js's enumerateOperationalAllocations()), so no engine-
+// generated candidate should ever reach this comparator with a nonzero
+// invalidLoadingPointCount any more -- this rule is intentionally KEPT as
+// a defensive rule 0, not removed, because it remains a real safety net
+// against any candidate object constructed outside the normal generator
+// (tests, future callers) and costs nothing when it never fires (this
+// task's Section 13/14: "leave the defensive invalidLoadingPoint rule in
+// ranking for now"). Uses the SAME single shared predicate
+// fleet-allocation.js's own generator also checks (never a second,
+// possibly-diverging copy of the 0-or->=6 rule) -- memoized alongside the
+// contractor metrics for the same performance reason.
 const invalidLoadingPointCountCache = new WeakMap();
 function invalidLoadingPointCount(candidate) {
   if (!invalidLoadingPointCountCache.has(candidate)) {

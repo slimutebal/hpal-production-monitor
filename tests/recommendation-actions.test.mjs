@@ -385,13 +385,17 @@ describe('deriveRecommendationActions() -- Fleet Action', () => {
 
   test('4. cross-Contractor MOVE is never produced (real engine cross-Contractor scenario)', () => {
     // Reuses tests/blending-recommendation.test.mjs's own proven Cross-
-    // Contractor negative case shape (Higher SMA / LGLO TII).
+    // Contractor negative case shape (Higher SMA / LGLO TII). V3.0 Phase 2
+    // rescale (Higher 5->7, Lglo 8->11, tolerance 0.010->0.009) -- see
+    // that file's "26. Cross-Contractor negative test" for the verified
+    // numbers; the original 5/8 fleet was individually below the
+    // generation-time minimum for Higher's own Contractor.
     const result = findBlendRecommendations({
       targetNi: 1.120,
-      tolerance: 0.010,
+      tolerance: 0.009,
       sources: [
-        { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-        { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '8', tonnesPerUnit: '50' },
+        { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+        { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '11', tonnesPerUnit: '50' },
       ],
     });
     assert.equal(result.ok, true);
@@ -405,7 +409,7 @@ describe('deriveRecommendationActions() -- Fleet Action', () => {
     // The real engine's own known numbers -- Higher is a would-be donor
     // with no same-Contractor receiver, so its idle capacity is SEPARATE.
     const higher = fleetActionFor(actions, 'Higher');
-    assert.equal(higher.useUnits, 4);
+    assert.equal(higher.useUnits, 6);
     assert.equal(higher.moveOutUnits, 0);
     assert.equal(higher.separateUnits, 1);
   });

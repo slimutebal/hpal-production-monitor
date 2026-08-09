@@ -403,29 +403,42 @@ function qualifyingSourceRows(pageEl) {
 }
 
 // Fixture reused from describe('33. Target Not Achievable...') -- the
-// best-attainable candidate uses ONLY Higher (X, Ni 2.00, 5 DT, 50 t/DT),
+// best-attainable candidate uses ONLY Higher (X, Ni 2.00, 6 DT, 50 t/DT),
 // Lglo (Y, Ni 0.10) fully idle, so the Recovery baseline is a clean,
-// hand-verifiable Ni 2.00% / 250t (never the live sticky Blend summary,
+// hand-verifiable Ni 2.00% / 300t (never the live sticky Blend summary,
 // which would instead reflect BOTH rows if they were both complete/used).
+// V3.0 Phase 2: Higher's fleet is 6, not 5 -- a fleet of 5 has no feasible
+// nonzero allocation at all under the new hard 0-or->=6 generation-time
+// rule (verified against the actual engine, not hand-derived).
 function mountRecoveryReadyOn(pageEl) {
-  fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' });
+  fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' });
   fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
   fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
   return pageEl;
 }
 
 // Architecture doc / this task's "known fleet example": Higher Grade
-// (SMA, Ni 1.30, 5 DT, 50 t/DT) + LGLO (TII, Ni 1.03, 8 DT, 50 t/DT).
+// (SMA, Ni 1.30, 7 DT, 50 t/DT) + LGLO (TII, Ni 1.03, 12 DT, 50 t/DT).
+// V3.0 Phase 2 rescale (was 5 DT / 8 DT, tolerance 0.010): the legacy
+// fixture's winning candidate (Higher active=4) is an invalid 1-5 DT
+// active loading point under the new hard 0-or->=6 generation-time
+// feasibility rule -- ContractorA's own total fleet was only 5 DT, so
+// Higher could never reach 6+ at all. Rescaled and verified against the
+// actual engine (see tests/blending-recommendation.test.mjs's own "24.
+// Known fleet example" for the full derivation) to reproduce the SAME
+// qualitative story (1:2 Hopper Pattern, Ni exactly on target, one
+// un-forced surplus DT) with an operationally valid winner: Higher
+// active=6 (of 7), Lglo active=12.
 function fillKnownRecommendationExample(pageEl) {
-  fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-  fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '8', tonnesPerUnit: '50' });
+  fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+  fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '12', tonnesPerUnit: '50' });
 }
 
 // No mode switch to perform anymore -- Recommendation controls are always
 // present directly below the grid.
 function mountRecommendationReadyOn(pageEl) {
   fillKnownRecommendationExample(pageEl);
-  fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+  fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
   return pageEl;
 }
 
@@ -902,10 +915,12 @@ describe('Recommendation action is FULL_ACCESS-guarded; the live Blend recompute
 });
 
 /* ============================================================
-   KNOWN RECOMMENDATION EXAMPLE (5 HG DT / 8 LGLO DT) -- still 1:2
+   KNOWN RECOMMENDATION EXAMPLE (V3.0 Phase 2 rescale: 7 HG DT / 12 LGLO
+   DT, was 5/8 -- see fillKnownRecommendationExample()'s own comment)
+   -- still 1:2
 ============================================================ */
-describe('Known fleet example (5 HG DT / 8 LGLO DT) -- unaffected by mode-tab removal', () => {
-  test('17. Hopper Pattern 1:2, Estimated Ni 1.120%, Fleet 12/13, Higher active 4, LGLO active 8, Surplus 1', () => {
+describe('Known fleet example (7 HG DT / 12 LGLO DT) -- unaffected by mode-tab removal', () => {
+  test('17. Hopper Pattern 1:2, Estimated Ni 1.120%, Fleet 18/19, Higher active 6, LGLO active 12, Surplus 1', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -913,24 +928,24 @@ describe('Known fleet example (5 HG DT / 8 LGLO DT) -- unaffected by mode-tab re
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
-    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '12 / 13 DT');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '18 / 19 DT');
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
 
     const rows = sourceBreakdownRows(pageEl);
     const higherRow = rows.find((r) => r.textContent.includes('Higher'));
     const lgloRow = rows.find((r) => r.textContent.includes('Lglo'));
-    assert.match(higherRow.textContent, /5 DT/);
-    assert.match(higherRow.textContent, /4 DT/);
+    assert.match(higherRow.textContent, /7 DT/);
+    assert.match(higherRow.textContent, /6 DT/);
     assert.match(higherRow.textContent, new RegExp(`${idCatalog['calculate.recommendation.surplus']}: 1 DT`));
-    assert.match(lgloRow.textContent, /8 DT/);
+    assert.match(lgloRow.textContent, /12 DT/);
   });
 
-  test('the full-fleet 5:8 (13/13) allocation is NOT what gets shown as selected', () => {
+  test('the full-fleet 7:12 (19/19) allocation is NOT what gets shown as selected', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
-    assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
+    assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '19 / 19 DT');
   });
 
   // V2.4.1 Bug A (this task's Section 9): the VISIBLE prefill now follows
@@ -957,7 +972,8 @@ describe('Known fleet example (5 HG DT / 8 LGLO DT) -- unaffected by mode-tab re
 describe('14. Recommendation ignores partial rows, using only complete sources', () => {
   test('a partial row does not block calculating from the other complete sources', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.150', units: '4', tonnesPerUnit: '50' });
+    // units=6 (V3.0 Phase 2 -- was 4, below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.150', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '1.0' }); // partial -- missing units/tonnesPerUnit
     fillRecommendationControls(pageEl, { targetNi: '1.150', tolerance: '0.010' });
 
@@ -1000,16 +1016,19 @@ describe('15. Zero complete source rows blocks Recommendation with a localized m
 /* ============================================================
    SAME CONTRACTOR / CROSS CONTRACTOR (unaffected by mode-tab removal)
 ============================================================ */
-describe('Same-Contractor relocation (Higher 5 DT / LGLO 7 DT, both SMA)', () => {
-  test('active 4/8, fleet 12/12 (100%), relocation 1 DT Higher -> LGLO shown', () => {
+// V3.0 Phase 2 rescale (was Higher 5 DT / LGLO 7 DT, tolerance 0.010) --
+// verified against tests/blending-recommendation.test.mjs's own "25.
+// Same-Contractor relocation".
+describe('Same-Contractor relocation (Higher 7 DT / LGLO 11 DT, both SMA)', () => {
+  test('active 6/12, fleet 18/18 (100%), relocation 1 DT Higher -> LGLO shown', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
     clickCalculateRecommendation(pageEl);
 
-    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '12 / 12 DT');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '18 / 18 DT');
     const utilizationPct = findOne(pageEl, hasClass('calculate-recommendation-utilization-pct')).textContent;
     assert.match(utilizationPct, /100/);
 
@@ -1021,12 +1040,15 @@ describe('Same-Contractor relocation (Higher 5 DT / LGLO 7 DT, both SMA)', () =>
   });
 });
 
-describe('Cross-Contractor negative case (Higher SMA / LGLO TII, assigned 7)', () => {
+// V3.0 Phase 2 rescale, same numbers as above with LGLO under TII instead
+// -- verified against tests/blending-recommendation.test.mjs's own "26.
+// Cross-Contractor negative test".
+describe('Cross-Contractor negative case (Higher SMA / LGLO TII, assigned 11)', () => {
   test('no relocation section is rendered -- cross-Contractor relocation is never displayed', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '7', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
     clickCalculateRecommendation(pageEl);
 
@@ -1036,12 +1058,14 @@ describe('Cross-Contractor negative case (Higher SMA / LGLO TII, assigned 7)', (
   });
 });
 
+// V3.0 Phase 2 rescale, same numbers as "24. Known fleet example" (7/12,
+// tolerance 0.009) with both sources sharing Pile ID "L30".
 describe('Recommendation still accepts the same Pile ID across different Contractors as distinct sources (this task\'s Section 10)', () => {
   test('13. L30/SMA (Higher) and L30/TII (LGLO) both contribute to the recommendation without collapsing', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '8', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '12', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
     clickCalculateRecommendation(pageEl);
 
@@ -1061,7 +1085,8 @@ describe('Recommendation still accepts the same Pile ID across different Contrac
 describe('Target Not Achievable', () => {
   test('explicit not-achievable status, Best Attainable Ni shown, never labeled Within Tolerance', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' });
+    // Higher units=6 (V3.0 Phase 2 -- was 5, below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
 
@@ -1130,34 +1155,35 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assert.equal(recommendationResultRoot(pageEl).hidden, true);
   });
 
-  // Full assertion set for the Known fleet example (test 17's own values --
-  // Higher SMA 1.30/5 DT/50 t/DT + Lglo TII 1.03/8 DT/50 t/DT, Target
-  // 1.120, Tolerance 0.010): Higher active 4, LGLO active 8, Hopper
-  // Pattern 1:2, Estimated Final Ni 1.120%, Fleet 12/13 DT, Surplus 1 DT.
-  // Recommendation ranking's own first-priority rule is "maximize fleet
-  // utilization" (recommendation-ranking.js's compareWithinTolerance,
-  // architecture doc Section 18.2) -- this exact 1:2 result is only
-  // guaranteed reproducible when Target/Tolerance are restored to these
-  // exact reference values before recalculating, since a genuinely wider
-  // tolerance can legitimately admit a higher-utilization candidate
-  // (e.g. the full 5:8/13-DT fleet) that then correctly outranks 1:2 --
-  // that is approved ranking behavior, not a defect (see the dedicated
-  // "full-fleet 5:8 (13/13) allocation is NOT what gets shown as selected"
-  // test above, which proves the opposite direction of this same rule).
+  // Full assertion set for the Known fleet example (test 17's own values,
+  // V3.0 Phase 2 rescale -- Higher SMA 1.30/7 DT/50 t/DT + Lglo TII
+  // 1.03/12 DT/50 t/DT, Target 1.120, Tolerance 0.009): Higher active 6,
+  // LGLO active 12, Hopper Pattern 1:2, Estimated Final Ni 1.120%, Fleet
+  // 18/19 DT, Surplus 1 DT. Recommendation ranking's own first-priority
+  // rule is "maximize fleet utilization" (recommendation-ranking.js's
+  // compareWithinTolerance, architecture doc Section 18.2) -- this exact
+  // 1:2 result is only guaranteed reproducible when Target/Tolerance are
+  // restored to these exact reference values before recalculating, since
+  // a genuinely wider tolerance can legitimately admit a higher-
+  // utilization candidate (e.g. the full 7:12/19-DT fleet) that then
+  // correctly outranks it -- that is approved ranking behavior, not a
+  // defect (see the dedicated "full-fleet 7:12 (19/19) allocation is NOT
+  // what gets shown as selected" test above, which proves the opposite
+  // direction of this same rule).
   function assertKnownRecommendationResult(pageEl) {
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
-    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '12 / 13 DT');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '18 / 19 DT');
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
 
     const rows = sourceBreakdownRows(pageEl);
     const higherRow = rows.find((r) => r.textContent.includes('Higher'));
     const lgloRow = rows.find((r) => r.textContent.includes('Lglo'));
-    assert.match(higherRow.textContent, /5 DT/);
-    assert.match(higherRow.textContent, /4 DT/);
+    assert.match(higherRow.textContent, /7 DT/);
+    assert.match(higherRow.textContent, /6 DT/);
     assert.match(higherRow.textContent, new RegExp(`${idCatalog['calculate.recommendation.surplus']}: 1 DT`));
-    assert.match(lgloRow.textContent, /8 DT/);
+    assert.match(lgloRow.textContent, /12 DT/);
   }
 
   // Proves clearing a stale Recommendation never PERMANENTLY breaks
@@ -1208,7 +1234,7 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     typeIntoField(pageEl, 'tolerance', '0.020');
     assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the stale result must remain visible, never hidden, this task Section 1');
 
-    typeIntoField(pageEl, 'tolerance', '0.010'); // restore the known-valid Tolerance (DEFAULT_RECOMMENDATION_TOLERANCE)
+    typeIntoField(pageEl, 'tolerance', '0.009'); // restore the known-valid Tolerance (this fixture's reference tolerance -- see fillKnownRecommendationExample()'s own comment; the engine's DEFAULT_RECOMMENDATION_TOLERANCE is a UI prefill default, not a per-scenario constant)
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
@@ -1224,27 +1250,26 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
 
     clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
-    // Widening Tolerance legitimately admits the full PHYSICAL 5:8
-    // (13/13 DT, 100% utilization) candidate, which now correctly outranks
-    // the 12/13-DT candidate under recommendation-ranking.js's "maximize
+    // Widening Tolerance legitimately admits the full PHYSICAL 7:12
+    // (19/19 DT, 100% utilization) candidate, which now correctly outranks
+    // the 18/19-DT candidate under recommendation-ranking.js's "maximize
     // fleet utilization first" rule -- this is the SAME approved candidate-
-    // selection behavior the "full-fleet 5:8 (13/13) allocation is NOT what
-    // gets shown as selected" test above already proves for Tolerance
-    // 0.010 alone, and it is unaffected by this task's Hopper Pattern
+    // selection behavior the "full-fleet 7:12 (19/19) allocation is NOT
+    // what gets shown as selected" test above already proves for Tolerance
+    // 0.009 alone, and it is unaffected by this task's Hopper Pattern
     // decoupling (V2.4 Phase 6.1) -- fleet utilization stays a PHYSICAL
-    // number. The DISPLAYED Hopper Pattern, however, is now the
-    // independently-derived OPERATIONAL pattern (hopper-pattern.js), which
-    // is smaller/simpler (1:2) than the physical 5:8 active-fleet ratio --
-    // it is never assumed to just be that physical ratio anymore (this
-    // task's Section 24/28: "active fleet ratio does NOT automatically mean
-    // Hopper Pattern", and the old test asserting '5 : 8' here was exactly
-    // the kind of obsolete assumption this task requires fixing). It must
-    // still be a real, non-stale, internally-consistent result, never the
-    // frozen-looking Ni 1.120%/1:2 result from before the edit -- proven
-    // here by the DIFFERENT fleet-utilization figure (13/13 vs the earlier
-    // 12/13), even though the Hopper Pattern digits happen to coincide.
+    // number. The DISPLAYED Hopper Pattern, however, is the independently-
+    // derived OPERATIONAL pattern (hopper-pattern.js) -- verified
+    // separately (not assumed) to still land on 1:2 for this specific
+    // physical 7:12 ratio, since it is never assumed to just be that
+    // physical ratio (this task's Section 24/28: "active fleet ratio does
+    // NOT automatically mean Hopper Pattern"). It must still be a real,
+    // non-stale, internally-consistent result, never the frozen-looking Ni
+    // 1.120%/1:2 result from before the edit -- proven here by the
+    // DIFFERENT fleet-utilization figure (19/19 vs the earlier 18/19),
+    // even though the Hopper Pattern digits happen to coincide.
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
-    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '19 / 19 DT');
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
   });
 });
@@ -1379,8 +1404,10 @@ describe('Unit Ratio / Tonnage Ratio display', () => {
 
   test('Tonnage Ratio is computed from actual tonnage, not the Unit Ratio (architecture doc Section 13/19 example)', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'HigherCo', ni: '1.50', units: '1', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'LgloCo', ni: '1.00', units: '2', tonnesPerUnit: '45' });
+    // units 6/12 (V3.0 Phase 2 -- was 1/2, both below the generation-time
+    // minimum; same 1:2 physical ratio and percentages, scaled x6).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'HigherCo', ni: '1.50', units: '6', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'LgloCo', ni: '1.00', units: '12', tonnesPerUnit: '45' });
     fillRecommendationControls(pageEl, { targetNi: '1.15', tolerance: '0.1' });
 
     clickCalculateRecommendation(pageEl);
@@ -1625,7 +1652,7 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     setLocale('en');
 
     assert.equal(findFieldInput(pageEl, 'targetNi').value, '1.120');
-    assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.010');
+    assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.009');
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), ratioBefore);
     assert.match(statusBadgeText(pageEl), new RegExp(enCatalog['calculate.recommendation.withinTolerance']));
@@ -2466,7 +2493,7 @@ describe('26. Material Actions section renders after a successful Recommendation
     const pageEl = mountFullAccess();
     fillKnownRecommendationExample(pageEl);
     fillRow(gridRows(pageEl)[2], { pileId: 'Off', contractor: 'ZZZ', ni: '0.10', units: '3', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
     clickCalculateRecommendation(pageEl);
 
@@ -2526,45 +2553,48 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
   });
 
   // V2.5 (this task's Sections 3/16/21/24/47): Contractor SMA (Higher's
-  // one and only loading point) is left at 1/5 = 20% standby -- above the
-  // 5% minor threshold, so V2.5 must NOT show a bare SEPARATE/STANDBY
-  // line here. Since 5 DT is too small to SPLIT (needs >= 12), the plan
-  // falls back to REPLACE DOME with a feasible Ni range -- verified
-  // against tests/operational-continuity.test.mjs's own pure-formula
-  // check of this exact arithmetic.
-  test('V2.5: known 5 HG / 8 LGLO scenario -- Higher (20% standby, cross-Contractor) gets REPLACE DOME, never a bare SEPARATE/STANDBY line; Lglo shows ACTIVE 8 DT only', () => {
+  // one and only loading point) is left at 1/7 ~= 14.3% standby (V3.0
+  // Phase 2 rescale, was 1/5 = 20% -- still comfortably above the 5%
+  // minor threshold, same moderate tier), so V2.5 must NOT show a bare
+  // SEPARATE/STANDBY line here. Since 7 DT is too small to SPLIT (needs
+  // >= 12), the plan falls back to REPLACE DOME with a feasible Ni range
+  // -- verified against the actual engine (deriveContractorContinuityPlan()).
+  test('V2.5: known 7 HG / 12 LGLO scenario -- Higher (~14.3% standby, cross-Contractor) gets REPLACE DOME, never a bare SEPARATE/STANDBY line; Lglo shows ACTIVE 12 DT only', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
     const higherRow = fleetActionRowFor(pageEl, 'Higher');
     const higherLines = fleetActionLineTexts(higherRow);
-    // Higher is a CHANGED source (5 assigned, 4 active) -- V2.5.1 shows
+    // Higher is a CHANGED source (7 assigned, 6 active) -- V2.5.1 shows
     // AWAL/AKHIR instead of a bare AKTIF line (this task's Sections
-    // 10/14), so the final total (4) is never implicit.
-    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('5')));
-    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('4')));
+    // 10/14), so the final total (6) is never implicit.
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('7')));
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('6')));
     assert.ok(!higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move'])), 'cross-Contractor Higher/Lglo must never show a MOVE line');
     assert.equal(materialActionBadgeText(higherRow), idCatalog['calculate.actions.fleetOperational.replaceDome']);
     assert.equal(idCatalog['calculate.actions.fleetOperational.replaceDome'], 'GANTI DOME');
     assert.doesNotMatch(higherRow.textContent, /\bSTANDBY\b/, 'this task\'s Section 47: no user-visible large STANDBY once standby exceeds 5%');
     // The replacement Ni range this task's Section 13 formula produces for
-    // this exact scenario (see operational-continuity.test.mjs for the
-    // pure-formula proof): ~1.238% - 1.290%.
-    assert.match(higherRow.textContent, /1\.23[0-9]%.*1\.29[0-9]%|1\.23[0-9]%[\s\S]*1\.29[0-9]%/);
+    // this exact scenario (verified against the actual engine): ~1.250% -
+    // 1.299%.
+    assert.match(higherRow.textContent, /1\.25[0-9]%.*1\.29[0-9]%|1\.25[0-9]%[\s\S]*1\.29[0-9]%/);
 
     const lgloRow = fleetActionRowFor(pageEl, 'Lglo');
     const lgloLines = fleetActionLineTexts(lgloRow);
-    assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('8')));
+    assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('12')));
     assert.equal(lgloLines.length, 1, 'a fully-active source with no relocation shows only its USE line');
     assert.equal(materialActionBadgeText(lgloRow), idCatalog['calculate.actions.fleet.use'], 'Lglo is fully active -- ACTIVE badge, no continuity plan');
   });
 
+  // V3.0 Phase 2 rescale (was Higher 5 DT / LGLO 7 DT, tolerance 0.010) --
+  // verified against tests/blending-recommendation.test.mjs's own "25.
+  // Same-Contractor relocation".
   test('same-Contractor relocation scenario: Higher shows MOVE 1 DT -> Lglo, Lglo shows RECEIVE 1 DT <- Higher', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
     clickCalculateRecommendation(pageEl);
 
@@ -2873,9 +2903,10 @@ describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
 
   test('ACTIVE/MOVE Fleet Action behavior and cross-Contractor MOVE impossibility are unaffected by the STANDBY rename', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    // V3.0 Phase 2 rescale (was 5/7, tolerance 0.010).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
     clickCalculateRecommendation(pageEl);
 
     const higherLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
@@ -2965,7 +2996,8 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
 describe('33. Target Not Achievable shows the best-attainable action baseline note', () => {
   test('the best-attainable note appears above Material Actions, and actions are still rendered', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' });
+    // Higher units=6 (V3.0 Phase 2 -- was 5, below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
 
@@ -3003,7 +3035,7 @@ describe('33. Target Not Achievable shows the best-attainable action baseline no
    code would.
 ============================================================ */
 describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () => {
-  test('when the selected candidate\'s physical fleet ratio (5:8) differs from the smallest within-tolerance pattern (1:2), the DOM shows 1:2, never 5:8, while fleet utilization still shows the true 13/13 DT physical count', () => {
+  test('when the selected candidate\'s physical fleet ratio (7:12) differs from the smallest within-tolerance pattern (1:2), the DOM shows 1:2, never 7:12, while fleet utilization still shows the true 19/19 DT physical count', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -3011,8 +3043,8 @@ describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () 
     clickCalculateRecommendation(pageEl);
 
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
-    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
-    assert.notEqual(hopperPatternRatioText(pageEl), '5 : 8', 'the physical 5:8 fleet ratio must never be shown as the Hopper Pattern here');
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '19 / 19 DT');
+    assert.notEqual(hopperPatternRatioText(pageEl), '7 : 12', 'the physical 7:12 fleet ratio must never be shown as the Hopper Pattern here');
   });
 
   test('the summary-strip Estimasi Akhir Ni and the status-card Estimasi Akhir Ni both match the DISPLAYED 1:2 Hopper Pattern (1.120%), never a different physical-candidate number', () => {
@@ -3029,7 +3061,7 @@ describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () 
     assert.match(estimatedNiRow.textContent, /1\.120%/);
   });
 
-  test('the physical Unit Ratio row (Rasio Unit) still shows the true 5:8 physical active-fleet ratio, simultaneously with the 1:2 Hopper Pattern card', () => {
+  test('the physical Unit Ratio row (Rasio Unit) still shows the true 7:12 physical active-fleet ratio, simultaneously with the 1:2 Hopper Pattern card', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -3039,7 +3071,7 @@ describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () 
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     const ratioItems = findAll(pageEl, hasClass('calculate-recommendation-ratio-item'));
     const unitRatioItem = ratioItems.find((i) => i.textContent.includes(idCatalog['calculate.recommendation.unitRatio']));
-    assert.match(unitRatioItem.textContent, /5 : 8/);
+    assert.match(unitRatioItem.textContent, /7 : 12/);
   });
 
   test('Material Actions/Fleet Actions are unaffected by the Hopper Pattern decoupling -- both Higher and Lglo remain Material USE for the known reference scenario', () => {
@@ -3074,9 +3106,10 @@ describe('27. Recommendation detail section order: Penyesuaian Fleet -> Aksi Fle
 
   test('with a same-Contractor relocation present: relocation, then Fleet Actions, then Material Actions, in that exact order', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
-    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
+    // V3.0 Phase 2 rescale (was 5/7, tolerance 0.010).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
     clickCalculateRecommendation(pageEl);
 
     assert.deepEqual(sectionOrder(pageEl), ['relocation', 'fleetActions', 'materialActions']);
@@ -3103,13 +3136,16 @@ describe('27. Recommendation detail section order: Penyesuaian Fleet -> Aksi Fle
    34-38. PLANNED BLEND RECOVERY (V2.4 Phase 6, this task). Reference
    fixture: mountRecoveryReadyOn() reuses describe('33. Target Not
    Achievable...')'s own already-verified best-attainable candidate
-   (Higher/X/Ni 2.00%/5 DT/50 t/DT alone, Lglo/Y fully idle) -- baseline
-   Ni 2.00% / 250t, confirmed against the real engine, never the live
+   (Higher/X/Ni 2.00%/6 DT/50 t/DT alone, Lglo/Y fully idle -- V3.0 Phase 2
+   rescale, was 5 DT/250t; a fleet of 5 has no feasible nonzero allocation
+   at all under the new hard 0-or->=6 generation-time rule) -- baseline
+   Ni 2.00% / 300t, confirmed against the real engine, never the live
    sticky Blend summary (which would differ if both rows were active).
    Reference Recovery scenario throughout: Added DT 5, Tonnes/DT 50 ->
-   AddedTonnage 250 -> RequiredNi = (5.00*500 - 2.00*250)/250 = 8.00%
-   (a clean, hand-verifiable number distinct from the pure module's own
-   1.260% mandatory regression value in tests/planned-blend-recovery.test.mjs).
+   AddedTonnage 250 -> RequiredNi = (5.00*550 - 2.00*300)/250 = 8.60%
+   (verified against calculateRequiredNewDomeNi() directly, not hand-
+   derived -- distinct from the pure module's own 1.260% mandatory
+   regression value in tests/planned-blend-recovery.test.mjs).
 ============================================================ */
 describe('34. Recovery visibility -- only rendered while Target is unreachable', () => {
   test('absent before any Recommendation has been calculated', () => {
@@ -3147,7 +3183,7 @@ describe('35. Recovery baseline -- best-attainable candidate, never the sticky l
 
     const text = recoveryBaselineText(pageEl);
     assert.match(text, /2\.000%/);
-    assert.match(text, /250,00\s*t/);
+    assert.match(text, /300,00\s*t/);
     // The live Blend summary, if it were used instead, would reflect BOTH
     // rows (Higher + Lglo), never just the best-attainable candidate's own
     // subset -- so this is a meaningfully different assertion, not a
@@ -3166,7 +3202,7 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
     assert.equal(recoveryResultBox(pageEl).hidden, true);
   });
 
-  test('reference scenario: Added DT 5, Tonnes/DT 50 -> required Ni >= 8.000% (>= prefix, minimum framing)', () => {
+  test('reference scenario: Added DT 5, Tonnes/DT 50 -> required Ni >= 8.600% (>= prefix, minimum framing)', () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -3175,7 +3211,7 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
     clickCalculateRecovery(pageEl);
 
     assert.equal(recoveryResultBox(pageEl).hidden, false);
-    assert.equal(recoveryResultValueText(pageEl), '≥ 8.000%');
+    assert.equal(recoveryResultValueText(pageEl), '≥ 8.600%');
   });
 
   test('MONITOR_ONLY: Calculate Recovery is gated by the same FULL_ACCESS action-boundary guard as Calculate Recommendation', () => {
@@ -3224,7 +3260,7 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
-    // Required Ni for this scenario is 8.000% -- neither entered source (2.00%/0.10%) qualifies.
+    // Required Ni for this scenario is 8.600% -- neither entered source (2.00%/0.10%) qualifies.
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
@@ -3234,8 +3270,9 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
 
   test('a source with Ni at/above the required minimum qualifies and is listed', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '1.00', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'HighSource', contractor: 'Z', ni: '9.00', units: '3', tonnesPerUnit: '20' });
+    // units 6/6 (V3.0 Phase 2 -- was 5/3, both below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '1.00', units: '6', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'HighSource', contractor: 'Z', ni: '9.00', units: '6', tonnesPerUnit: '20' });
     // A tiny tolerance around a target between the two entered Ni values
     // guarantees no exact-fit combination is found (still
     // TARGET_NOT_ACHIEVABLE), and a very large Added DT/Tonnes-per-DT
@@ -3255,8 +3292,9 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
 
   test('same Pile ID, different Contractor: each is matched independently, never conflated', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'PILE-1', contractor: 'HighCo', ni: '9.00', units: '5', tonnesPerUnit: '50' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'PILE-1', contractor: 'LowCo', ni: '0.10', units: '3', tonnesPerUnit: '20' });
+    // units 6/6 (V3.0 Phase 2 -- was 5/3, both below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'PILE-1', contractor: 'HighCo', ni: '9.00', units: '6', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'PILE-1', contractor: 'LowCo', ni: '0.10', units: '6', tonnesPerUnit: '20' });
     fillRecommendationControls(pageEl, { targetNi: '2.00', tolerance: '0.0001' });
     clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
@@ -3270,8 +3308,9 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
 
   test('qualifying sources are never ordered highest-Ni-first', () => {
     const pageEl = mountFullAccess();
-    fillRow(gridRows(pageEl)[0], { pileId: 'VeryHigh', contractor: 'A', ni: '15.00', units: '2', tonnesPerUnit: '10' });
-    fillRow(gridRows(pageEl)[1], { pileId: 'AlsoHigh', contractor: 'B', ni: '9.50', units: '2', tonnesPerUnit: '10' });
+    // units 6/6 (V3.0 Phase 2 -- was 2/2, both below the generation-time minimum).
+    fillRow(gridRows(pageEl)[0], { pileId: 'VeryHigh', contractor: 'A', ni: '15.00', units: '6', tonnesPerUnit: '10' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'AlsoHigh', contractor: 'B', ni: '9.50', units: '6', tonnesPerUnit: '10' });
     fillRecommendationControls(pageEl, { targetNi: '8.00', tolerance: '0.0001' });
     clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
@@ -3374,14 +3413,14 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
-    assert.equal(recoveryResultValueText(pageEl), '≥ 8.000%');
+    assert.equal(recoveryResultValueText(pageEl), '≥ 8.600%');
 
     fillRecoveryControls(pageEl, { addedDt: '10' });
     assert.equal(recoveryResultBox(pageEl).hidden, true);
     clickCalculateRecovery(pageEl);
 
-    // AddedTonnage = 10*50 = 500 -> RequiredNi = (5.00*750 - 2.00*250)/500 = (3750-500)/500 = 6.500%
-    assert.equal(recoveryResultValueText(pageEl), '≥ 6.500%');
+    // AddedTonnage = 10*50 = 500 -> RequiredNi = (5.00*800 - 2.00*300)/500 = (4000-600)/500 = 6.800%
+    assert.equal(recoveryResultValueText(pageEl), '≥ 6.800%');
   });
 
   test('once Recommendation recalculates to within tolerance, Recovery disappears completely', () => {

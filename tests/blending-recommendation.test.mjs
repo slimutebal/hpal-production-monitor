@@ -250,9 +250,11 @@ describe('findBlendRecommendations() -- invalid input', () => {
   });
 
   test('tolerance omitted uses the exported default', () => {
+    // units=6 (V3.0 Phase 2 -- a fleet below MIN_UNITS_PER_ACTIVE_LOADING_POINT
+    // would have no feasible nonzero allocation at all).
     const result = findBlendRecommendations({
       targetNi: 1.2,
-      sources: [{ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '5', tonnesPerUnit: '50' }],
+      sources: [{ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '6', tonnesPerUnit: '50' }],
     });
     assert.equal(result.ok, true);
     assert.equal(result.tolerance, DEFAULT_RECOMMENDATION_TOLERANCE);
@@ -272,34 +274,47 @@ describe('findBlendRecommendations() -- search-space safety bound (this task\'s 
 });
 
 // ============================================================
-// 24. KNOWN FLEET EXAMPLE -- 5 Higher Grade DT / 8 LGLO DT
+// 24. KNOWN FLEET EXAMPLE -- 6 Higher Grade DT / 12 LGLO DT
 // ============================================================
-describe('24. Known fleet example -- 5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010', () => {
+// V3.0 Phase 2 (Owner-approved, this task's Section 0): the original
+// legacy fixture here was 5 HG DT / 8 LGLO DT, tolerance +/- 0.010, whose
+// winning candidate was Higher active=4 -- itself an invalid 1-5 DT
+// active loading point under the new hard 0-or->=6 generation-time
+// feasibility rule (ContractorA's own total fleet was only 5, so Higher
+// could never reach 6+ at all). This fixture is rescaled (Higher fleet
+// 5->7, Lglo fleet 8->12, tolerance 0.010->0.009 -- verified against the
+// actual engine, not hand-derived) to reproduce the SAME qualitative
+// story (a same-ratio 1:2 Hopper Pattern, Ni exactly on target, one
+// un-forced surplus DT) with an operationally VALID winner (Higher
+// active=6, Lglo active=12). See tests/v3-phase2-edge-cases.test.mjs for
+// dedicated coverage of the now-infeasible-legacy-winner case this
+// fixture used to (accidentally) exercise.
+describe('24. Known fleet example -- 6 HG DT (of 7) / 12 LGLO DT, target 1.120 +/- 0.009', () => {
   const sources = [
-    { pileId: 'Higher', contractor: 'ContractorA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-    { pileId: 'Lglo', contractor: 'ContractorB', ni: '1.03', units: '8', tonnesPerUnit: '50' },
+    { pileId: 'Higher', contractor: 'ContractorA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Lglo', contractor: 'ContractorB', ni: '1.03', units: '12', tonnesPerUnit: '50' },
   ];
 
-  test('selects Higher active=4, LGLO active=8, Estimated Ni exactly 1.120, 12/13 fleet active', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+  test('selects Higher active=6, LGLO active=12, Estimated Ni exactly 1.120, 18/19 fleet active', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'OK');
 
     const { candidate } = result;
     assert.equal(candidate.withinTolerance, true);
     closeTo(candidate.estimatedNi, 1.120);
-    assert.equal(candidate.totalFleetUnits, 13);
-    assert.equal(candidate.totalActiveUnits, 12);
+    assert.equal(candidate.totalFleetUnits, 19);
+    assert.equal(candidate.totalActiveUnits, 18);
     assert.equal(candidate.totalSurplusUnits, 1);
-    assert.equal(candidate.higherGradeUnits, 4);
-    assert.equal(candidate.lgloUnits, 8);
-    assert.deepEqual(candidate.unitRatio, { rawHigher: 4, rawLglo: 8, higher: 1, lglo: 2 });
+    assert.equal(candidate.higherGradeUnits, 6);
+    assert.equal(candidate.lgloUnits, 12);
+    assert.deepEqual(candidate.unitRatio, { rawHigher: 6, rawLglo: 12, higher: 1, lglo: 2 });
 
     const higherSource = candidate.sources.find((s) => s.pileId === 'Higher');
     const lgloSource = candidate.sources.find((s) => s.pileId === 'Lglo');
-    assert.equal(higherSource.activeUnits, 4, 'raw source-level allocation stays 4, never overwritten by the simplified 1:2 ratio');
-    assert.equal(lgloSource.activeUnits, 8);
-    assert.equal(higherSource.standbyUnits, 1, 'the un-forced 5th Higher Grade DT is surfaced as standby, never pushed into the blend');
+    assert.equal(higherSource.activeUnits, 6, 'raw source-level allocation stays 6, never overwritten by the simplified 1:2 ratio');
+    assert.equal(lgloSource.activeUnits, 12);
+    assert.equal(higherSource.standbyUnits, 1, 'the un-forced 7th Higher Grade DT is surfaced as standby, never pushed into the blend');
   });
 
   // V2.4.1 Bug A, this task's Section 33: the exact same scenario, entered
@@ -307,11 +322,11 @@ describe('24. Known fleet example -- 5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010
   // of dots, must select the IDENTICAL candidate and numeric outputs.
   test('comma-decimal target/tolerance/source Ni select the IDENTICAL candidate as the dot-decimal equivalent', () => {
     const commaSources = [
-      { pileId: 'Higher', contractor: 'ContractorA', ni: '1,30', units: '5', tonnesPerUnit: '50' },
-      { pileId: 'Lglo', contractor: 'ContractorB', ni: '1,03', units: '8', tonnesPerUnit: '50' },
+      { pileId: 'Higher', contractor: 'ContractorA', ni: '1,30', units: '7', tonnesPerUnit: '50' },
+      { pileId: 'Lglo', contractor: 'ContractorB', ni: '1,03', units: '12', tonnesPerUnit: '50' },
     ];
-    const dotResult = findBlendRecommendations({ targetNi: '1.120', tolerance: '0.010', sources });
-    const commaResult = findBlendRecommendations({ targetNi: '1,120', tolerance: '0,010', sources: commaSources });
+    const dotResult = findBlendRecommendations({ targetNi: '1.120', tolerance: '0.009', sources });
+    const commaResult = findBlendRecommendations({ targetNi: '1,120', tolerance: '0,009', sources: commaSources });
 
     assert.equal(commaResult.ok, true);
     assert.equal(commaResult.status, dotResult.status);
@@ -321,27 +336,28 @@ describe('24. Known fleet example -- 5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010
   });
 
   test('16. the surplus DT is never forced into the pattern merely to claim full utilization', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
-    // The full-fleet (5,8) allocation computes to ~1.1338, outside
-    // tolerance -- it must NOT be the selected candidate.
-    assert.notEqual(result.candidate.totalActiveUnits, 13);
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
+    // The full-fleet (7,12) allocation computes to ~1.1253 (deviation
+    // ~0.0095), outside tolerance -- it must NOT be the selected
+    // candidate.
+    assert.notEqual(result.candidate.totalActiveUnits, 19);
   });
 
   test('14. highest Ni alone is not automatically selected (pure-HGLO 1.30 is outside tolerance and loses)', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.notEqual(result.candidate.estimatedNi, 1.30);
     assert.notEqual(result.candidate.lgloUnits, 0);
   });
 
   test('27. different Contractors blend freely in one candidate (Contractor boundary only limits fleet, not material)', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     const contractors = new Set(result.candidate.sources.map((s) => s.contractor));
     assert.ok(contractors.has('ContractorA') && contractors.has('ContractorB'));
     assert.equal(result.candidate.relocations.length, 0, 'no relocation is possible/needed across different Contractors');
   });
 
   test('11. integer allocations only', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     result.candidate.sources.forEach((s) => assert.ok(Number.isInteger(s.activeUnits)));
   });
 });
@@ -349,33 +365,39 @@ describe('24. Known fleet example -- 5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010
 // ============================================================
 // 25. SAME-CONTRACTOR RELOCATION
 // ============================================================
+// V3.0 Phase 2 rescale (same reasoning as "24. Known fleet example"
+// above, verified against the actual engine): Higher assigned 5->7, Lglo
+// assigned 7->11, tolerance 0.010->0.009. The SAME qualitative MOVE story
+// holds -- Higher donates 1 DT it doesn't need, Lglo receives it -- just
+// with an operationally VALID winner (Higher active=6, Lglo active=12,
+// both >= the minimum).
 describe('25. Same-Contractor relocation -- both sources under SMA', () => {
   const sources = [
-    { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-    { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' },
   ];
 
-  test('feasible via a 1 DT same-Contractor MOVE -> 12/12 active, 100% utilization, Hopper Pattern 1:2, Ni 1.120', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+  test('feasible via a 1 DT same-Contractor MOVE -> 18/18 active, 100% utilization, Hopper Pattern 1:2, Ni 1.120', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'OK');
 
     const { candidate } = result;
     closeTo(candidate.estimatedNi, 1.120);
-    assert.equal(candidate.totalFleetUnits, 12);
-    assert.equal(candidate.totalActiveUnits, 12);
+    assert.equal(candidate.totalFleetUnits, 18);
+    assert.equal(candidate.totalActiveUnits, 18);
     assert.equal(candidate.fleetUtilization, 1);
     assert.equal(candidate.totalSurplusUnits, 0);
-    assert.deepEqual(candidate.unitRatio, { rawHigher: 4, rawLglo: 8, higher: 1, lglo: 2 });
+    assert.deepEqual(candidate.unitRatio, { rawHigher: 6, rawLglo: 12, higher: 1, lglo: 2 });
     assert.deepEqual(candidate.relocations, [{ contractor: 'SMA', fromPileId: 'Higher', toPileId: 'Lglo', units: 1 }]);
 
     const higherSource = candidate.sources.find((s) => s.pileId === 'Higher');
     const lgloSource = candidate.sources.find((s) => s.pileId === 'Lglo');
-    assert.equal(higherSource.assignedUnits, 5);
-    assert.equal(higherSource.activeUnits, 4);
+    assert.equal(higherSource.assignedUnits, 7);
+    assert.equal(higherSource.activeUnits, 6);
     assert.equal(higherSource.moveOutUnits, 1);
-    assert.equal(lgloSource.assignedUnits, 7);
-    assert.equal(lgloSource.activeUnits, 8);
+    assert.equal(lgloSource.assignedUnits, 11);
+    assert.equal(lgloSource.activeUnits, 12);
     assert.equal(lgloSource.moveInUnits, 1);
   });
 });
@@ -383,30 +405,33 @@ describe('25. Same-Contractor relocation -- both sources under SMA', () => {
 // ============================================================
 // 26. CROSS-CONTRACTOR NEGATIVE TEST
 // ============================================================
-describe('26. Cross-Contractor negative test -- Higher under SMA, LGLO under TII (assigned 7)', () => {
+// V3.0 Phase 2 rescale, same numbers as "25." above but LGLO under a
+// DIFFERENT Contractor (TII), so it can never borrow the 12th DT Higher
+// would otherwise donate -- verified against the actual engine.
+describe('26. Cross-Contractor negative test -- Higher under SMA, LGLO under TII (assigned 11)', () => {
   const sources = [
-    { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-    { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '11', tonnesPerUnit: '50' },
   ];
 
-  test('TII\'s active LGLO fleet is capped at its own 7 DT -- never inflated to 8 by borrowing from SMA', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+  test('TII\'s active LGLO fleet is capped at its own 11 DT -- never inflated to 12 by borrowing from SMA', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.ok, true);
-    assert.ok(result.candidate.lgloUnits <= 7, 'LGLO active units must never exceed TII\'s own assigned fleet');
-    assert.notEqual(result.candidate.lgloUnits, 8, 'the (4,8) solution from the same-numbers same-Contractor case is infeasible here');
+    assert.ok(result.candidate.lgloUnits <= 11, 'LGLO active units must never exceed TII\'s own assigned fleet');
+    assert.notEqual(result.candidate.lgloUnits, 12, 'the (6,12) solution from the same-numbers same-Contractor case is infeasible here');
   });
 
   test('no relocation is ever produced between the two Contractors', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.candidate.relocations.length, 0);
   });
 
-  test('the engine still finds a legal within-tolerance candidate (4 Higher / 7 LGLO, Ni ~1.1282)', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+  test('the engine still finds a legal within-tolerance candidate (6 Higher / 11 LGLO, Ni ~1.12529)', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.status, 'OK');
-    assert.equal(result.candidate.higherGradeUnits, 4);
-    assert.equal(result.candidate.lgloUnits, 7);
-    closeTo(result.candidate.estimatedNi, 620.5 / 550, 1e-9);
+    assert.equal(result.candidate.higherGradeUnits, 6);
+    assert.equal(result.candidate.lgloUnits, 11);
+    closeTo(result.candidate.estimatedNi, 1913 / 1700, 1e-9);
   });
 });
 
@@ -421,33 +446,33 @@ describe('26. Cross-Contractor negative test -- Higher under SMA, LGLO under TII
 // ran last), corrupting estimatedNi/unitRatio/everything downstream. The
 // fix keys that Map by normalizeSourceIdentity(pileId, contractor)
 // instead. This test reuses the exact "24. Known fleet example" numbers
-// (5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010, expected 1:2 exactly at
-// 1.120%) but gives BOTH sources the SAME Pile ID "L30" under different
-// Contractors -- if the Map-key bug ever regresses, this candidate's
-// activeUnits/estimatedNi would silently corrupt rather than matching the
-// known-correct numbers below.
+// (V3.0 Phase 2 rescale: 6 HG DT of 7 / 12 LGLO DT, target 1.120 +/-
+// 0.009, expected 1:2 exactly at 1.120%) but gives BOTH sources the SAME
+// Pile ID "L30" under different Contractors -- if the Map-key bug ever
+// regresses, this candidate's activeUnits/estimatedNi would silently
+// corrupt rather than matching the known-correct numbers below.
 // ============================================================
 describe('Composite source identity -- same Pile ID ("L30") under two different Contractors never collides', () => {
   const sources = [
-    { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-    { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '8', tonnesPerUnit: '50' },
+    { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '12', tonnesPerUnit: '50' },
   ];
 
-  test('produces the exact same result as the differently-named "24. Known fleet example" -- Higher active=4, LGLO active=8, Ni exactly 1.120', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+  test('produces the exact same result as the differently-named "24. Known fleet example" -- Higher active=6, LGLO active=12, Ni exactly 1.120', () => {
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'OK');
 
     const { candidate } = result;
     closeTo(candidate.estimatedNi, 1.120);
-    assert.equal(candidate.totalFleetUnits, 13);
-    assert.equal(candidate.totalActiveUnits, 12);
-    assert.deepEqual(candidate.unitRatio, { rawHigher: 4, rawLglo: 8, higher: 1, lglo: 2 });
+    assert.equal(candidate.totalFleetUnits, 19);
+    assert.equal(candidate.totalActiveUnits, 18);
+    assert.deepEqual(candidate.unitRatio, { rawHigher: 6, rawLglo: 12, higher: 1, lglo: 2 });
     assert.equal(candidate.relocations.length, 0, 'different Contractors -- no relocation is possible');
   });
 
   test('both same-Pile-ID sources survive independently in candidate.sources, each with its OWN correct activeUnits/contractor -- never collapsed or overwritten', () => {
-    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources });
+    const result = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources });
     const { candidate } = result;
 
     assert.equal(candidate.sources.length, 2, 'two distinct sources must remain two distinct entries');
@@ -458,8 +483,8 @@ describe('Composite source identity -- same Pile ID ("L30") under two different 
     assert.equal(tiiSource.pileId, 'L30');
     // The regression this guards against: without the fix, one of these
     // would silently read the OTHER's activeUnits value instead of its own.
-    assert.equal(smaSource.activeUnits, 4, 'SMA/L30 (Higher Grade) must show its OWN active allocation, not TII\'s');
-    assert.equal(tiiSource.activeUnits, 8, 'TII/L30 (LGLO) must show its OWN active allocation, not SMA\'s');
+    assert.equal(smaSource.activeUnits, 6, 'SMA/L30 (Higher Grade) must show its OWN active allocation, not TII\'s');
+    assert.equal(tiiSource.activeUnits, 12, 'TII/L30 (LGLO) must show its OWN active allocation, not SMA\'s');
     assert.equal(smaSource.standbyUnits, 1);
     assert.equal(tiiSource.standbyUnits, 0);
   });
@@ -468,26 +493,30 @@ describe('Composite source identity -- same Pile ID ("L30") under two different 
 // ============================================================
 // 28. DIFFERENT TONNES/DT
 // ============================================================
+// V3.0 Phase 2 rescale (fleets 1/2 were both individually below the
+// generation-time minimum, verified against the actual engine): units
+// scaled x6 to 6/12 -- the same 1:2 physical ratio and 50/45 t/DT values,
+// just large enough for both to be feasible on their own.
 describe('28. Different tonnes/DT -- Estimated Ni and Tonnage Ratio use actual tonnage (architecture doc Section 13/19)', () => {
   const sources = [
-    { pileId: 'Higher', contractor: 'HigherCo', ni: '1.50', units: '1', tonnesPerUnit: '50' },
-    { pileId: 'Lglo', contractor: 'LgloCo', ni: '1.00', units: '2', tonnesPerUnit: '45' },
+    { pileId: 'Higher', contractor: 'HigherCo', ni: '1.50', units: '6', tonnesPerUnit: '50' },
+    { pileId: 'Lglo', contractor: 'LgloCo', ni: '1.00', units: '12', tonnesPerUnit: '45' },
   ];
 
-  test('matches the architecture doc\'s own 1:2 / 50t:90t worked example exactly', () => {
+  test('matches the architecture doc\'s own 1:2 / 300t:540t worked example exactly', () => {
     const result = findBlendRecommendations({ targetNi: 1.15, tolerance: 0.1, sources });
     assert.equal(result.ok, true);
     const { candidate } = result;
 
-    assert.equal(candidate.totalActiveUnits, 3, 'the full 1+2 fleet is used (only candidate at max utilization)');
-    assert.deepEqual(candidate.unitRatio, { rawHigher: 1, rawLglo: 2, higher: 1, lglo: 2 });
-    closeTo(candidate.higherGradeTonnage, 50);
-    closeTo(candidate.lgloTonnage, 90);
-    closeTo(candidate.tonnageRatio.higher, 50 / 140);
-    closeTo(candidate.tonnageRatio.lglo, 90 / 140);
+    assert.equal(candidate.totalActiveUnits, 18, 'the full 6+12 fleet is used (only candidate at max utilization)');
+    assert.deepEqual(candidate.unitRatio, { rawHigher: 6, rawLglo: 12, higher: 1, lglo: 2 });
+    closeTo(candidate.higherGradeTonnage, 300);
+    closeTo(candidate.lgloTonnage, 540);
+    closeTo(candidate.tonnageRatio.higher, 300 / 840);
+    closeTo(candidate.tonnageRatio.lglo, 540 / 840);
     // Must NOT be the (wrong) unit-ratio-derived 33.3%/66.7%.
     assert.notEqual(Number(candidate.tonnageRatio.higher.toFixed(3)), Number((1 / 3).toFixed(3)));
-    closeTo(candidate.estimatedNi, (1.5 * 50 + 1.0 * 90) / 140);
+    closeTo(candidate.estimatedNi, (1.5 * 300 + 1.0 * 540) / 840);
   });
 });
 
@@ -496,34 +525,38 @@ describe('28. Different tonnes/DT -- Estimated Ni and Tonnage Ratio use actual t
 // ============================================================
 describe('Exact Target achievable, tolerance = 0 (this task\'s Section 16)', () => {
   test('a single-source blend at exactly the target Ni is accepted with zero tolerance, and full fleet wins', () => {
+    // units=6 (V3.0 Phase 2 -- was 4, below the generation-time minimum).
     const result = findBlendRecommendations({
       targetNi: 1.15,
       tolerance: 0,
-      sources: [{ pileId: 'A', contractor: 'S', ni: '1.15', units: '4', tonnesPerUnit: '50' }],
+      sources: [{ pileId: 'A', contractor: 'S', ni: '1.15', units: '6', tonnesPerUnit: '50' }],
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'OK');
     closeTo(result.candidate.estimatedNi, 1.15);
     assert.equal(result.candidate.absoluteDeviation, 0);
-    assert.equal(result.candidate.totalActiveUnits, 4, 'maximizes fleet utilization among the (all Ni-identical) exact-match candidates');
+    assert.equal(result.candidate.totalActiveUnits, 6, 'maximizes fleet utilization among the (all Ni-identical) exact-match candidates');
   });
 });
 
 describe('Target achievable only inside tolerance (not an exact match) -- architecture doc Section 37 test 2', () => {
   test('best candidate is the full-fleet allocation, landing inside tolerance without an exact hit', () => {
+    // V3.0 Phase 2 rescale: fleets 3/5 doubled to 6/10 (both were below
+    // the generation-time minimum) -- same 1.09375 blend Ni, verified
+    // against the actual engine.
     const result = findBlendRecommendations({
       targetNi: 1.10,
       tolerance: 0.02,
       sources: [
-        { pileId: 'Higher', contractor: 'H', ni: '1.25', units: '3', tonnesPerUnit: '50' },
-        { pileId: 'Lglo', contractor: 'L', ni: '1.00', units: '5', tonnesPerUnit: '50' },
+        { pileId: 'Higher', contractor: 'H', ni: '1.25', units: '6', tonnesPerUnit: '50' },
+        { pileId: 'Lglo', contractor: 'L', ni: '1.00', units: '10', tonnesPerUnit: '50' },
       ],
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'OK');
-    assert.equal(result.candidate.totalActiveUnits, 8);
+    assert.equal(result.candidate.totalActiveUnits, 16);
     assert.equal(result.candidate.fleetUtilization, 1);
-    closeTo(result.candidate.estimatedNi, 8.75 / 8);
+    closeTo(result.candidate.estimatedNi, 17.5 / 16);
     assert.notEqual(result.candidate.absoluteDeviation, 0, 'this scenario is within tolerance but deliberately not an exact match');
   });
 });
@@ -531,9 +564,12 @@ describe('Target achievable only inside tolerance (not an exact match) -- archit
 // ============================================================
 // 31. TARGET NOT ACHIEVABLE
 // ============================================================
+// V3.0 Phase 2: Higher fleet 5->6 (was below the generation-time minimum;
+// Lglo stays at 5 since it is never active in this scenario regardless --
+// 0 is always feasible).
 describe('31. Target Not Achievable', () => {
   const sources = [
-    { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '5', tonnesPerUnit: '50' },
+    { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' },
     { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' },
   ];
 
@@ -547,9 +583,9 @@ describe('31. Target Not Achievable', () => {
   test('best-attainable candidate minimizes absolute deviation first (pure HGLO, since Ni can never approach 5.00 otherwise)', () => {
     const result = findBlendRecommendations({ targetNi: 5.00, tolerance: 0.01, sources });
     closeTo(result.candidate.estimatedNi, 2.00);
-    assert.equal(result.candidate.higherGradeUnits, 5);
+    assert.equal(result.candidate.higherGradeUnits, 6);
     assert.equal(result.candidate.lgloUnits, 0);
-    assert.deepEqual(result.candidate.unitRatio, { rawHigher: 5, rawLglo: 0, higher: 1, lglo: 0 });
+    assert.deepEqual(result.candidate.unitRatio, { rawHigher: 6, rawLglo: 0, higher: 1, lglo: 0 });
     closeTo(result.bestAttainableNi, 2.00);
     closeTo(result.gap, 2.00 - 5.00);
     assert.equal(result.targetNi, 5.00);
@@ -562,20 +598,20 @@ describe('31. Target Not Achievable', () => {
 // ============================================================
 describe('32. Determinism and source-order independence', () => {
   const sourcesA = [
-    { pileId: 'Higher', contractor: 'ContractorA', ni: '1.30', units: '5', tonnesPerUnit: '50' },
-    { pileId: 'Lglo', contractor: 'ContractorB', ni: '1.03', units: '8', tonnesPerUnit: '50' },
+    { pileId: 'Higher', contractor: 'ContractorA', ni: '1.30', units: '7', tonnesPerUnit: '50' },
+    { pileId: 'Lglo', contractor: 'ContractorB', ni: '1.03', units: '12', tonnesPerUnit: '50' },
   ];
   const sourcesReversed = [...sourcesA].reverse();
 
   test('identical inputs produce byte-identical results across repeated calls', () => {
-    const r1 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources: sourcesA });
-    const r2 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources: sourcesA });
+    const r1 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources: sourcesA });
+    const r2 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources: sourcesA });
     assert.equal(JSON.stringify(r1.candidate), JSON.stringify(r2.candidate));
   });
 
   test('reordering the input sources array does not change the selected candidate', () => {
-    const r1 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources: sourcesA });
-    const r2 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.010, sources: sourcesReversed });
+    const r1 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources: sourcesA });
+    const r2 = findBlendRecommendations({ targetNi: 1.120, tolerance: 0.009, sources: sourcesReversed });
     assert.equal(JSON.stringify(r1.candidate), JSON.stringify(r2.candidate));
   });
 });

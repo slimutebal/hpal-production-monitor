@@ -1,3 +1,30 @@
+// ============================================================
+// V2.x EXHAUSTIVE REFERENCE IMPLEMENTATION
+// TEST-ONLY
+// FROZEN FOR V3.0 DIFFERENTIAL TESTING
+// DO NOT OPTIMIZE OR "CLEAN UP"
+//
+// This file is a frozen, test-only snapshot of the V2.x production
+// module js/pages/calculate/fleet-allocation.js, captured at V3.0 Phase 1
+// (production HEAD 5011a37, "fix(v2.5.2): restore Report Excel lazy
+// loading"). It exists so that future V3.0 search-engine refactoring
+// (generation-time feasibility pruning, streaming incumbents, exact
+// branch-and-bound, Contractor decomposition, best-first traversal, an
+// optional Web Worker) has a stable, independent oracle to diff against --
+// see tests/v3-differential.test.mjs.
+//
+// Any INTENTIONAL modification to this file must be an explicit,
+// Owner-approved oracle update (e.g. a deliberate correction to a bug in
+// the capture itself), never a casual refactor alongside production
+// changes. A future Claude session must not "clean this up" to match a
+// new production implementation -- that would defeat the entire purpose
+// of having an independent reference.
+//
+// Nothing under js/, index.html, or service-worker.js may import this
+// file or anything else under tests/reference/v2-exhaustive/. It is
+// imported only by test files and dev tooling under tests/.
+// ============================================================
+
 // Pure fleet-allocation search primitives (V2.4 Phase 3 -- Recommendation
 // engine). See
 // docs/V2.4_CALCULATE_AND_BLENDING_RECOMMENDATION_ARCHITECTURE.md Sections
@@ -122,95 +149,6 @@ export function enumerateAllocations(fleet, sourceCount) {
       return;
     }
     for (let v = 0; v <= remaining; v += 1) {
-      current[index] = v;
-      place(index + 1, remaining - v);
-    }
-  }
-
-  place(0, fleet);
-  return results;
-}
-
-// ============================================================
-// GENERATION-TIME OPERATIONAL FEASIBILITY (V3.0 Phase 2, Owner-approved
-// domain decision -- this task's Section 0/4/5). An ACTIVE loading point
-// is operationally feasible ONLY when it carries 0 DT (closed/idle) or
-// >= MIN_UNITS_PER_ACTIVE_LOADING_POINT DT -- 1-5 DT is no longer a
-// candidate allocation at all, not merely a ranking-penalized one. This is
-// the SINGLE source of truth for that constant/predicate across
-// production (operational-continuity.js re-exports both from here rather
-// than defining its own copy -- this task's Section 4). Prior to Phase 2
-// this lived only in operational-continuity.js as
-// MIN_UNITS_PER_SPLIT_LOADING_POINT/isOperationalLoadingPointAllocation
-// and was consulted only by ranking (recommendation-ranking.js); it now
-// belongs here because fleet-allocation.js's own generation primitives
-// (enumerateOperationalAllocations()/countOperationalAllocations() below)
-// are the first place that needs it.
-//
-// This value is also what bounds each side of operational-continuity.js's
-// findSplitLoadingPlan() -- a hypothetical SPLIT dome is itself an active
-// loading point, so the identical minimum applies there by construction,
-// not by coincidence.
-export const MIN_UNITS_PER_ACTIVE_LOADING_POINT = 6;
-
-export function isOperationalLoadingPointAllocation(activeUnits) {
-  return activeUnits === 0 || activeUnits >= MIN_UNITS_PER_ACTIVE_LOADING_POINT;
-}
-
-// Exact count of n-tuples (a_1..a_n) where EACH a_i is either 0 or in
-// [M, F], with Sum(a_i) <= F (M = MIN_UNITS_PER_ACTIVE_LOADING_POINT) --
-// the operationally-feasible subset of what countContractorAllocations()
-// counts. Derivation (this task's Section 8, independently re-verified
-// against exhaustive enumeration by
-// tests/v3-operational-allocation.test.mjs's counting matrix before this
-// was trusted as a safety-bound gate):
-//
-//   For exactly k of the n sources active (0 <= k <= min(n, floor(F/M))):
-//     - choose WHICH k sources are active: C(n, k)
-//     - each active source contributes x_i = M + y_i, y_i >= 0, with
-//       Sum(y_i) <= F - kM -- this is exactly the SAME "at most" stars-
-//       and-bars shape countContractorAllocations() already computes, just
-//       over a smaller budget (F - kM) and k slots instead of n:
-//       countContractorAllocations(F - kM, k) = C((F-kM)+k, k)
-//   Total = Sum over k of C(n,k) * countContractorAllocations(F-kM, k)
-//
-// Includes the all-zero tuple (k=0 contributes exactly 1), matching
-// countContractorAllocations()'s own inclusion of the all-zero tuple --
-// blending-recommendation.js's buildCandidate() is what excludes
-// totalActiveUnits === 0 from actual candidates, not this counter (this
-// task's Section 9) -- so this counter's role/shape relative to the
-// search-space safety gate is unchanged from before Phase 2.
-export function countOperationalAllocations(fleet, sourceCount) {
-  const minUnits = MIN_UNITS_PER_ACTIVE_LOADING_POINT;
-  const maxActiveSources = Math.min(sourceCount, Math.floor(fleet / minUnits));
-  let total = 0;
-  for (let k = 0; k <= maxActiveSources; k += 1) {
-    total += binomialCoefficient(sourceCount, k) * countContractorAllocations(fleet - k * minUnits, k);
-  }
-  return total;
-}
-
-// All integer tuples (length = sourceCount) where EACH value is 0 or in
-// [MIN_UNITS_PER_ACTIVE_LOADING_POINT, remaining], Sum(values) <= fleet,
-// in deterministic ascending order per source (0 before 6, 6 before 7,
-// ...) -- this task's Section 6. Same-Contractor relocation compatibility
-// is preserved unchanged (this task's Section 5/23): a source's active
-// allocation is bounded only by the Contractor GROUP's total fleet, never
-// by that individual source's own original assignedUnits, exactly like
-// enumerateAllocations() above.
-export function enumerateOperationalAllocations(fleet, sourceCount) {
-  const minUnits = MIN_UNITS_PER_ACTIVE_LOADING_POINT;
-  const results = [];
-  const current = new Array(sourceCount).fill(0);
-
-  function place(index, remaining) {
-    if (index === sourceCount) {
-      results.push(current.slice());
-      return;
-    }
-    current[index] = 0;
-    place(index + 1, remaining);
-    for (let v = minUnits; v <= remaining; v += 1) {
       current[index] = v;
       place(index + 1, remaining - v);
     }

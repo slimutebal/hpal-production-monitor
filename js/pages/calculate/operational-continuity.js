@@ -34,6 +34,7 @@
 // capability the existing engine has no concept of at all: a HYPOTHETICAL
 // dome that does not exist in the input sources (Sections 9-17).
 import { normalizeContractorForComparison } from './calculate-validation.js';
+import { MIN_UNITS_PER_ACTIVE_LOADING_POINT, isOperationalLoadingPointAllocation } from './fleet-allocation.js';
 
 // ============================================================
 // POLICY CONSTANTS (this task's Section 3/9)
@@ -49,34 +50,25 @@ export const MINOR_STANDBY_RATIO = 0.05;
 // INCLUSIVE (exactly 50% is critical, this task's Section 3).
 export const CRITICAL_STANDBY_RATIO = 0.50;
 
-// When a Contractor's fleet is split across multiple SIMULTANEOUSLY
-// ACTIVE loading points (existing or hypothetical), each active point
-// must carry at least this many DT (this task's Section 9). An inactive/
-// closed point may be 0.
-export const MIN_UNITS_PER_SPLIT_LOADING_POINT = 6;
-
 // ============================================================
-// LOADING-POINT OPERATIONAL VALIDITY (V2.5.1 corrective pass, this task's
-// Sections 2/5/22). ONE shared predicate -- the single source of truth for
-// "is this a physically acceptable active loading point" -- consumed by
-// BOTH recommendation-ranking.js (to rank candidates that avoid a 1-5 DT
-// active loading point ahead of ones that don't) and this module's own
-// deriveContractorContinuityPlan() (to trigger mitigation even when a
-// Contractor's AGGREGATE standby ratio is 0%, e.g. a bad 34/1 split across
-// two existing domes leaves zero total idle fleet yet is still not an
-// operationally acceptable final allocation). This is a PHYSICAL
-// operating-point rule, deliberately independent of MINOR_STANDBY_RATIO/
-// CRITICAL_STANDBY_RATIO (a Contractor-fleet-reduction-percentage rule) --
-// a 100-DT Contractor's loading point ending at 4 DT is invalid regardless
-// of that being only 4% of its total fleet (this task's Section 25).
-// Applies uniformly to CURRENT loading points, receivers, donors, split
-// plans, and replacement plans where an existing source stays active
-// (this task's Section 2's explicit list) -- there is no second copy of
-// this check anywhere else in the codebase.
+// LOADING-POINT OPERATIONAL VALIDITY -- V3.0 Phase 2 promoted this from a
+// ranking-only preference (V2.5.1) to a HARD generation-time feasibility
+// rule, so MIN_UNITS_PER_ACTIVE_LOADING_POINT/isOperationalLoadingPointAllocation
+// now live in fleet-allocation.js (the module that actually generates
+// candidate allocations) and are re-exported here unchanged, so this
+// module's own consumers (deriveContractorContinuityPlan()'s SPLIT sizing
+// below, calculateContractorStandbyMetrics()'s hasInvalidLoadingPoint
+// defensive check) and any external importer keep a single source of
+// truth instead of a second copy (this task's Section 4).
+//
+// MIN_UNITS_PER_SPLIT_LOADING_POINT (below) is kept as a backward-
+// compatible alias of the same value -- a hypothetical SPLIT dome is
+// itself an active loading point, so it was always describing this same
+// physical rule under a narrower name, never a genuinely different
+// constant.
 // ============================================================
-export function isOperationalLoadingPointAllocation(activeUnits) {
-  return activeUnits === 0 || activeUnits >= MIN_UNITS_PER_SPLIT_LOADING_POINT;
-}
+export { MIN_UNITS_PER_ACTIVE_LOADING_POINT, isOperationalLoadingPointAllocation };
+export const MIN_UNITS_PER_SPLIT_LOADING_POINT = MIN_UNITS_PER_ACTIVE_LOADING_POINT;
 
 function normalizeKey(contractor) {
   return normalizeContractorForComparison(contractor);
@@ -198,20 +190,20 @@ export function displayableMinRequiredNi(range) {
 // SPLIT LOADING POINT SEARCH (this task's Sections 9-12/17/36) -- for a
 // Contractor currently operating exactly ONE loading point. Searches
 // every integer split (newDomeUnits, existingDomeUnits) with both sides
-// >= MIN_UNITS_PER_SPLIT_LOADING_POINT and existingDomeUnits +
+// >= MIN_UNITS_PER_ACTIVE_LOADING_POINT and existingDomeUnits +
 // newDomeUnits === totalFleet (all fleet stays active, this task's
 // Section 10), computing the hypothetical new dome's required Ni range
 // for each. Returns the single best split (this task's Section 12's
 // ranking, which -- since newDomeUnits alone already uniquely identifies
 // each generated candidate -- reduces to: smallest newDomeUnits that is
 // chemically feasible), or `null` if no split is geometrically possible
-// (totalFleet < 2 * MIN_UNITS_PER_SPLIT_LOADING_POINT) or none is
+// (totalFleet < 2 * MIN_UNITS_PER_ACTIVE_LOADING_POINT) or none is
 // chemically feasible.
 // ============================================================
 export function findSplitLoadingPlan({ totalFleet, existingDomeNi, tonnesPerUnit, otherWeightedNi, otherTonnage, targetNi, tolerance }) {
   const candidates = [];
 
-  for (let newDomeUnits = MIN_UNITS_PER_SPLIT_LOADING_POINT; newDomeUnits <= totalFleet - MIN_UNITS_PER_SPLIT_LOADING_POINT; newDomeUnits += 1) {
+  for (let newDomeUnits = MIN_UNITS_PER_ACTIVE_LOADING_POINT; newDomeUnits <= totalFleet - MIN_UNITS_PER_ACTIVE_LOADING_POINT; newDomeUnits += 1) {
     const existingDomeUnits = totalFleet - newDomeUnits;
     const existingDomeTonnage = existingDomeUnits * tonnesPerUnit;
     // The existing dome keeps its OWN known Ni (this task's Section 15:

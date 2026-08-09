@@ -1,0 +1,1502 @@
+{
+  "generatedBy": "tests/tools/generate-v3-reference-goldens.mjs",
+  "generatedFromReference": "tests/reference/v2-exhaustive/blending-recommendation-reference.mjs",
+  "productionHeadAtPhase1Capture": "5011a37",
+  "scenarios": [
+    {
+      "name": "single_contractor_single_dome",
+      "description": "1. Single Contractor, single dome -- trivial baseline.",
+      "input": {
+        "targetNi": "1.30",
+        "tolerance": "0.010",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.30",
+            "units": "8",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.3,
+        "tolerance": 0.01,
+        "candidateCount": 8,
+        "candidate": {
+          "estimatedNi": 1.3,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 8,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 400,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|8",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.3,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 8,
+              "activeUnits": 8,
+              "cycleTonnage": 400,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "single_contractor_two_domes",
+      "description": "2. One Contractor, two domes.",
+      "input": {
+        "targetNi": "1.25",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.25,
+        "tolerance": 0.05,
+        "candidateCount": 44,
+        "candidate": {
+          "estimatedNi": 1.25,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 4,
+          "lgloUnits": 4,
+          "higherGradeTonnage": 200,
+          "lgloTonnage": 200,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.5,
+            "lglo": 0.5
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|4;ctr-a|l2|4",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "multiple_contractors",
+      "description": "3. Multiple Contractors.",
+      "input": {
+        "targetNi": "1.25",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-B",
+            "ni": "1.00",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.25,
+        "tolerance": 0.05,
+        "candidateCount": 24,
+        "candidate": {
+          "estimatedNi": 1.25,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 4,
+          "lgloUnits": 4,
+          "higherGradeTonnage": 200,
+          "lgloTonnage": 200,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.5,
+            "lglo": 0.5
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|4;ctr-b|l2|4",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-B",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-b\"]"
+        ]
+      }
+    },
+    {
+      "name": "different_tonnes_per_dt",
+      "description": "4. Different t/DT across sources.",
+      "input": {
+        "targetNi": "1.20",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "30"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "4",
+            "tonnesPerUnit": "70"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.2,
+        "tolerance": 0.05,
+        "candidateCount": 44,
+        "candidate": {
+          "estimatedNi": 1.15,
+          "deviation": -0.050000000000000044,
+          "absoluteDeviation": 0.050000000000000044,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 4,
+          "lgloUnits": 4,
+          "higherGradeTonnage": 120,
+          "lgloTonnage": 280,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.3,
+            "lglo": 0.7
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|4;ctr-a|l2|4",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 30,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 120,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 70,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 280,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "lglo_mglo_blend",
+      "description": "5. LGLO + MGLO.",
+      "input": {
+        "targetNi": "1.20",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.10",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.30",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.2,
+        "tolerance": 0.05,
+        "candidateCount": 90,
+        "candidate": {
+          "estimatedNi": 1.2,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 12,
+          "totalActiveUnits": 12,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 600,
+          "higherGradeUnits": 6,
+          "lgloUnits": 6,
+          "higherGradeTonnage": 300,
+          "lgloTonnage": 300,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.5,
+            "lglo": 0.5
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|6;ctr-a|l2|6",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1.1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.3,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "lglo_hglo_blend",
+      "description": "6. LGLO + HGLO.",
+      "input": {
+        "targetNi": "1.30",
+        "tolerance": "0.100",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.10",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.55",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.3,
+        "tolerance": 0.1,
+        "candidateCount": 90,
+        "candidate": {
+          "estimatedNi": 1.325,
+          "deviation": 0.02499999999999991,
+          "absoluteDeviation": 0.02499999999999991,
+          "totalFleetUnits": 12,
+          "totalActiveUnits": 12,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 600,
+          "higherGradeUnits": 6,
+          "lgloUnits": 6,
+          "higherGradeTonnage": 300,
+          "lgloTonnage": 300,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.5,
+            "lglo": 0.5
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|6;ctr-a|l2|6",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1.1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.55,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "all_higher_grade",
+      "description": "7. All higher-grade (MGLO + HGLO, no LGLO).",
+      "input": {
+        "targetNi": "1.40",
+        "tolerance": "0.100",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.30",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.55",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.4,
+        "tolerance": 0.1,
+        "candidateCount": 90,
+        "candidate": {
+          "estimatedNi": 1.425,
+          "deviation": 0.025000000000000133,
+          "absoluteDeviation": 0.025000000000000133,
+          "totalFleetUnits": 12,
+          "totalActiveUnits": 12,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 600,
+          "higherGradeUnits": 12,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 600,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|6;ctr-a|l2|6",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.3,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.55,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "target_exactly_reached",
+      "description": "8. Target exactly reached (single fixed-Ni source, zero tolerance).",
+      "input": {
+        "targetNi": "1.20",
+        "tolerance": "0",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.20",
+            "units": "10",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.2,
+        "tolerance": 0,
+        "candidateCount": 10,
+        "candidate": {
+          "estimatedNi": 1.2,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 10,
+          "totalActiveUnits": 10,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 500,
+          "higherGradeUnits": 10,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 500,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|10",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.2,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 10,
+              "activeUnits": 10,
+              "cycleTonnage": 500,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "target_at_tolerance_boundary",
+      "description": "9. Target at the inclusive tolerance boundary (deviation === tolerance exactly).",
+      "input": {
+        "targetNi": "1.20",
+        "tolerance": "0.010",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.21",
+            "units": "10",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.2,
+        "tolerance": 0.01,
+        "candidateCount": 10,
+        "candidate": {
+          "estimatedNi": 1.21,
+          "deviation": 0.010000000000000009,
+          "absoluteDeviation": 0.010000000000000009,
+          "totalFleetUnits": 10,
+          "totalActiveUnits": 10,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 500,
+          "higherGradeUnits": 10,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 500,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|10",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.21,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 10,
+              "activeUnits": 10,
+              "cycleTonnage": 500,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "target_not_achievable",
+      "description": "10. Target not achievable (single fixed-Ni source, target far outside reach).",
+      "input": {
+        "targetNi": "2.00",
+        "tolerance": "0.010",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "5",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "TARGET_NOT_ACHIEVABLE",
+        "targetNi": 2,
+        "tolerance": 0.01,
+        "candidateCount": 5,
+        "candidate": {
+          "estimatedNi": 1,
+          "deviation": -1,
+          "absoluteDeviation": 1,
+          "totalFleetUnits": 5,
+          "totalActiveUnits": 5,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 250,
+          "higherGradeUnits": 0,
+          "lgloUnits": 5,
+          "higherGradeTonnage": 0,
+          "lgloTonnage": 250,
+          "unitRatio": {
+            "higher": 0,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0,
+            "lglo": 1
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|5",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 5,
+              "activeUnits": 5,
+              "cycleTonnage": 250,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [],
+        "bestAttainableNi": 1,
+        "gap": -1
+      }
+    },
+    {
+      "name": "same_contractor_relocation",
+      "description": "11. Same-Contractor relocation (DT physically moved from a donor dome to a receiver dome).",
+      "input": {
+        "targetNi": "1.45",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "2",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.60",
+            "units": "2",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.45,
+        "tolerance": 0.05,
+        "candidateCount": 14,
+        "candidate": {
+          "estimatedNi": 1.45,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 4,
+          "totalActiveUnits": 4,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 200,
+          "higherGradeUnits": 3,
+          "lgloUnits": 1,
+          "higherGradeTonnage": 150,
+          "lgloTonnage": 50,
+          "unitRatio": {
+            "higher": 3,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.75,
+            "lglo": 0.25
+          },
+          "totalMovedUnits": 1,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|1;ctr-a|l2|3",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 2,
+              "activeUnits": 1,
+              "cycleTonnage": 50,
+              "moveInUnits": 0,
+              "moveOutUnits": 1,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.6,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 2,
+              "activeUnits": 3,
+              "cycleTonnage": 150,
+              "moveInUnits": 1,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": [
+            {
+              "contractor": "CTR-A",
+              "fromPileId": "L1",
+              "toPileId": "L2",
+              "units": 1
+            }
+          ]
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "source_closure",
+      "description": "12. Source closure (a dome with assigned fleet ends the winning candidate fully idle, 100% relocated away).",
+      "input": {
+        "targetNi": "1.50",
+        "tolerance": "0.010",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "3",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "3",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.5,
+        "tolerance": 0.01,
+        "candidateCount": 27,
+        "candidate": {
+          "estimatedNi": 1.5,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 6,
+          "totalActiveUnits": 6,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 300,
+          "higherGradeUnits": 6,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 300,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 3,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|0;ctr-a|l2|6",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 3,
+              "activeUnits": 0,
+              "cycleTonnage": 0,
+              "moveInUnits": 0,
+              "moveOutUnits": 3,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 3,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 3,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": [
+            {
+              "contractor": "CTR-A",
+              "fromPileId": "L1",
+              "toPileId": "L2",
+              "units": 3
+            }
+          ]
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "tie_break_scenario",
+      "description": "13. Symmetric two-Contractor scenario exercising the deterministic allocationSignature tie-break.",
+      "input": {
+        "targetNi": "1.50",
+        "tolerance": "0.500",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L1",
+            "contractor": "CTR-B",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.5,
+        "tolerance": 0.5,
+        "candidateCount": 24,
+        "candidate": {
+          "estimatedNi": 1.5,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 4,
+          "totalSurplusUnits": 4,
+          "fleetUtilization": 0.5,
+          "totalTonnage": 200,
+          "higherGradeUnits": 4,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 200,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|0;ctr-b|l1|4",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 0,
+              "cycleTonnage": 0,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 4
+            },
+            {
+              "pileId": "L1",
+              "contractor": "CTR-B",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l1\",\"ctr-b\"]"
+        ]
+      }
+    },
+    {
+      "name": "source_order_independence",
+      "description": "14. Same sources/values as multiple_contractors, supplied in REVERSED input order -- must canonically match that scenario's candidate (see tests/v3-reference-golden.test.mjs's dedicated order-independence assertion).",
+      "input": {
+        "targetNi": "1.25",
+        "tolerance": "0.050",
+        "sources": [
+          {
+            "pileId": "L2",
+            "contractor": "CTR-B",
+            "ni": "1.00",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.50",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.25,
+        "tolerance": 0.05,
+        "candidateCount": 24,
+        "candidate": {
+          "estimatedNi": 1.25,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 4,
+          "lgloUnits": 4,
+          "higherGradeTonnage": 200,
+          "lgloTonnage": 200,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0.5,
+            "lglo": 0.5
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|4;ctr-b|l2|4",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.5,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-B",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 4,
+              "cycleTonnage": 200,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-b\"]"
+        ]
+      }
+    },
+    {
+      "name": "legacy_1_5_dt_allocation",
+      "description": "15. Candidate with 1-5 active DT illustrating current legacy behavior (fleet capped at 5, so no allocation can ever reach the 6-DT operational threshold -- this task's Section 9/22, must NOT be \"fixed\" in Phase 1).",
+      "input": {
+        "targetNi": "1.00",
+        "tolerance": "0",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "5",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1,
+        "tolerance": 0,
+        "candidateCount": 5,
+        "candidate": {
+          "estimatedNi": 1,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 5,
+          "totalActiveUnits": 5,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 250,
+          "higherGradeUnits": 0,
+          "lgloUnits": 5,
+          "higherGradeTonnage": 0,
+          "lgloTonnage": 250,
+          "unitRatio": {
+            "higher": 0,
+            "lglo": 1
+          },
+          "tonnageRatio": {
+            "higher": 0,
+            "lglo": 1
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|5",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 5,
+              "activeUnits": 5,
+              "cycleTonnage": 250,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "minor_contractor_standby",
+      "description": "16. Minor Contractor standby (<=5%, acceptable, no mitigation search triggered) -- winning candidate leaves CTR-A at a small standbyRatio after a partial same-Contractor relocation.",
+      "input": {
+        "targetNi": "1.180",
+        "tolerance": "0.004",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "20",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-A",
+            "ni": "1.60",
+            "units": "4",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.18,
+        "tolerance": 0.004,
+        "candidateCount": 324,
+        "candidate": {
+          "estimatedNi": 1.182608695652174,
+          "deviation": 0.002608695652174031,
+          "absoluteDeviation": 0.002608695652174031,
+          "totalFleetUnits": 24,
+          "totalActiveUnits": 23,
+          "totalSurplusUnits": 1,
+          "fleetUtilization": 0.9583333333333334,
+          "totalTonnage": 1150,
+          "higherGradeUnits": 7,
+          "lgloUnits": 16,
+          "higherGradeTonnage": 350,
+          "lgloTonnage": 800,
+          "unitRatio": {
+            "higher": 7,
+            "lglo": 16
+          },
+          "tonnageRatio": {
+            "higher": 0.30434782608695654,
+            "lglo": 0.6956521739130435
+          },
+          "totalMovedUnits": 3,
+          "activeSourceCount": 2,
+          "allocationSignature": "ctr-a|l1|16;ctr-a|l2|7",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 20,
+              "activeUnits": 16,
+              "cycleTonnage": 800,
+              "moveInUnits": 0,
+              "moveOutUnits": 3,
+              "standbyUnits": 1
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-A",
+              "oreClass": "HGLO",
+              "ni": 1.6,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 4,
+              "activeUnits": 7,
+              "cycleTonnage": 350,
+              "moveInUnits": 3,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": [
+            {
+              "contractor": "CTR-A",
+              "fromPileId": "L1",
+              "toPileId": "L2",
+              "units": 3
+            }
+          ]
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]",
+          "[\"l2\",\"ctr-a\"]"
+        ]
+      }
+    },
+    {
+      "name": "critical_contractor_standby",
+      "description": "17. Critical Contractor standby (>=50%, a Contractor-continuity problem, this task's Section 3).",
+      "input": {
+        "targetNi": "1.55",
+        "tolerance": "0.020",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1.00",
+            "units": "10",
+            "tonnesPerUnit": "50"
+          },
+          {
+            "pileId": "L2",
+            "contractor": "CTR-B",
+            "ni": "1.55",
+            "units": "6",
+            "tonnesPerUnit": "50"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.55,
+        "tolerance": 0.02,
+        "candidateCount": 76,
+        "candidate": {
+          "estimatedNi": 1.55,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 16,
+          "totalActiveUnits": 6,
+          "totalSurplusUnits": 10,
+          "fleetUtilization": 0.375,
+          "totalTonnage": 300,
+          "higherGradeUnits": 6,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 300,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|0;ctr-b|l2|6",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "LGLO",
+              "ni": 1,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 10,
+              "activeUnits": 0,
+              "cycleTonnage": 0,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 10
+            },
+            {
+              "pileId": "L2",
+              "contractor": "CTR-B",
+              "oreClass": "HGLO",
+              "ni": 1.55,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 6,
+              "activeUnits": 6,
+              "cycleTonnage": 300,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l2\",\"ctr-b\"]"
+        ]
+      }
+    },
+    {
+      "name": "decimal_comma_input_equivalence",
+      "description": "18. Decimal comma input (\"1,30\" etc.) end-to-end through the full search, not just isolated parseDecimalInput() unit coverage.",
+      "input": {
+        "targetNi": "1,30",
+        "tolerance": "0,010",
+        "sources": [
+          {
+            "pileId": "L1",
+            "contractor": "CTR-A",
+            "ni": "1,30",
+            "units": "8",
+            "tonnesPerUnit": "50,0"
+          }
+        ]
+      },
+      "expected": {
+        "ok": true,
+        "status": "OK",
+        "targetNi": 1.3,
+        "tolerance": 0.01,
+        "candidateCount": 8,
+        "candidate": {
+          "estimatedNi": 1.3,
+          "deviation": 0,
+          "absoluteDeviation": 0,
+          "totalFleetUnits": 8,
+          "totalActiveUnits": 8,
+          "totalSurplusUnits": 0,
+          "fleetUtilization": 1,
+          "totalTonnage": 400,
+          "higherGradeUnits": 8,
+          "lgloUnits": 0,
+          "higherGradeTonnage": 400,
+          "lgloTonnage": 0,
+          "unitRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "tonnageRatio": {
+            "higher": 1,
+            "lglo": 0
+          },
+          "totalMovedUnits": 0,
+          "activeSourceCount": 1,
+          "allocationSignature": "ctr-a|l1|8",
+          "sources": [
+            {
+              "pileId": "L1",
+              "contractor": "CTR-A",
+              "oreClass": "MGLO",
+              "ni": 1.3,
+              "tonnesPerUnit": 50,
+              "assignedUnits": 8,
+              "activeUnits": 8,
+              "cycleTonnage": 400,
+              "moveInUnits": 0,
+              "moveOutUnits": 0,
+              "standbyUnits": 0
+            }
+          ],
+          "relocations": []
+        },
+        "sourcesInAnyWithinToleranceCandidate": [
+          "[\"l1\",\"ctr-a\"]"
+        ]
+      }
+    }
+  ]
+}
