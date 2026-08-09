@@ -49,10 +49,10 @@ function extractCacheName(source) {
 const appShell = extractAppShell(swSource);
 const cacheName = extractCacheName(swSource);
 
-describe('22. Cache version bumped exactly once (V2.4 Phase 8)', () => {
-  test('CACHE_NAME reflects the V2.4 release, not the old V2.3 simple-license name', () => {
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.3.0-simple-license');
-    assert.match(cacheName, /^hpal-production-monitor-v2\.4\.0/);
+describe('22/35/37. Cache version bumped exactly once for the whole V2.4.1 patch (Bug A+B+C combined)', () => {
+  test('CACHE_NAME reflects the V2.4.1 release, not the old V2.4.0 name', () => {
+    assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.0-calculate');
+    assert.match(cacheName, /^hpal-production-monitor-v2\.4\.1/);
   });
 
   test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
@@ -81,10 +81,16 @@ describe('21. Calculate runtime assets are present in APP_SHELL', () => {
       './js/pages/calculate/recommendation-actions.js',
       './js/pages/calculate/planned-blend-recovery.js',
       './js/pages/calculate/hopper-pattern.js',
+      // V2.4.1 Bug A -- the new shared locale-aware decimal-parsing module.
+      './js/pages/calculate/number-input.js',
     ];
     for (const file of expected) {
       assert.ok(appShell.includes(file), `APP_SHELL is missing ${file}`);
     }
+  });
+
+  test('assets/css/settings.css (Bug B mobile font-size fix) remains precached', () => {
+    assert.ok(appShell.includes('./assets/css/settings.css'));
   });
 });
 

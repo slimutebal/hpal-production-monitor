@@ -11,6 +11,16 @@
 // are treated as the exact strings/values a text input would hand back
 // (possibly '', null, or undefined for an empty field) -- never assumed
 // to already be clean numbers.
+//
+// LOCALE-AWARE DECIMAL INPUT (V2.4.1 Bug A, this task's Sections 4/7): Ni
+// and Tonnes/DT are DECIMAL fields -- both "1.15" and "1,15" (the form an
+// Indonesian-locale device's decimal keyboard actually produces) must
+// validate identically, via the one shared parseDecimalInput() (see
+// ./number-input.js). DT (units) stays an INTEGER field and is
+// deliberately left on plain Number() -- a comma there (e.g. "20,5") must
+// keep failing Number.isInteger(), never be reinterpreted as a decimal
+// (this task's Section 8).
+import { parseDecimalInput } from './number-input.js';
 
 // Trim + case-fold for duplicate comparison only -- never mutates or
 // rewrites the Pile ID a user actually typed beyond what duplicate
@@ -61,7 +71,7 @@ export function validateContractor(contractor) {
 
 export function validateNi(ni) {
   if (ni === '' || ni === null || ni === undefined) return 'calculate.validation.niRequired';
-  const value = Number(ni);
+  const value = parseDecimalInput(ni);
   if (!Number.isFinite(value)) return 'calculate.validation.niInvalid';
   if (!(value > 0)) return 'calculate.validation.niPositive';
   return null;
@@ -80,7 +90,7 @@ export function validateTonnesPerUnit(tonnesPerUnit) {
   if (tonnesPerUnit === '' || tonnesPerUnit === null || tonnesPerUnit === undefined) {
     return 'calculate.validation.tonnesPerUnitRequired';
   }
-  const value = Number(tonnesPerUnit);
+  const value = parseDecimalInput(tonnesPerUnit);
   if (!Number.isFinite(value)) return 'calculate.validation.tonnesPerUnitInvalid';
   if (!(value > 0)) return 'calculate.validation.tonnesPerUnitPositive';
   return null;
@@ -107,9 +117,9 @@ export function toNumericPile(pile) {
   return {
     pileId: pile.pileId.trim(),
     contractor: pile.contractor.trim(),
-    ni: Number(pile.ni),
+    ni: parseDecimalInput(pile.ni),
     units: Number(pile.units),
-    tonnesPerUnit: Number(pile.tonnesPerUnit),
+    tonnesPerUnit: parseDecimalInput(pile.tonnesPerUnit),
   };
 }
 

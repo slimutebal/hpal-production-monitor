@@ -41,6 +41,19 @@ describe('24A-D. calculateRequiredNewDomeNi() -- formula', () => {
     assert.equal(result.requiredNi.toFixed(3), '1.260');
   });
 
+  // V2.4.1 Bug A, this task's Section 33: the exact same reference
+  // example, with Tonnes/DT entered as a comma decimal (the form an
+  // Indonesian-locale device's decimal keyboard actually produces),
+  // produces the IDENTICAL requiredNi.
+  test('the same reference example with comma-decimal Tonnes/DT ("50" has no fraction to test with dot/comma directly, so use 45,5/45.5 instead) produces identical requiredNi', () => {
+    const dot = calculateRequiredNewDomeNi({ currentNi: 1.085, currentTonnage: 1000, targetNi: 1.120, addedUnits: 5, tonnesPerUnit: '45.5' });
+    const comma = calculateRequiredNewDomeNi({ currentNi: 1.085, currentTonnage: 1000, targetNi: 1.120, addedUnits: 5, tonnesPerUnit: '45,5' });
+    assert.equal(dot.ok, true);
+    assert.equal(comma.ok, true);
+    assert.equal(comma.addedTonnage, dot.addedTonnage);
+    assert.equal(comma.requiredNi, dot.requiredNi);
+  });
+
   test('B. different Added DT (10 instead of 5) changes AddedTonnage and requiredNi', () => {
     const result = calculateRequiredNewDomeNi({
       currentNi: 1.085,
@@ -147,6 +160,16 @@ describe('24E-I. calculateRequiredNewDomeNi() / validators -- rejection', () => 
     assert.equal(validateAddedUnits(''), 'calculate.validation.recoveryAddedUnitsRequired');
     assert.equal(validateAddedUnits(null), 'calculate.validation.recoveryAddedUnitsRequired');
     assert.equal(validateRecoveryTonnesPerUnit(''), 'calculate.validation.recoveryTonnesPerUnitRequired');
+  });
+
+  // V2.4.1 Bug A, this task's Section 32 -- comma decimal must validate
+  // identically to dot for Tonnes/DT; Added DT stays integer-only (Section
+  // 8), so a comma there is still rejected.
+  test('a comma-decimal Tonnes/DT ("45,5") is valid', () => {
+    assert.equal(validateRecoveryTonnesPerUnit('45,5'), null);
+  });
+  test('a comma-decimal Added DT ("5,5") is still rejected -- Added DT is never comma-decimal', () => {
+    assert.equal(validateAddedUnits('5,5'), 'calculate.validation.recoveryAddedUnitsInvalid');
   });
 });
 

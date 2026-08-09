@@ -310,9 +310,20 @@
   color: var(--text, inherit);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 0.85rem;
+  /* 16px is the mobile iOS Safari auto-zoom floor (V2.4.1 Bug B, this
+     task's Sections 12/14/17) -- covers every editable Settings control
+     that shares this one class: License key, role-management modal
+     search, and the Add/Edit Personnel form's Name/Organization
+     input-or-select. Desktop restores the original compact 0.85rem under
+     the min-width:640px override below. */
+  font-size: 1rem;
   font-family: inherit;
   min-height: 42px;
+}
+@media (min-width: 640px) {
+  #page-settings .settings-input {
+    font-size: 0.85rem;
+  }
 }
 #page-settings .settings-input:focus {
   outline: 2px solid var(--accent, #38bdf8);

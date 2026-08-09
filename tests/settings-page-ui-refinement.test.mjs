@@ -160,3 +160,40 @@ describe('Dictionary parity is preserved', () => {
     assert.deepEqual(idKeys, enKeys);
   });
 });
+
+/* ============================================================
+   V2.4.1 Bug B fix -- mobile editable-control font-size regression (this
+   task's Sections 12/14/17/35). Every editable Settings control (License
+   key, role-management modal search, Add/Edit Personnel form Name/
+   Organization input-or-select) shares the single `.settings-input`
+   class, so one rule covers all of them (confirmed by grepping
+   settings-page.js for every <input>/<select> it builds -- none use a
+   different class). Node/CSS-source assertions only, same rationale as
+   tests/calculate-page.test.mjs's own Bug B block -- this cannot emulate
+   Safari's actual auto-zoom algorithm (this task's Section 35).
+============================================================ */
+describe('V2.4.1 Bug B fix -- Settings editable controls stay >= 16px on mobile', () => {
+  const settingsCss = readFileSync(path.join(ROOT, 'assets', 'css', 'settings.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  test('every editable Settings control uses .settings-input -- License key, role-modal search, and the Add/Edit Personnel form all share the one class', () => {
+    assert.match(SETTINGS_PAGE_SOURCE, /<input type="password" class="settings-input" id="settings-license-input"/);
+    assert.match(SETTINGS_PAGE_SOURCE, /<input type="text" class="settings-input" id="settings-role-modal-search"/);
+    assert.match(SETTINGS_PAGE_SOURCE, /<select class="settings-input" id="settings-form-organization"/);
+    assert.match(SETTINGS_PAGE_SOURCE, /<input class="settings-input" id="settings-form-organization"/);
+    assert.match(SETTINGS_PAGE_SOURCE, /<input class="settings-input" id="settings-form-name"/);
+  });
+
+  test('.settings-input computes to >= 16px on mobile (outside any min-width:640px desktop override)', () => {
+    const mobileRuleStart = settingsCss.indexOf('#page-settings .settings-input {');
+    assert.ok(mobileRuleStart >= 0, 'expected a #page-settings .settings-input rule');
+    const mobileRule = settingsCss.slice(mobileRuleStart, settingsCss.indexOf('}', mobileRuleStart));
+    const match = mobileRule.match(/font-size:\s*([0-9.]+)(rem|px)/);
+    assert.ok(match, 'expected a font-size declaration on the mobile .settings-input rule');
+    const px = match[2] === 'px' ? parseFloat(match[1]) : parseFloat(match[1]) * 16;
+    assert.ok(px >= 16, `.settings-input mobile font-size ${match[1]}${match[2]} is below the 16px iOS auto-zoom floor`);
+  });
+
+  test('desktop (min-width: 640px) restores the original compact 0.85rem -- mobile-only fix, not a permanent desktop change', () => {
+    assert.match(settingsCss, /@media \(min-width: 640px\) \{\s*#page-settings \.settings-input \{\s*font-size:\s*0\.85rem;/);
+  });
+});

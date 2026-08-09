@@ -20,6 +20,10 @@
 // the caller actually used -- that responsibility lives entirely in
 // calculate-page.js, and is covered by tests/calculate-page.test.mjs.
 import { normalizeContractorForComparison, normalizePileIdForComparison } from './calculate-validation.js';
+// Locale-aware decimal parsing (V2.4.1 Bug A) -- Tonnes/DT is a DECIMAL
+// field ("45,5" must equal "45.5"); Added DT stays an INTEGER field, left
+// on plain Number() (this task's Section 8).
+import { parseDecimalInput } from './number-input.js';
 
 // ============================================================
 // VALIDATION (this task's Section 5)
@@ -35,7 +39,7 @@ export function validateAddedUnits(addedUnits) {
 
 export function validateRecoveryTonnesPerUnit(tonnesPerUnit) {
   if (tonnesPerUnit === '' || tonnesPerUnit === null || tonnesPerUnit === undefined) return 'calculate.validation.recoveryTonnesPerUnitRequired';
-  const value = Number(tonnesPerUnit);
+  const value = parseDecimalInput(tonnesPerUnit);
   if (!Number.isFinite(value)) return 'calculate.validation.recoveryTonnesPerUnitInvalid';
   if (!(value > 0)) return 'calculate.validation.recoveryTonnesPerUnitPositive';
   return null;
@@ -79,7 +83,7 @@ export function calculateRequiredNewDomeNi({ currentNi, currentTonnage, targetNi
   }
 
   const addedUnitsValue = Number(addedUnits);
-  const tonnesPerUnitValue = Number(tonnesPerUnit);
+  const tonnesPerUnitValue = parseDecimalInput(tonnesPerUnit);
   const addedTonnage = addedUnitsValue * tonnesPerUnitValue;
 
   // Defensive only -- unreachable given the two validators above (a

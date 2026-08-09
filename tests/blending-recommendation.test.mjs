@@ -66,6 +66,12 @@ describe('validateTargetNi()', () => {
     assert.equal(validateTargetNi(1.12), null);
     assert.equal(validateTargetNi('1.12'), null);
   });
+
+  // V2.4.1 Bug A, this task's Section 32 -- comma decimal must validate
+  // identically to dot.
+  test('a comma-decimal string ("1,120") is valid', () => {
+    assert.equal(validateTargetNi('1,120'), null);
+  });
 });
 
 describe('validateTolerance()', () => {
@@ -90,6 +96,12 @@ describe('validateTolerance()', () => {
 
   test('the approved default (0.010) is valid', () => {
     assert.equal(validateTolerance(0.010), null);
+  });
+
+  // V2.4.1 Bug A, this task's Section 32 -- comma decimal must validate
+  // identically to dot.
+  test('a comma-decimal string ("0,010") is valid', () => {
+    assert.equal(validateTolerance('0,010'), null);
   });
 });
 
@@ -288,6 +300,24 @@ describe('24. Known fleet example -- 5 HG DT / 8 LGLO DT, target 1.120 +/- 0.010
     assert.equal(higherSource.activeUnits, 4, 'raw source-level allocation stays 4, never overwritten by the simplified 1:2 ratio');
     assert.equal(lgloSource.activeUnits, 8);
     assert.equal(higherSource.standbyUnits, 1, 'the un-forced 5th Higher Grade DT is surfaced as standby, never pushed into the blend');
+  });
+
+  // V2.4.1 Bug A, this task's Section 33: the exact same scenario, entered
+  // with comma decimals (targetNi/tolerance AND each source's Ni) instead
+  // of dots, must select the IDENTICAL candidate and numeric outputs.
+  test('comma-decimal target/tolerance/source Ni select the IDENTICAL candidate as the dot-decimal equivalent', () => {
+    const commaSources = [
+      { pileId: 'Higher', contractor: 'ContractorA', ni: '1,30', units: '5', tonnesPerUnit: '50' },
+      { pileId: 'Lglo', contractor: 'ContractorB', ni: '1,03', units: '8', tonnesPerUnit: '50' },
+    ];
+    const dotResult = findBlendRecommendations({ targetNi: '1.120', tolerance: '0.010', sources });
+    const commaResult = findBlendRecommendations({ targetNi: '1,120', tolerance: '0,010', sources: commaSources });
+
+    assert.equal(commaResult.ok, true);
+    assert.equal(commaResult.status, dotResult.status);
+    assert.equal(commaResult.candidate.estimatedNi, dotResult.candidate.estimatedNi);
+    assert.equal(commaResult.candidate.totalActiveUnits, dotResult.candidate.totalActiveUnits);
+    assert.deepEqual(commaResult.candidate.unitRatio, dotResult.candidate.unitRatio);
   });
 
   test('16. the surplus DT is never forced into the pattern merely to claim full utilization', () => {

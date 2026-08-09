@@ -1,8 +1,11 @@
-// V2.4 Phase 8: bumped once for the Calculate feature's runtime assets
-// (below) -- evicts every older cache via the existing activate-time
-// cleanup (no second version source; this is the ONE place a release's
-// cache identity is declared).
-const CACHE_NAME = 'hpal-production-monitor-v2.4.0-calculate';
+// V2.4.1: bumped once for the WHOLE combined Mobile Input and Sticky
+// Summary bugfix patch (locale-aware decimal input + mobile form-focus
+// zoom + sticky Blend summary -- see js/pages/calculate/number-input.js
+// and the CSS changes in assets/css/calculate.css/settings.css) -- evicts
+// every older cache via the existing activate-time cleanup (no second
+// version source; this is the ONE place a release's cache identity is
+// declared). Do not bump again for any single bug within this same patch.
+const CACHE_NAME = 'hpal-production-monitor-v2.4.1-mobile-input-sticky';
 const APP_SHELL = [
   './',
   './index.html',
@@ -51,6 +54,7 @@ const APP_SHELL = [
   './js/pages/calculate/calculate-page.js',
   './js/pages/calculate/blend-calculator.js',
   './js/pages/calculate/calculate-validation.js',
+  './js/pages/calculate/number-input.js',
   './js/pages/calculate/blending-recommendation.js',
   './js/pages/calculate/fleet-allocation.js',
   './js/pages/calculate/recommendation-ranking.js',

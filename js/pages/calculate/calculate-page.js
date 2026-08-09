@@ -57,6 +57,7 @@ import { findBlendRecommendations, DEFAULT_RECOMMENDATION_TOLERANCE } from './bl
 import { deriveOperationalHopperPattern } from './hopper-pattern.js';
 import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT, MATERIAL_ACTION_STOP } from './recommendation-actions.js';
 import { calculateRequiredNewDomeNi, findQualifyingSources } from './planned-blend-recovery.js';
+import { parseDecimalInput, formatDecimalForLocale } from './number-input.js';
 
 const ORE_CLASSES = ['HGLO', 'MGLO', 'LGLO'];
 const EM_DASH = '—';
@@ -121,8 +122,13 @@ export function initCalculatePage() {
   partialRowCount = 0;
   targetNiRaw = '';
   // Seeded from the pure engine's own exported default -- never a second
-  // hardcoded "0.010" business constant here.
-  toleranceRaw = DEFAULT_RECOMMENDATION_TOLERANCE.toFixed(3);
+  // hardcoded "0.010" business constant here. The VISIBLE prefill follows
+  // DEVICE/browser numeric locale (V2.4.1 Bug A, this task's Section 9) --
+  // e.g. "0,010" on an id-ID phone, "0.010" on en-US -- independent of the
+  // app's own Indonesian/English UI language setting. The underlying
+  // business default itself never changes; both forms parse back to the
+  // exact same 0.010 via parseDecimalInput() either way.
+  toleranceRaw = formatDecimalForLocale(DEFAULT_RECOMMENDATION_TOLERANCE, getDeviceLocale());
   recommendationFieldErrors = null;
   recommendationEngineErrorKey = null;
   lastRecommendationResult = null;
@@ -149,6 +155,15 @@ function handleLocaleChange() {
   renderRecommendationFieldError();
   renderRecommendationEngineError();
   renderRecommendationResult();
+}
+
+// DEVICE/browser numeric locale (V2.4.1 Bug A, this task's Section 9) --
+// deliberately reads navigator.language, NEVER the app's own i18n UI
+// locale (js/i18n/i18n.js). Falls back to `undefined` (Intl.NumberFormat's
+// own runtime-default locale) when navigator/its `language` is
+// unavailable, e.g. this file's own Node-based test harness.
+function getDeviceLocale() {
+  return (typeof navigator !== 'undefined' && navigator.language) || undefined;
 }
 
 function createBlankPileRow() {
@@ -437,7 +452,7 @@ function buildPileRow(row, index) {
   sourceRow.appendChild(contractorInput);
   const badge = document.createElement('span');
   badge.className = 'calculate-grid-cell__badge';
-  badge.textContent = classifyOre(parseFiniteNumber(row.ni)) || '';
+  badge.textContent = classifyOre(parseDecimalInput(row.ni)) || '';
   sourceRow.appendChild(badge);
   pileCell.appendChild(sourceRow);
 
@@ -530,7 +545,7 @@ function buildPileRow(row, index) {
   ].forEach(({ input, field }) => {
     input.addEventListener('input', () => {
       pileRows[index][field] = input.value;
-      badge.textContent = classifyOre(parseFiniteNumber(pileRows[index].ni)) || '';
+      badge.textContent = classifyOre(parseDecimalInput(pileRows[index].ni)) || '';
       tonnageEl.textContent = formatLiveTonnage(pileRows[index]);
 
       // TRAILING-ROW AUTO-APPEND: as soon as the row that is CURRENTLY
@@ -610,10 +625,13 @@ function refreshAllRowValidationUI() {
   pileRows.forEach((_, index) => refreshRowValidationUI(index));
 }
 
-// Lightweight "is this presentable yet" check for the live badge/tonnage
-// preview ONLY -- distinct from calculate-validation.js's authoritative
-// rules. A pile with an out-of-range or still-incomplete value simply
-// shows an empty/em dash display here rather than a validation error.
+// Lightweight "is this presentable yet" check for the live tonnage preview
+// ONLY -- distinct from calculate-validation.js's authoritative rules. A
+// pile with an out-of-range or still-incomplete value simply shows an
+// empty/em dash display here rather than a validation error. DT (units)
+// stays INTEGER-only (V2.4.1 Bug A, this task's Section 8) -- deliberately
+// NOT parseDecimalInput, so a mid-typed "20,5" never previews as a
+// fractional DT count.
 function parseFiniteNumber(raw) {
   if (raw === '' || raw === null || raw === undefined) return null;
   const value = Number(raw);
@@ -622,7 +640,7 @@ function parseFiniteNumber(raw) {
 
 function formatLiveTonnage(row) {
   const units = parseFiniteNumber(row.units);
-  const tonnesPerUnit = parseFiniteNumber(row.tonnesPerUnit);
+  const tonnesPerUnit = parseDecimalInput(row.tonnesPerUnit);
   if (units === null || tonnesPerUnit === null) return EM_DASH;
   return `${fmtTon(calculatePileTonnage(units, tonnesPerUnit))} t`;
 }

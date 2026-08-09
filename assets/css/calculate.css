@@ -119,17 +119,29 @@
   color: var(--text, inherit);
   border-radius: 8px;
   padding: 8px 6px;
-  font-size: 0.78rem;
+  /* 16px is the mobile iOS Safari auto-zoom floor (V2.4.1 Bug B, this
+     task's Section 14) -- desktop restores the original compact 0.78rem
+     under the min-width:640px override below. */
+  font-size: 1rem;
   font-family: inherit;
   min-height: 38px;
 }
 /* NI/DT are narrow numeric columns -- centered content reads better than
-   left-aligned in a ~50-70px-wide cell. */
+   left-aligned in a ~50-70px-wide cell. Padding trimmed to the minimum
+   readable amount so a 16px value still fits this column's fr share at
+   360px (V2.4.1 Bug B, this task's Section 16) -- the input itself still
+   scrolls its own text natively if a value briefly exceeds the visible
+   width while typing, same as any narrow numeric field. */
 #page-calculate .calculate-grid-cell--ni .calculate-cell-input,
 #page-calculate .calculate-grid-cell--dt .calculate-cell-input {
   text-align: center;
-  padding-left: 2px;
-  padding-right: 2px;
+  padding-left: 1px;
+  padding-right: 1px;
+}
+@media (min-width: 640px) {
+  #page-calculate .calculate-cell-input {
+    font-size: 0.78rem;
+  }
 }
 #page-calculate .calculate-cell-input:focus {
   outline: 2px solid var(--accent, #38bdf8);
@@ -151,11 +163,21 @@
   min-width: 0;
 }
 #page-calculate .calculate-cell-input--contractor {
-  min-height: 26px;
-  padding: 3px 6px;
-  font-size: 0.68rem;
+  min-height: 30px;
+  padding: 2px 5px;
+  /* 16px is the mobile iOS Safari auto-zoom floor (V2.4.1 Bug B, this
+     task's Section 14) -- desktop restores the original compact 0.68rem
+     under the min-width:640px override below. */
+  font-size: 1rem;
   flex: 1 1 auto;
   min-width: 0;
+}
+@media (min-width: 640px) {
+  #page-calculate .calculate-cell-input--contractor {
+    min-height: 26px;
+    padding: 3px 6px;
+    font-size: 0.68rem;
+  }
 }
 
 /* Read-only, derived-only (never a user input) -- ore-class codes
@@ -258,7 +280,29 @@
    backdrop-filter/blur needed. */
 #page-calculate .calculate-blend-summary {
   position: sticky;
-  top: 0;
+  /* ROOT-CAUSE NOTE (V2.4.1 Bug C, this task's Sections 20-23): sticky
+     was never actually broken by an ancestor -- the full chain
+     (.calculate-shell -> #page-calculate/.app-page -> #app-pages ->
+     body/html) declares no overflow/overflow-x/overflow-y/transform/
+     filter/contain/perspective/max-height anywhere (verified against
+     app-shell.css and index.html's own <style> block), so neither body
+     nor any Calculate ancestor is itself a scroll container -- the
+     viewport is, confirmed independently by bottom-navigation.js's own
+     scroll handler reading window.scrollY, not some inner element's
+     scrollTop. Sticky's `top` is therefore relative to the VIEWPORT, not
+     to body's own padding-top. index.html declares viewport-fit=cover
+     plus apple-mobile-web-app-status-bar-style=black-translucent, so an
+     installed iOS PWA's viewport genuinely extends under the status bar/
+     Dynamic Island -- a literal `top: 0` stuck this bar there once
+     scrolled. env(safe-area-inset-top) is the ONE existing, standards-
+     based (not iOS-only -- Android/Chrome honor the same CSS Environment
+     Variables spec) safe-area strategy this app already applies to body's
+     own padding-top; reusing it here resolves to plain 0 on an ordinary
+     browser tab, desktop, and any Android device without a display
+     cutout (no unwanted gap), and to the unsafe-area height on iOS/
+     cutout-Android PWAs -- never a duplicate/second safe-area mechanism,
+     and never a device-sniffing branch. */
+  top: env(safe-area-inset-top);
   z-index: 5;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -410,20 +454,14 @@
    from ever feeling cramped right at the 360 px floor. */
 @media (max-width: 374px) {
   #page-calculate .calculate-grid-row {
-    column-gap: 4px;
+    column-gap: 3px;
   }
+  /* Padding-only at this floor width (V2.4.1 Bug B, this task's Section
+     14/16) -- font-size must never drop back below 16px here, so only
+     spacing narrows further to reclaim horizontal room. */
   #page-calculate .calculate-cell-input {
     padding-left: 4px;
     padding-right: 4px;
-    font-size: 0.74rem;
-  }
-  /* Contractor stays deliberately smaller than the primary inputs even at
-     the narrow-width floor -- it shares its line with the ore-class badge
-     and must not push row height back toward large-card territory. */
-  #page-calculate .calculate-cell-input--contractor {
-    padding-left: 6px;
-    padding-right: 6px;
-    font-size: 0.66rem;
   }
 }
 
@@ -471,9 +509,19 @@
   color: var(--text, inherit);
   border-radius: 8px;
   padding: 9px 8px;
-  font-size: 0.85rem;
+  /* 16px is the mobile iOS Safari auto-zoom floor (V2.4.1 Bug B, this
+     task's Section 14) -- desktop restores the original compact 0.85rem
+     under the min-width:640px override below. Shared by Target Ni,
+     Tolerance, Recovery Added DT, and Recovery Tonnes/DT (all four reuse
+     this one class). */
+  font-size: 1rem;
   font-family: inherit;
   min-height: 42px;
+}
+@media (min-width: 640px) {
+  #page-calculate .calculate-recommendation-input {
+    font-size: 0.85rem;
+  }
 }
 #page-calculate .calculate-recommendation-input:focus {
   outline: 2px solid var(--accent, #38bdf8);
@@ -714,7 +762,6 @@
   #page-calculate .calculate-recommendation-input {
     padding-left: 6px;
     padding-right: 6px;
-    font-size: 0.78rem;
   }
 }
 

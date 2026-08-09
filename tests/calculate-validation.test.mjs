@@ -156,6 +156,18 @@ describe('validateNi()', () => {
   test('no operational maximum is enforced (no upper bound invented without Owner approval)', () => {
     assert.equal(validateNi(999), null);
   });
+
+  // V2.4.1 Bug A -- comma decimal (the form an Indonesian-locale device's
+  // decimal keyboard actually produces) must validate identically to dot.
+  test('a comma-decimal string ("1,15") is valid -- Section 4/32', () => {
+    assert.equal(validateNi('1,15'), null);
+  });
+
+  test('a malformed multi-separator string is still rejected as invalid', () => {
+    assert.equal(validateNi('1,2,3'), 'calculate.validation.niInvalid');
+    assert.equal(validateNi('1.2.3'), 'calculate.validation.niInvalid');
+    assert.equal(validateNi('1,2.3'), 'calculate.validation.niInvalid');
+  });
 });
 
 describe('validateUnits()', () => {
@@ -192,6 +204,13 @@ describe('validateUnits()', () => {
     assert.equal(validateUnits(10), null);
     assert.equal(validateUnits('10'), null);
   });
+
+  // V2.4.1 Bug A, this task's Section 8: DT stays an INTEGER field -- a
+  // comma-decimal value must still be rejected, never reinterpreted as a
+  // decimal the way Ni/Tonnes-per-DT now are.
+  test('a comma-decimal string ("20,5") is still rejected -- DT is never comma-decimal', () => {
+    assert.equal(validateUnits('20,5'), 'calculate.validation.unitsInvalid');
+  });
 });
 
 describe('validateTonnesPerUnit()', () => {
@@ -213,6 +232,11 @@ describe('validateTonnesPerUnit()', () => {
   test('a valid decimal -> valid', () => {
     assert.equal(validateTonnesPerUnit(45.5), null);
   });
+
+  // V2.4.1 Bug A -- comma decimal must validate identically to dot.
+  test('a comma-decimal string ("45,5") is valid -- Section 4/32', () => {
+    assert.equal(validateTonnesPerUnit('45,5'), null);
+  });
 });
 
 describe('toNumericPile()', () => {
@@ -224,6 +248,15 @@ describe('toNumericPile()', () => {
       units: 10,
       tonnesPerUnit: 50,
     });
+  });
+
+  // V2.4.1 Bug A, this task's Section 33 -- comma-decimal Ni/Tonnes-per-DT
+  // must convert to the IDENTICAL numeric pile as their dot-decimal
+  // equivalent; DT (units) stays an integer either way.
+  test('comma-decimal Ni/Tonnes-per-DT convert to the identical numeric pile as their dot-decimal equivalent', () => {
+    const dot = toNumericPile({ pileId: 'A', contractor: 'SMA', ni: '1.15', units: '10', tonnesPerUnit: '45.5' });
+    const comma = toNumericPile({ pileId: 'A', contractor: 'SMA', ni: '1,15', units: '10', tonnesPerUnit: '45,5' });
+    assert.deepEqual(comma, dot);
   });
 });
 

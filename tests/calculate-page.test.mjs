@@ -43,6 +43,7 @@ import path from 'node:path';
 
 import { initCalculatePage, requireFullAccessForCalculateAction } from '../js/pages/calculate/calculate-page.js';
 import { DEFAULT_RECOMMENDATION_TOLERANCE } from '../js/pages/calculate/blending-recommendation.js';
+import { parseDecimalInput } from '../js/pages/calculate/number-input.js';
 import { setLocale, DEFAULT_LOCALE } from '../js/i18n/i18n.js';
 import {
   initializeLicense,
@@ -508,6 +509,61 @@ describe('initCalculatePage() -- initial mount', () => {
 });
 
 /* ============================================================
+   V2.4.1 Bug A -- device-locale default Tolerance display (this task's
+   Sections 9/30/34). navigator.language is stubbed to an EXPLICIT locale
+   for each test (never left to whatever the CI host's own locale happens
+   to be, this task's Section 34's explicit requirement) via
+   Object.defineProperty, since Node's own built-in `navigator` global is a
+   getter-only accessor property that a plain assignment silently no-ops
+   against.
+============================================================ */
+describe('V2.4.1 Bug A -- device-locale default Tolerance display', () => {
+  function withDeviceLocale(locale, fn) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { value: { language: locale }, configurable: true, writable: true });
+    try {
+      fn();
+    } finally {
+      Object.defineProperty(globalThis, 'navigator', original);
+    }
+  }
+
+  test('id-ID device locale prefills Tolerance as "0,010" (comma decimal)', () => {
+    withDeviceLocale('id-ID', () => {
+      const pageEl = mountFullAccess();
+      assert.equal(findFieldInput(pageEl, 'tolerance').value, '0,010');
+    });
+  });
+
+  test('en-US device locale prefills Tolerance as "0.010" (dot decimal)', () => {
+    withDeviceLocale('en-US', () => {
+      const pageEl = mountFullAccess();
+      assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.010');
+    });
+  });
+
+  test('the device locale is independent of the app\'s own Indonesian/English UI language -- an English UI on an id-ID phone still shows "0,010"', () => {
+    withDeviceLocale('id-ID', () => {
+      setLocale('en');
+      const pageEl = mountFullAccess();
+      assert.equal(findFieldInput(pageEl, 'tolerance').value, '0,010');
+      setLocale(DEFAULT_LOCALE);
+    });
+  });
+
+  test('both locale forms parse back to the exact business default DEFAULT_RECOMMENDATION_TOLERANCE (0.010) -- the underlying constant never changes', () => {
+    withDeviceLocale('id-ID', () => {
+      const pageEl = mountFullAccess();
+      assert.equal(parseDecimalInput(findFieldInput(pageEl, 'tolerance').value), DEFAULT_RECOMMENDATION_TOLERANCE);
+    });
+    withDeviceLocale('en-US', () => {
+      const pageEl = mountFullAccess();
+      assert.equal(parseDecimalInput(findFieldInput(pageEl, 'tolerance').value), DEFAULT_RECOMMENDATION_TOLERANCE);
+    });
+  });
+});
+
+/* ============================================================
    18.1/18.2. NO MODE TABS, NO HITUNG BLEND BUTTON, ONE SHARED GRID
 ============================================================ */
 describe('1/2/3. No mode tabs, no explicit Calculate Blend button, one shared grid', () => {
@@ -617,6 +673,33 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%');
     assert.equal(summaryValue(pageEl, 'calculate-total-units'), '30');
     assert.match(summaryValue(pageEl, 'calculate-total-tonnage'), /1\.400,00 t|1,400.00 t/);
+  });
+
+  // V2.4.1 Bug A (this task's Section 33): the exact same known example,
+  // entered with a comma decimal separator (the form an Indonesian-locale
+  // iPhone's decimal keyboard actually produces) instead of a dot, must
+  // produce the IDENTICAL live Blend result -- never NaN, never a
+  // "Ni harus berupa angka yang valid." validation error.
+  test('the same known worked example entered with comma decimals (id-ID keyboard) produces the IDENTICAL live Blend result', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1,30', units: '10', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0,95', units: '20', tonnesPerUnit: '45' });
+
+    assert.equal(findRowError(gridRows(pageEl)[0]).hidden, true, 'comma-decimal Ni "1,30" must validate, not be rejected as invalid');
+    assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%');
+    assert.equal(summaryValue(pageEl, 'calculate-total-units'), '30');
+    assert.match(summaryValue(pageEl, 'calculate-total-tonnage'), /1\.400,00 t|1,400.00 t/);
+  });
+
+  test('a comma-decimal Tonnes/DT ("45,5") is accepted end-to-end and drives the correct live tonnage/summary, matching its dot-decimal equivalent', () => {
+    const dotPageEl = mountFullAccess();
+    fillRow(gridRows(dotPageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '45.5' });
+    const dotTonnage = summaryValue(dotPageEl, 'calculate-total-tonnage');
+
+    const commaPageEl = mountFullAccess();
+    fillRow(gridRows(commaPageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '45,5' });
+    assert.equal(findRowError(gridRows(commaPageEl)[0]).hidden, true, 'comma-decimal Tonnes/DT "45,5" must validate, not be rejected as invalid');
+    assert.equal(summaryValue(commaPageEl, 'calculate-total-tonnage'), dotTonnage);
   });
 
   test('5. a partial (nonblank but incomplete) row is excluded from the live summary -- Row A included, Row C excluded', () => {
@@ -836,9 +919,16 @@ describe('Known fleet example (5 HG DT / 8 LGLO DT) -- unaffected by mode-tab re
     assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
   });
 
+  // V2.4.1 Bug A (this task's Section 9): the VISIBLE prefill now follows
+  // device/browser numeric locale (formatDecimalForLocale()), so it is no
+  // longer always the literal ".toFixed(3)" dot-decimal string -- asserted
+  // here via a parseDecimalInput() round-trip instead, which is correct
+  // regardless of which locale format the current test host's own
+  // navigator.language happens to produce (never assume a CI host locale).
   test('16. default Tolerance value comes from the engine-exported DEFAULT_RECOMMENDATION_TOLERANCE constant', () => {
     const pageEl = mountFullAccess();
-    assert.equal(findFieldInput(pageEl, 'tolerance').value, DEFAULT_RECOMMENDATION_TOLERANCE.toFixed(3));
+    const raw = findFieldInput(pageEl, 'tolerance').value;
+    assert.equal(parseDecimalInput(raw), DEFAULT_RECOMMENDATION_TOLERANCE);
   });
 
   test('16. Target Ni starts empty (required, no invented default)', () => {
@@ -1664,7 +1754,10 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
   test('the rule exists and still uses position: sticky (sticky behavior preserved)', () => {
     assert.ok(blockStart >= 0, 'expected a #page-calculate .calculate-blend-summary rule in calculate.css');
     assert.match(stickyBlock, /position:\s*sticky;/);
-    assert.match(stickyBlock, /top:\s*0;/);
+    // V2.4.1 Bug C: top must be safe-area-aware, not a bare 0 -- a bare 0
+    // sticks the bar under the iOS status bar/Dynamic Island in the
+    // installed PWA (see the CSS rule's own root-cause comment).
+    assert.match(stickyBlock, /top:\s*env\(safe-area-inset-top\);/);
     assert.match(stickyBlock, /z-index:\s*5;/, 'z-index must be preserved, not just sticky positioning');
   });
 
@@ -1709,6 +1802,147 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
     const itemRule = cssSource.slice(itemRuleStart, cssSource.indexOf('}', itemRuleStart));
     assert.match(itemRule, /padding:\s*8px 6px;/);
     assert.match(itemRule, /border-radius:\s*10px;/);
+  });
+});
+
+/* ============================================================
+   V2.4.1 Bug C fix -- the sticky summary DID have position: sticky all
+   along; the real defect was `top: 0` sticking it under the iOS status
+   bar/Dynamic Island in the installed PWA (viewport-fit=cover +
+   apple-mobile-web-app-status-bar-style=black-translucent make the
+   viewport -- and therefore sticky's scrollport-relative `top` -- extend
+   under that unsafe region; body's own safe-area padding does NOT help,
+   since it only affects pre-scroll layout, never sticky's offset). This
+   project has no jsdom/Playwright (see this file's own header comment),
+   so these are source/DOM contract assertions, not real layout/
+   getBoundingClientRect assertions -- preferred here over a brittle
+   screenshot test, per this task's Section 36.
+============================================================ */
+describe('V2.4.1 Bug C fix -- sticky containing-block/safe-area regression', () => {
+  const ANCESTOR_BREAKING_PROPS = /\b(overflow(-x|-y)?|transform|filter|contain|perspective)\s*:/;
+  const calculateCss = readFileSync(path.join(ROOT, 'assets', 'css', 'calculate.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const shellCss = readFileSync(path.join(ROOT, 'assets', 'css', 'app-shell.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const styleBlock = indexHtml.slice(indexHtml.indexOf('<style>'), indexHtml.indexOf('</style>'));
+
+  test('.calculate-shell declares no overflow/transform/filter/contain/perspective -- any of these would make it a non-scrolling containing block and break position: sticky on its descendant', () => {
+    const shellRuleStart = calculateCss.indexOf('#page-calculate .calculate-shell {');
+    assert.ok(shellRuleStart >= 0, 'expected a #page-calculate .calculate-shell rule');
+    const shellRule = calculateCss.slice(shellRuleStart, calculateCss.indexOf('}', shellRuleStart));
+    assert.doesNotMatch(shellRule, ANCESTOR_BREAKING_PROPS);
+  });
+
+  test('the shared page-routing shell (.app-page / #app-pages in app-shell.css) declares no overflow/transform/filter/contain/perspective', () => {
+    assert.doesNotMatch(shellCss, ANCESTOR_BREAKING_PROPS);
+  });
+
+  test('html/body in index.html\'s own <style> block declare no overflow -- the viewport itself stays the scrolling element (confirmed independently by bottom-navigation.js reading window.scrollY, not an inner scrollTop), which is exactly why sticky\'s `top` must be safe-area-aware instead of relying on body\'s own padding', () => {
+    assert.doesNotMatch(styleBlock, /\bhtml\s*\{[^}]*overflow/);
+    assert.doesNotMatch(styleBlock, /\bbody\s*\{[^}]*overflow/);
+  });
+
+  test('viewport-fit=cover and the black-translucent status bar are both still declared -- these are exactly what make the safe-area-aware top offset necessary; if either is ever removed, this fix should be revisited', () => {
+    assert.match(indexHtml, /viewport-fit=cover/);
+    assert.match(indexHtml, /name="apple-mobile-web-app-status-bar-style" content="black-translucent"/);
+  });
+
+  test('the sticky summary is appended into .calculate-shell, the SAME container that also holds the source grid, class breakdown, and the entire Recommendation result (Hopper Pattern/Material Actions/Fleet Actions/Recovery) -- so its containing block spans the full Calculate workflow, not just the source grid (this task\'s Section 19/25 sticky-lifetime requirement)', () => {
+    const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
+    const buildShellStart = source.indexOf('function buildShell()');
+    const buildShellEnd = source.indexOf('\nfunction buildRecommendationField', buildShellStart);
+    assert.ok(buildShellStart >= 0 && buildShellEnd > buildShellStart);
+    const buildShellBody = source.slice(buildShellStart, buildShellEnd);
+    assert.match(buildShellBody, /shell\.appendChild\(blendSummary\)/);
+    assert.match(buildShellBody, /shell\.appendChild\(grid\)/);
+    assert.match(buildShellBody, /shell\.appendChild\(classBreakdownDetails\)/);
+    assert.match(buildShellBody, /shell\.appendChild\(recommendationResult\)/);
+  });
+
+  test('the sticky summary stays hidden with no children until a complete source row exists (never an empty sticky bar on initial load, this task\'s Section 26)', () => {
+    const pageEl = mountFullAccess();
+    const summary = blendSummaryRoot(pageEl);
+    assert.equal(summary.hidden, true);
+    assert.equal(summary.children.length, 0);
+  });
+});
+
+/* ============================================================
+   V2.4.1 Bug B fix -- mobile editable-control font-size regression (this
+   task's Sections 14/16/35). Node/CSS-source assertions only -- this
+   cannot emulate Safari's actual auto-zoom algorithm (this task's Section
+   35 explicitly disclaims that); it protects the preventative
+   implementation (every editable Calculate control computes to >= 16px on
+   mobile) from silently regressing.
+============================================================ */
+describe('V2.4.1 Bug B fix -- Calculate editable controls stay >= 16px on mobile', () => {
+  const calculateCss = readFileSync(path.join(ROOT, 'assets', 'css', 'calculate.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Extracts every top-level (non-media-query) declaration of `selector`'s
+  // font-size, plus the font-size it resolves to inside each
+  // `@media (min-width: 640px)` desktop-override block -- so this test
+  // fails loudly if a NEW narrow-width media query ever reintroduces a
+  // sub-16px mobile override, which is exactly how this bug originally
+  // shipped (the old @media (max-width: 374px) block silently shrank
+  // these same three rules).
+  function fontSizesFor(selector) {
+    const sizes = [];
+    let searchFrom = 0;
+    for (;;) {
+      const idx = calculateCss.indexOf(`${selector} {`, searchFrom);
+      if (idx === -1) break;
+      const ruleEnd = calculateCss.indexOf('}', idx);
+      const rule = calculateCss.slice(idx, ruleEnd);
+      const match = rule.match(/font-size:\s*([0-9.]+)(rem|px)/);
+      if (match) sizes.push({ value: parseFloat(match[1]), unit: match[2], insideMediaMinWidth640: /@media \(min-width: 640px\)[^{]*\{[^}]*$/.test(calculateCss.slice(0, idx)) });
+      searchFrom = ruleEnd + 1;
+    }
+    return sizes;
+  }
+
+  function toPx(size) {
+    return size.unit === 'px' ? size.value : size.value * 16;
+  }
+
+  ['#page-calculate .calculate-cell-input', '#page-calculate .calculate-cell-input--contractor', '#page-calculate .calculate-recommendation-input'].forEach((selector) => {
+    test(`${selector}: every MOBILE (outside any min-width:640px override) declaration computes to >= 16px`, () => {
+      const sizes = fontSizesFor(selector);
+      assert.ok(sizes.length > 0, `expected at least one font-size declaration for ${selector}`);
+      const mobileSizes = sizes.filter((s) => !s.insideMediaMinWidth640);
+      assert.ok(mobileSizes.length > 0, `expected at least one MOBILE (non-desktop-override) font-size declaration for ${selector}`);
+      mobileSizes.forEach((size) => {
+        assert.ok(toPx(size) >= 16, `${selector} mobile font-size ${size.value}${size.unit} is below the 16px iOS auto-zoom floor`);
+      });
+    });
+  });
+
+  test('no @media (max-width: ...) block in calculate.css shrinks an EDITABLE control below 16px (the exact way this bug originally shipped -- non-editable elements like the hopper ratio display or the grid header labels are unaffected by this contract)', () => {
+    const editableSelectors = ['.calculate-cell-input', '.calculate-cell-input--contractor', '.calculate-recommendation-input'];
+    const narrowBlocks = [...calculateCss.matchAll(/@media \(max-width:[^)]*\)\s*\{/g)];
+    assert.ok(narrowBlocks.length > 0, 'expected at least one narrow-width media query to still exist');
+    narrowBlocks.forEach((m) => {
+      const blockStartIdx = m.index + m[0].length;
+      const blockEndIdx = calculateCss.indexOf('\n}', blockStartIdx);
+      const block = calculateCss.slice(blockStartIdx, blockEndIdx);
+      editableSelectors.forEach((selector) => {
+        const ruleStart = block.indexOf(`${selector} {`);
+        if (ruleStart === -1) return; // this editable control has no override at this breakpoint at all -- fine, it keeps its base >=16px size
+        const rule = block.slice(ruleStart, block.indexOf('}', ruleStart));
+        const match = rule.match(/font-size:\s*([0-9.]+)(rem|px)/);
+        if (!match) return; // override touches padding/gap only, never font-size -- exactly what this fix requires
+        const px = match[2] === 'px' ? parseFloat(match[1]) : parseFloat(match[1]) * 16;
+        assert.ok(px >= 16, `${selector} is shrunk below 16px (${match[1]}${match[2]}) inside a narrow-width media query -- this is exactly the regression this fix closes`);
+      });
+    });
+  });
+
+  test('desktop (min-width: 640px) restores the original compact typography -- this fix is mobile-only, not a permanent desktop change', () => {
+    assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-cell-input \{\s*font-size:\s*0\.78rem;/);
+    assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-cell-input--contractor \{[\s\S]*?font-size:\s*0\.68rem;/);
+    assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-recommendation-input \{\s*font-size:\s*0\.85rem;/);
+  });
+
+  test('the compact grid column proportions (PILE 38 / NI 17 / DT 14 / t/DT 20 / action 11) are unchanged -- only spacing/font-size were touched, never the layout this task explicitly requires preserving', () => {
+    assert.match(calculateCss, /grid-template-columns:\s*38fr 17fr 14fr 20fr 11fr;/);
   });
 });
 

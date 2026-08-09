@@ -29,6 +29,10 @@ import {
   validateTonnesPerUnit,
   normalizeSourceIdentity,
 } from './calculate-validation.js';
+// Locale-aware decimal parsing (V2.4.1 Bug A, this task's Section 7) --
+// Target Ni/Tolerance and each source's Ni/Tonnes-per-DT are all DECIMAL
+// fields, so "1,120"/"0,010" must parse identically to "1.120"/"0.010".
+import { parseDecimalInput } from './number-input.js';
 import {
   simplifyUnitRatio,
   calculateTonnageRatio,
@@ -66,7 +70,7 @@ const HIGHER_GRADE_CLASSES = new Set(['HGLO', 'MGLO']);
 
 export function validateTargetNi(targetNi) {
   if (targetNi === '' || targetNi === null || targetNi === undefined) return 'calculate.validation.targetNiRequired';
-  const value = Number(targetNi);
+  const value = parseDecimalInput(targetNi);
   if (!Number.isFinite(value)) return 'calculate.validation.targetNiInvalid';
   if (!(value > 0)) return 'calculate.validation.targetNiPositive';
   return null;
@@ -74,7 +78,7 @@ export function validateTargetNi(targetNi) {
 
 export function validateTolerance(tolerance) {
   if (tolerance === '' || tolerance === null || tolerance === undefined) return 'calculate.validation.toleranceRequired';
-  const value = Number(tolerance);
+  const value = parseDecimalInput(tolerance);
   if (!Number.isFinite(value)) return 'calculate.validation.toleranceInvalid';
   if (value < 0) return 'calculate.validation.toleranceNonNegative';
   return null;
@@ -116,13 +120,13 @@ export function validateRecommendationSources(sources) {
 }
 
 function toNumericSource(source) {
-  const ni = Number(source.ni);
+  const ni = parseDecimalInput(source.ni);
   return {
     pileId: source.pileId.trim(),
     contractor: source.contractor.trim(),
     ni,
     assignedUnits: Number(source.units),
-    tonnesPerUnit: Number(source.tonnesPerUnit),
+    tonnesPerUnit: parseDecimalInput(source.tonnesPerUnit),
     oreClass: classifyOre(ni),
   };
 }
@@ -297,8 +301,8 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     return { ok: false, error: 'INVALID_INPUT', targetError, toleranceError, sourceErrors, fleetError };
   }
 
-  const targetNiValue = Number(targetNi);
-  const toleranceValue = Number(tolerance);
+  const targetNiValue = parseDecimalInput(targetNi);
+  const toleranceValue = parseDecimalInput(tolerance);
   const numericSources = sources.map(toNumericSource);
   const groups = groupSourcesByContractor(numericSources);
 
