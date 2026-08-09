@@ -123,6 +123,11 @@ export default {
   // source rows -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'No complete sources are available to calculate yet. Complete at least one source row (Pile ID, Contractor, Ni, DT, t/DT).',
 
+  // V2.5 -- Preserve Recommendation View While Editing Target/Tolerance.
+  // See locales/id.js's own header comment.
+  'calculate.recommendation.staleNotice': 'Recommendation needs to be recalculated.',
+  'calculate.recommendation.staleNoticeDetail': 'The result below uses the previous Target/Tolerance.',
+
   // Material Action / Fleet Action (V2.4 Phase 5) -- see locales/id.js's
   // header comment for the full note.
   'calculate.actions.materialTitle': 'MATERIAL ACTIONS',
@@ -138,6 +143,10 @@ export default {
   'calculate.actions.fleet.use': 'ACTIVE',
   'calculate.actions.fleet.move': 'MOVE',
   'calculate.actions.fleet.receive': 'RECEIVE',
+  // V2.5.1 corrective pass (this task's Sections 10/30) -- see id.js's
+  // own header comment for the AWAL/AKHIR rationale.
+  'calculate.actions.fleet.initial': 'INITIAL',
+  'calculate.actions.fleet.final': 'FINAL',
   // "STANDBY" (V2.4 Phase 6.1 Owner correction) replaces the old
   // "SEPARATE" wording -- see locales/id.js's header comment for the full
   // note. Internal domain field/kind name (separateUnits / 'separate')
@@ -148,6 +157,40 @@ export default {
   'calculate.actions.fleet.fromPileSuffix': '← {pileId}',
 
   'calculate.actions.bestAttainableNote': 'Actions based on the best attainable result',
+
+  // V2.5 -- Contractor Continuity and Operational Fleet Optimization. See
+  // id.js's own header comment for this whole block's rationale.
+  'calculate.actions.material.replaceDome': 'REPLACE DOME',
+  'calculate.actions.material.replaceDomeReason': 'This material should be replaced with a dome at Ni {min}% – {max}%.',
+
+  'calculate.actions.fleetOperational.reduce': 'REDUCE',
+  'calculate.actions.fleetOperational.splitLoading': 'SPLIT LOADING',
+  // V2.5.1 correction (this task's Section 13): "CLOSE DOME" alone, not
+  // "CLOSE DOME + MOVE" -- the MOVE detail already appears as its own
+  // line directly beneath the badge.
+  'calculate.actions.fleetOperational.closeDomeAndMove': 'CLOSE DOME',
+  'calculate.actions.fleetOperational.replaceDome': 'REPLACE DOME',
+  'calculate.actions.fleetOperational.conflict': 'OPERATIONAL CONFLICT',
+
+  // Reassures the reader a closed dome does not mean the Contractor itself
+  // stopped (this task's Section 13/19).
+  'calculate.continuity.closeDomeNote': 'Dome closed. Fleet remains active at another {contractor} loading point.',
+
+  'calculate.continuity.reduceDetail': 'Reduce {units} DT out of {total} DT total (~{pct}%).',
+  'calculate.continuity.reductionNotRecommended': 'A reduction of {units} DT ({pct}%) is not recommended.',
+
+  'calculate.continuity.splitTitle': 'Split Loading Point',
+  'calculate.continuity.newDomeLabel': 'Additional dome',
+  'calculate.continuity.suggestedGradeLabel': 'Suggested grade',
+  'calculate.continuity.gradeRange': 'Ni {min}% – {max}%',
+  'calculate.continuity.excavatorSupportNote': 'If excavator support is available, open a second loading point.',
+  'calculate.continuity.excavatorNotSupportLabel': 'If excavator support is not available:',
+  'calculate.continuity.replaceDetail': 'Replace {pileId} with a dome at Ni {min}% – {max}% to keep all {total} DT active.',
+
+  'calculate.continuity.contractorFleetSummary': '{total} DT · {loadingPoints} loading point',
+  'calculate.continuity.contractorInactiveSummary': '{units} DT inactive · {pct}%',
+
+  'calculate.continuity.conflictMessage': 'Target and fleet continuity cannot both be satisfied for this Contractor.',
 
   'calculate.validation.targetNiRequired': 'Target Ni is required.',
   'calculate.validation.targetNiInvalid': 'Target Ni must be a valid number.',

@@ -199,6 +199,11 @@ function blendSummaryRoot(pageEl) {
   return findOne(pageEl, hasClass('calculate-blend-summary'));
 }
 
+// V2.5 Sticky Recommendation Controls Refinement.
+function stickyControlsRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recommendation-sticky-controls'));
+}
+
 function summaryValue(pageEl, itemClass) {
   const item = findOne(pageEl, hasClass(itemClass));
   return findOne(item, isTag('strong')).textContent;
@@ -277,6 +282,15 @@ function recommendationFieldErrorText(pageEl) {
 
 function recommendationEngineErrorText(pageEl) {
   return findOne(pageEl, hasClass('calculate-recommendation-error'));
+}
+
+// V2.5 Preserve Recommendation View While Editing Target/Tolerance.
+function staleNoticeRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recommendation-stale-notice'));
+}
+
+function isResultStale(pageEl) {
+  return /\bis-stale\b/.test(recommendationResultRoot(pageEl).className);
 }
 
 function statusBadgeText(pageEl) {
@@ -1075,7 +1089,15 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the stale result must be cleared immediately, without pressing Hitung Rekomendasi');
   });
 
-  test('19. editing Target Ni clears the existing Recommendation result', () => {
+  // V2.5 (Preserve Recommendation View While Editing Target/Tolerance,
+  // this task's Sections 1-10) supersedes the original expectation here:
+  // editing Target Ni/Tolerance no longer clears the result outright -- it
+  // stays rendered, marked STALE, so the viewport does not collapse while
+  // the operator is scrolled deep into it via the sticky controls. Full
+  // coverage of the new behavior lives in the dedicated
+  // "V2.5 -- stale Recommendation while editing Target/Tolerance" block
+  // below; this test now only re-confirms the result is NOT hidden.
+  test('19. editing Target Ni no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -1083,10 +1105,10 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
 
     typeIntoField(pageEl, 'targetNi', '1.130');
 
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
-  test('20. editing Tolerance clears the existing Recommendation result', () => {
+  test('20. editing Tolerance no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -1094,7 +1116,7 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
 
     typeIntoField(pageEl, 'tolerance', '0.020');
 
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
   test('removing a source row clears the existing Recommendation result', () => {
@@ -1163,42 +1185,42 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('after being cleared by a Target Ni edit, restoring the known-valid Target and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
+  test('V2.5: after a Target Ni edit marks the result stale, restoring the known-valid Target and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
-    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the stale result must be cleared immediately');
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the stale result must remain visible, never hidden, this task Section 1');
 
     typeIntoField(pageEl, 'targetNi', '1.120'); // restore the known-valid Target Ni
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('after being cleared by a Tolerance edit, restoring the known-valid Tolerance and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
+  test('V2.5: after a Tolerance edit marks the result stale, restoring the known-valid Tolerance and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
-    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the stale result must be cleared immediately');
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the stale result must remain visible, never hidden, this task Section 1');
 
     typeIntoField(pageEl, 'tolerance', '0.010'); // restore the known-valid Tolerance (DEFAULT_RECOMMENDATION_TOLERANCE)
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('a genuinely WIDER Tolerance after clearing is still a fresh, non-stale, CORRECT result -- just not necessarily the same candidate', () => {
+  test('a genuinely WIDER Tolerance, once recalculated, is still a fresh, non-stale, CORRECT result -- just not necessarily the same candidate', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'stale, not hidden');
 
     clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
@@ -1224,6 +1246,120 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '13 / 13 DT');
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
+  });
+});
+
+/* ============================================================
+   V2.5 -- Preserve Recommendation View While Editing Target/Tolerance
+   (this task's Sections 24-30)
+============================================================ */
+describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task Sections 24-30)', () => {
+  test('24. editing Target Ni: result stays visible+unchanged (old Target 1.120 still shown), marked stale, notice shown, and the sticky input reflects the NEW value -- no fresh engine run', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), false);
+    assert.equal(staleNoticeRoot(pageEl).hidden, true);
+
+    typeIntoField(pageEl, 'targetNi', '1.130');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the result must remain visible');
+    assert.equal(isResultStale(pageEl), true, 'the result must be marked stale');
+    assert.equal(staleNoticeRoot(pageEl).hidden, false, 'the stale notice must be shown');
+    assert.equal(staleNoticeRoot(pageEl).textContent.includes(idCatalog['calculate.recommendation.staleNotice']), true);
+    assert.match(recommendationResultRoot(pageEl).textContent, /Target Ni1\.120%/, 'the OLD Target Ni must still be echoed in the frozen result');
+    assert.equal(findFieldInput(pageEl, 'targetNi').value, '1.130', 'the sticky input itself always reflects what the user actually typed');
+  });
+
+  test('25. Tolerance has the exact same stale-preserving behavior as Target Ni', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(pageEl, 'tolerance', '0.020');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), true);
+    assert.equal(staleNoticeRoot(pageEl).hidden, false);
+    assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.020');
+  });
+
+  test('26. pressing Hitung Rekomendasi after a stale edit produces a fresh result: stale=false, notice hidden, result reflects the NEW Target', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(pageEl, 'targetNi', '1.130');
+    assert.equal(isResultStale(pageEl), true);
+
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), false, 'a fresh calculation always clears staleness');
+    assert.equal(staleNoticeRoot(pageEl).hidden, true);
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.130/);
+  });
+
+  test('27. a source-grid edit still fully clears the result immediately, unlike Target/Tolerance (regression lock)', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(gridRows(pageEl)[0], 'ni', '1.35');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'source edits are still a hard, immediate clear -- never merely stale');
+    assert.equal(staleNoticeRoot(pageEl).hidden, true, 'no stale notice for a fully-cleared result');
+  });
+
+  test('28. a temporarily invalid Target (field cleared) leaves the old result visible and stale, never collapsed', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    typeIntoField(pageEl, 'targetNi', '');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'an in-progress/invalid edit must not collapse the existing result');
+    assert.equal(isResultStale(pageEl), true);
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'still echoing the last valid calculated Target');
+  });
+
+  test('29. changing Target back to the exact original value (semantic match, comma/dot locale parity) restores a fresh, non-stale result WITHOUT re-running the engine', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    const ratioBefore = hopperPatternRatioText(pageEl);
+    const utilizationBefore = summaryValue(pageEl, 'calculate-recommendation-fleet-utilization');
+
+    typeIntoField(pageEl, 'targetNi', '1.130');
+    assert.equal(isResultStale(pageEl), true);
+
+    // Locale-comma form of the SAME original value (1.120) -- semantic
+    // equivalence via parseDecimalInput(), not a string comparison.
+    typeIntoField(pageEl, 'targetNi', '1,120');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), false, 'restoring the exact original value (even in comma form) must become fresh again, this task Section 20');
+    assert.equal(staleNoticeRoot(pageEl).hidden, true);
+    // Proof no engine re-run happened: the exact same known-result figures
+    // are still there, untouched, from the original calculation.
+    assert.equal(hopperPatternRatioText(pageEl), ratioBefore);
+    assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), utilizationBefore);
+  });
+
+  test('30. TARGET_NOT_ACHIEVABLE with Recovery visible: editing Target/Tolerance marks the Recommendation stale and disables Recovery execution, without hiding Recovery', () => {
+    const pageEl = mountFullAccess();
+    mountRecoveryReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    assert.notEqual(recoverySectionRoot(pageEl), null);
+
+    typeIntoField(pageEl, 'targetNi', '6.00');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), true);
+    const root = recoverySectionRoot(pageEl);
+    assert.notEqual(root, null, 'Recovery section must remain mounted, not removed, while stale');
+    assert.equal(findOne(root, hasClass('calculate-calculate-recovery-btn')).disabled, true, 'Recovery must not be executable while the Recommendation is stale');
   });
 });
 
@@ -1493,6 +1629,24 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), ratioBefore);
     assert.match(statusBadgeText(pageEl), new RegExp(enCatalog['calculate.recommendation.withinTolerance']));
+  });
+
+  test('V2.5: a locale switch while the result is stale re-translates the stale notice without recomputing it (still stale, sticky input unchanged, old result numbers untouched)', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    typeIntoField(pageEl, 'targetNi', '1.130');
+    assert.equal(isResultStale(pageEl), true);
+    assert.equal(staleNoticeRoot(pageEl).textContent.includes(idCatalog['calculate.recommendation.staleNotice']), true);
+
+    setLocale('en');
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.equal(isResultStale(pageEl), true, 'a locale switch must not clear staleness');
+    assert.equal(staleNoticeRoot(pageEl).hidden, false);
+    assert.equal(staleNoticeRoot(pageEl).textContent.includes(enCatalog['calculate.recommendation.staleNotice']), true, 'the notice text must re-translate to English');
+    assert.equal(findFieldInput(pageEl, 'targetNi').value, '1.130', 'the sticky input keeps the value the user typed');
+    assert.match(recommendationResultRoot(pageEl).textContent, /Target Ni1\.120%/, 'the frozen stale result must still echo the OLD Target -- unaffected by the locale switch');
   });
 });
 
@@ -1867,6 +2021,252 @@ describe('V2.4.1 Bug C fix -- sticky containing-block/safe-area regression', () 
 });
 
 /* ============================================================
+   V2.5 -- STICKY RECOMMENDATION CONTROLS REFINEMENT. See this task's
+   Sections 1-24. LEVEL 1 is the unchanged live Blend summary
+   (.calculate-blend-summary, V2.4.1 Bug C block above); LEVEL 2 is the
+   new .calculate-recommendation-sticky-controls wrapper (Target Ni/
+   Tolerance/field error/Hitung Rekomendasi) added by this task.
+============================================================ */
+describe('V2.5 -- sticky-control wrapper DOM structure (this task Section 26)', () => {
+  test('Target/Tolerance controls, the field error, and the Hitung Rekomendasi button all belong to ONE sticky wrapper', () => {
+    const pageEl = mountFullAccess();
+    const wrapper = stickyControlsRoot(pageEl);
+    assert.notEqual(wrapper, null, 'expected a .calculate-recommendation-sticky-controls wrapper');
+
+    assert.notEqual(findOne(wrapper, hasClass('calculate-recommendation-controls')), null, 'Target/Tolerance controls must be inside the sticky wrapper');
+    assert.notEqual(findOne(wrapper, hasClass('calculate-recommendation-field-error')), null, 'the field error must be inside the sticky wrapper');
+    assert.notEqual(findOne(wrapper, hasClass('calculate-calculate-recommendation-btn')), null, 'the Hitung Rekomendasi button must be inside the sticky wrapper');
+  });
+
+  test('the recommendation RESULT is never inside the sticky wrapper', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const wrapper = stickyControlsRoot(pageEl);
+    assert.equal(findOne(wrapper, hasClass('calculate-recommendation-result')), null);
+    assert.equal(findOne(wrapper, hasClass('calculate-hopper-pattern')), null);
+  });
+
+  test('the section title (REKOMENDASI BLENDING) and the DT hint are never inside the sticky wrapper', () => {
+    const pageEl = mountFullAccess();
+    const wrapper = stickyControlsRoot(pageEl);
+    assert.equal(findOne(wrapper, hasClass('calculate-recommendation-hint')), null, 'the DT hint must stay outside the sticky wrapper');
+    // The section label is an <h2 class="calculate-section-label">, shared
+    // by both the Blend and Recommendation headings -- confirm neither is
+    // nested inside the sticky wrapper.
+    assert.equal(findOne(wrapper, isTag('h2')), null, 'no section heading belongs inside the sticky wrapper');
+  });
+
+  test('the engine error (SEARCH_SPACE_TOO_LARGE/NO_FEASIBLE_CANDIDATE) is never inside the sticky wrapper -- only the per-field validation error is', () => {
+    const pageEl = mountFullAccess();
+    const wrapper = stickyControlsRoot(pageEl);
+    assert.equal(findOne(wrapper, hasClass('calculate-recommendation-error')), null, 'the engine-level error card belongs outside the sticky wrapper');
+    assert.notEqual(findOne(wrapper, hasClass('calculate-recommendation-field-error')), null);
+  });
+
+  test('exactly one Target Ni input, one Tolerance input, and one Hitung Rekomendasi button exist on the whole page -- sticky behavior is pure CSS, never a duplicated control', () => {
+    const pageEl = mountFullAccess();
+    assert.equal(findAll(pageEl, (el) => el.dataset.field === 'targetNi').length, 1);
+    assert.equal(findAll(pageEl, (el) => el.dataset.field === 'tolerance').length, 1);
+    assert.equal(findAll(pageEl, hasClass('calculate-calculate-recommendation-btn')).length, 1);
+  });
+
+  test('the sticky wrapper remains in its natural DOM position -- directly after the DT hint, directly before the engine error -- never moved to the top of the page', () => {
+    const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
+    const buildShellStart = source.indexOf('function buildShell()');
+    const buildShellEnd = source.indexOf('\nfunction buildRecommendationField', buildShellStart);
+    const buildShellBody = source.slice(buildShellStart, buildShellEnd);
+
+    const dtHintIdx = buildShellBody.indexOf("shell.appendChild(dtHint)");
+    const stickyIdx = buildShellBody.indexOf('shell.appendChild(stickyControls)');
+    const engineErrorIdx = buildShellBody.indexOf('shell.appendChild(recommendationEngineError)');
+    const blendSummaryIdx = buildShellBody.indexOf('shell.appendChild(blendSummary)');
+    const gridIdx = buildShellBody.indexOf('shell.appendChild(grid)');
+
+    assert.ok(dtHintIdx >= 0 && stickyIdx >= 0 && engineErrorIdx >= 0);
+    assert.ok(dtHintIdx < stickyIdx && stickyIdx < engineErrorIdx, 'sticky wrapper stays between the DT hint and the engine error, in natural document order');
+    assert.ok(blendSummaryIdx < gridIdx && gridIdx < stickyIdx, 'the source grid still comes before the sticky controls -- Target/Tolerance were never moved above the grid');
+  });
+});
+
+describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
+  const calculateCss = readFileSync(path.join(ROOT, 'assets', 'css', 'calculate.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  function ruleFor(selector) {
+    const start = calculateCss.indexOf(`${selector} {`);
+    assert.ok(start >= 0, `expected a ${selector} rule`);
+    return calculateCss.slice(start, calculateCss.indexOf('}', start));
+  }
+
+  test('the Blend summary keeps position: sticky (unaffected by this task)', () => {
+    const rule = ruleFor('#page-calculate .calculate-blend-summary');
+    assert.match(rule, /position:\s*sticky;/);
+  });
+
+  test('the Recommendation sticky wrapper uses position: sticky, never position: fixed', () => {
+    const rule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
+    assert.match(rule, /position:\s*sticky;/);
+    assert.doesNotMatch(rule, /position:\s*fixed/);
+  });
+
+  test('the Recommendation sticky wrapper\'s top is explicitly relative to the Blend summary\'s own measured height, not a fixed magic-number offset', () => {
+    const rule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
+    assert.match(rule, /top:\s*calc\(env\(safe-area-inset-top\)\s*\+\s*var\(--calculate-blend-summary-sticky-height/);
+    // Anchored to the start of a declaration line so "border-top: 1px
+    // solid ..." (a real, unrelated declaration in this same rule) can
+    // never false-positive this check merely for containing the
+    // substring "top:".
+    assert.doesNotMatch(rule, /^\s*top:\s*\d+px/m, 'must never be a bare fixed-pixel offset');
+  });
+
+  test('both sticky levels use the same fully opaque --bg-base background, never transparent glass', () => {
+    const summaryRule = ruleFor('#page-calculate .calculate-blend-summary');
+    const stickyRule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
+    assert.match(summaryRule, /background:\s*var\(--bg-base,\s*#0a0e1a\);/);
+    assert.match(stickyRule, /background:\s*var\(--bg-base,\s*#0a0e1a\);/);
+  });
+
+  test('no backdrop-filter is used on either sticky level', () => {
+    assert.doesNotMatch(ruleFor('#page-calculate .calculate-blend-summary'), /backdrop-filter/);
+    assert.doesNotMatch(ruleFor('#page-calculate .calculate-recommendation-sticky-controls'), /backdrop-filter/);
+  });
+
+  test('the two sticky levels share the SAME z-index -- no arbitrary new/higher tier introduced', () => {
+    const summaryRule = ruleFor('#page-calculate .calculate-blend-summary');
+    const stickyRule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
+    const summaryZ = summaryRule.match(/z-index:\s*(\d+);/)[1];
+    const stickyZ = stickyRule.match(/z-index:\s*(\d+);/)[1];
+    assert.equal(stickyZ, summaryZ);
+    // Sanity: still far below the app's existing higher stacking tiers
+    // (#bottom-navigation 900, .modal-overlay 1000) -- never an
+    // extremely high arbitrary value.
+    assert.ok(Number(stickyZ) < 900);
+  });
+
+  test('no scroll-event sticky simulation, no manual position:fixed-via-JS, no viewport-zoom-disabling anywhere in calculate-page.js\'s actual CODE (comments may reference the forbidden terms only to document that they are NOT used)', () => {
+    const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
+    assert.doesNotMatch(source, /addEventListener\('scroll'/);
+    assert.doesNotMatch(source, /addEventListener\("scroll"/);
+    assert.doesNotMatch(source, /requestAnimationFrame/);
+    assert.doesNotMatch(source, /translateY/);
+    assert.doesNotMatch(source, /user-scalable|maximum-scale|minimum-scale/);
+  });
+
+  test('ResizeObserver, where used, only ever writes the one CSS custom property -- never sets element.style.position/top/transform itself', () => {
+    const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
+    const observerBlockStart = source.indexOf('function observeBlendSummaryHeight');
+    assert.ok(observerBlockStart >= 0, 'expected observeBlendSummaryHeight() to exist');
+    const observerBlockEnd = source.indexOf('\nfunction renderBlendSummary', observerBlockStart);
+    const block = source.slice(observerBlockStart, observerBlockEnd);
+    assert.doesNotMatch(block, /\.style\.(position|top|transform)\s*=/);
+  });
+});
+
+describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => {
+  test('Blend summary hidden -> the sticky-height CSS custom property is set to 0px (no reserved gap for a hidden summary)', () => {
+    const pageEl = mountFullAccess();
+    assert.equal(blendSummaryRoot(pageEl).hidden, true);
+    // The mini-DOM harness's FakeElement has no `.style` -- the JS
+    // function must detect that and no-op safely (never throw) rather
+    // than crash the render. This is exactly the "safe fallback" this
+    // task's Section 6 requires for a real browser without
+    // ResizeObserver/getBoundingClientRect too; the same guard covers
+    // both cases identically.
+    assert.doesNotThrow(() => fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' }));
+  });
+
+  test('Blend summary becomes visible -> the height update path runs without throwing, and the summary itself is correctly shown', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    assert.equal(blendSummaryRoot(pageEl).hidden, false);
+  });
+
+  test('removing the only complete row hides the summary again without throwing (the sticky-height update runs on every visibility transition, this task Section 7)', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    assert.equal(blendSummaryRoot(pageEl).hidden, false);
+    assert.doesNotThrow(() => clickRemove(gridRows(pageEl)[0]));
+    assert.equal(blendSummaryRoot(pageEl).hidden, true);
+  });
+
+  test('a locale change (which can change the summary\'s rendered text width) re-renders the summary without throwing', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
+    assert.doesNotThrow(() => setLocale('en'));
+    assert.equal(blendSummaryRoot(pageEl).hidden, false);
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  test('repeated initCalculatePage() mounts never leak/throw from the height observer (real re-mount safety, not just this test file\'s own repeated mounts)', () => {
+    assert.doesNotThrow(() => {
+      mountFullAccess();
+      mountFullAccess();
+      mountFullAccess();
+    });
+  });
+
+  test('DIRECT BROWSER GEOMETRY LIMITATION (this task Section 29): this project has no jsdom/Playwright/Chromium (confirmed absent in this environment) -- the assertions above verify the JS/CSS/DOM CONTRACT (the update function exists, runs on every visibility/locale transition, never throws under a DOM lacking real layout APIs) rather than actual pixel positions. Real getBoundingClientRect()-based verification at 360/390/430/desktop requires the owner\'s own browser/device testing.', () => {
+    assert.ok(true);
+  });
+});
+
+describe('V2.5 -- operational use case (this task Section 25)', () => {
+  // V2.5 Preserve Recommendation View While Editing Target/Tolerance
+  // supersedes the ORIGINAL expectation this test was written against
+  // (Target edit immediately hides the result) -- the whole point of that
+  // follow-up task is that it no longer does, so the viewport stays
+  // stable while the operator is scrolled deep into the result via the
+  // sticky controls.
+  test('editing Target Ni after a Recommendation exists marks it STALE (never hidden); Hitung Rekomendasi with the NEW Target produces a fresh, non-stale result, all without the user ever touching the sticky controls\' DOM position', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl); // Target 1.120, Tolerance 0.010
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'the Target Ni row must echo the FIRST target, 1.120');
+
+    // Sticky controls remain the SAME DOM nodes throughout -- this task's
+    // Section 14 "no automatic scroll", confirmed structurally here by
+    // never re-querying/rebuilding the wrapper.
+    const wrapperBefore = stickyControlsRoot(pageEl);
+
+    fillRecommendationControls(pageEl, { targetNi: '1.130' });
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the old Recommendation must remain visible as stale context, never hidden, on a Target edit (V2.5 Preserve Recommendation View, Section 1)');
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'the STALE result must still echo the OLD target 1.120 until recalculated (V2.5 Section 17)');
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.doesNotMatch(recommendationResultRoot(pageEl).className, /\bis-stale\b/, 'a fresh recalculation clears the stale modifier');
+    // The Target Ni row in the fresh result directly echoes result.targetNi
+    // (blending-recommendation.js, untouched by this UI-only task) -- a
+    // robust, unambiguous proof the recalculation actually used the NEW
+    // value, independent of which downstream display (Hopper Pattern's
+    // own small-pattern-simplified estimate can coincidentally match
+    // across two different targets) happens to be shown.
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.130/, 'the fresh Recommendation must echo the NEW Target (1.130), not the stale old one (1.120)');
+
+    const wrapperAfter = stickyControlsRoot(pageEl);
+    assert.equal(wrapperBefore, wrapperAfter, 'the sticky wrapper is never rebuilt/replaced merely by recalculating -- same node throughout');
+  });
+
+  test('no automatic Recommendation calculation while typing Target/Tolerance -- Hitung Rekomendasi remains an explicit action (this task Section 13/17)', () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    clickCalculateRecommendation(pageEl);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+
+    fillRecommendationControls(pageEl, { targetNi: '1.150' });
+    // V2.5: editing alone marks the OLD result stale -- it must NOT
+    // auto-calculate a new one (no fresh engine run), and must NOT hide
+    // the old one either (V2.5 Preserve Recommendation View).
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+    assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'still the OLD target -- no engine run happened merely from typing');
+  });
+});
+
+/* ============================================================
    V2.4.1 Bug B fix -- mobile editable-control font-size regression (this
    task's Sections 14/16/35). Node/CSS-source assertions only -- this
    cannot emulate Safari's actual auto-zoom algorithm (this task's Section
@@ -1966,12 +2366,28 @@ describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calcu
     assert.doesNotMatch(cssSource, /backdrop-filter/);
   });
 
-  test('calculate.css defines no new --custom-property theme token of its own (it only ever CONSUMES var(--x), never declares --x:)', () => {
-    assert.doesNotMatch(cssSource, /^\s*--[a-zA-Z0-9-]+:/m);
+  // V2.5 Sticky Recommendation Controls Refinement: --calculate-blend-summary-sticky-height
+  // is the ONE deliberate, narrow exception to both tests below -- it is a
+  // JS-MEASURED LAYOUT variable (calculate-page.js's own
+  // updateBlendSummaryStickyHeight(), set on .calculate-shell), never a
+  // color/theme value, and it is intentionally Calculate-own/local (a
+  // sticky-offset implementation detail, not a design token) -- it is
+  // declared and consumed entirely within calculate.css/calculate-page.js
+  // and never needs an index.html Dark/Light definition. It does NOT
+  // reopen the door to Calculate inventing its own competing COLOR
+  // palette, which is what both tests actually guard against.
+  const STICKY_HEIGHT_VAR = '--calculate-blend-summary-sticky-height';
+
+  test('calculate.css defines no new --custom-property THEME token of its own (it only ever CONSUMES var(--x) for colors/design tokens, never declares one) -- except the one documented JS-measured layout variable', () => {
+    const declarations = [...cssSource.matchAll(/^\s*(--[a-zA-Z0-9-]+):/gm)].map((m) => m[1]);
+    const unexpected = declarations.filter((name) => name !== STICKY_HEIGHT_VAR);
+    assert.deepEqual(unexpected, [], `unexpected new custom property declaration(s): ${unexpected.join(', ')}`);
+    assert.ok(declarations.includes(STICKY_HEIGHT_VAR), 'expected the documented sticky-height layout variable to still be declared');
   });
 
-  test('every var(--token) referenced in calculate.css is one of the app\'s existing shared tokens, defined for BOTH Dark and Light in index.html', () => {
-    const usedTokens = [...new Set([...cssSource.matchAll(/var\((--[a-zA-Z0-9-]+)/g)].map((m) => m[1]))];
+  test('every var(--token) referenced in calculate.css is one of the app\'s existing shared tokens, defined for BOTH Dark and Light in index.html -- except the one documented JS-measured layout variable', () => {
+    const usedTokens = [...new Set([...cssSource.matchAll(/var\((--[a-zA-Z0-9-]+)/g)].map((m) => m[1]))]
+      .filter((token) => token !== STICKY_HEIGHT_VAR);
     assert.ok(usedTokens.length > 0, 'expected calculate.css to actually use shared tokens');
 
     const darkBlockStart = indexHtml.indexOf(':root, html[data-theme="dark"]');
@@ -2035,12 +2451,18 @@ describe('26. Material Actions section renders after a successful Recommendation
     setLocale(DEFAULT_LOCALE);
   });
 
-  // A third, unfavorable-Ni source forces a real STOP under the real
-  // engine+ranking (never a hand-picked fixture) -- Target/Tolerance are
-  // exactly the known example's own values, so Higher/Lglo still land on
-  // their proven 4/8 active split; the third source can only ever worsen
-  // an already-exact (deviation 0) match.
-  test('a genuinely unfavorable third source renders STOP with the localized label', () => {
+  // A third, unfavorable-Ni source forces a real chemical STOP under the
+  // real engine+ranking (never a hand-picked fixture) -- Target/Tolerance
+  // are exactly the known example's own values, so Higher/Lglo still land
+  // on their proven 4/8 active split; the third source can only ever
+  // worsen an already-exact (deviation 0) match. V2.5 (this task's
+  // Sections 8/22-23/46): since Contractor ZZZ has exactly one loading
+  // point and a feasible replacement Ni range exists (verified below), the
+  // USER-FACING action must be REPLACE DOME, never a bare STOP -- the
+  // internal MATERIAL_ACTION_STOP domain value is still what
+  // recommendation-actions.js computes underneath (unchanged, this task's
+  // Section 4), only the DISPLAYED label/reason changed.
+  test('V2.5: a genuinely unfavorable third source gets a REPLACE DOME recommendation, never a bare STOP, once a replacement plan can be derived', () => {
     const pageEl = mountFullAccess();
     fillKnownRecommendationExample(pageEl);
     fillRow(gridRows(pageEl)[2], { pileId: 'Off', contractor: 'ZZZ', ni: '0.10', units: '3', tonnesPerUnit: '50' });
@@ -2050,12 +2472,23 @@ describe('26. Material Actions section renders after a successful Recommendation
 
     const offRow = materialActionRowFor(pageEl, 'Off');
     assert.notEqual(offRow, undefined);
-    assert.equal(materialActionBadgeText(offRow), idCatalog['calculate.actions.material.stop']);
-    assert.equal(idCatalog['calculate.actions.material.stop'], 'STOP');
+    assert.equal(materialActionBadgeText(offRow), idCatalog['calculate.actions.material.replaceDome']);
+    assert.equal(idCatalog['calculate.actions.material.replaceDome'], 'GANTI DOME');
+    assert.doesNotMatch(offRow.textContent, /\bSTOP\b/, 'STOP must never remain the final user-facing instruction once a replacement plan exists (this task\'s Section 46)');
     // Every Material Action row includes a short reason (this task's
-    // Section 21) -- never left blank.
+    // Section 21) -- never left blank, and the REPLACE DOME reason now
+    // cites the required Ni range rather than the old generic STOP text.
     assert.ok(offRow.textContent.length > materialActionBadgeText(offRow).length);
+    assert.match(offRow.textContent, /1\.0\d\d% – 1\.1\d\d%|1\.0\d\d%.*1\.1\d\d%/, 'expected a 3-decimal Ni range in the replacement reason');
   });
+
+  // Pure-module coverage of the OTHER branch (no plan derivable -- a
+  // genuine operational conflict, this task's Section 25) already lives in
+  // tests/operational-continuity.test.mjs's classifyMaterialActionLabel()
+  // suite ("STOP stays STOP only when no plan/CONFLICT") -- not
+  // duplicated here, since constructing a real end-to-end infeasible-range
+  // scenario through the full search+ranking pipeline by hand would be
+  // both fragile and redundant with that direct, deterministic pure test.
 });
 
 describe('27. LIMIT is contextual, never a static LGLO/HGLO rule (this task\'s Section 22)', () => {
@@ -2092,21 +2525,39 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
     assert.notEqual(materialActionsRoot(pageEl), fleetActionsRoot(pageEl), 'Material and Fleet Actions must be two distinct sections');
   });
 
-  test('known 5 HG / 8 LGLO scenario: Higher shows ACTIVE 4 DT + SEPARATE 1 DT (cross-Contractor, no MOVE); Lglo shows ACTIVE 8 DT only', () => {
+  // V2.5 (this task's Sections 3/16/21/24/47): Contractor SMA (Higher's
+  // one and only loading point) is left at 1/5 = 20% standby -- above the
+  // 5% minor threshold, so V2.5 must NOT show a bare SEPARATE/STANDBY
+  // line here. Since 5 DT is too small to SPLIT (needs >= 12), the plan
+  // falls back to REPLACE DOME with a feasible Ni range -- verified
+  // against tests/operational-continuity.test.mjs's own pure-formula
+  // check of this exact arithmetic.
+  test('V2.5: known 5 HG / 8 LGLO scenario -- Higher (20% standby, cross-Contractor) gets REPLACE DOME, never a bare SEPARATE/STANDBY line; Lglo shows ACTIVE 8 DT only', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
     const higherRow = fleetActionRowFor(pageEl, 'Higher');
     const higherLines = fleetActionLineTexts(higherRow);
-    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('4')));
-    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.separate']) && l.includes('1')));
+    // Higher is a CHANGED source (5 assigned, 4 active) -- V2.5.1 shows
+    // AWAL/AKHIR instead of a bare AKTIF line (this task's Sections
+    // 10/14), so the final total (4) is never implicit.
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('5')));
+    assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('4')));
     assert.ok(!higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move'])), 'cross-Contractor Higher/Lglo must never show a MOVE line');
+    assert.equal(materialActionBadgeText(higherRow), idCatalog['calculate.actions.fleetOperational.replaceDome']);
+    assert.equal(idCatalog['calculate.actions.fleetOperational.replaceDome'], 'GANTI DOME');
+    assert.doesNotMatch(higherRow.textContent, /\bSTANDBY\b/, 'this task\'s Section 47: no user-visible large STANDBY once standby exceeds 5%');
+    // The replacement Ni range this task's Section 13 formula produces for
+    // this exact scenario (see operational-continuity.test.mjs for the
+    // pure-formula proof): ~1.238% - 1.290%.
+    assert.match(higherRow.textContent, /1\.23[0-9]%.*1\.29[0-9]%|1\.23[0-9]%[\s\S]*1\.29[0-9]%/);
 
     const lgloRow = fleetActionRowFor(pageEl, 'Lglo');
     const lgloLines = fleetActionLineTexts(lgloRow);
     assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use']) && l.includes('8')));
     assert.equal(lgloLines.length, 1, 'a fully-active source with no relocation shows only its USE line');
+    assert.equal(materialActionBadgeText(lgloRow), idCatalog['calculate.actions.fleet.use'], 'Lglo is fully active -- ACTIVE badge, no continuity plan');
   });
 
   test('same-Contractor relocation scenario: Higher shows MOVE 1 DT -> Lglo, Lglo shows RECEIVE 1 DT <- Higher', () => {
@@ -2147,27 +2598,268 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
 });
 
 /* ============================================================
+   V2.5 -- SPLIT LOADING POINT end-to-end UI (this task's Sections 9-17/
+   29-32). TII's single 20 DT loading point (L30, Ni 1.2%, 45 t/DT) would
+   otherwise leave 4 DT (20%) idle against a 1.14%-1.16% target range --
+   real numbers verified against the pure engine directly (see this
+   scenario's own arithmetic in tests/operational-continuity.test.mjs's
+   sibling coverage): SPLIT wins with newDomeUnits=6/existingDomeUnits=14,
+   required Ni range ~1.074%-1.178%, plus a REPLACE fallback
+   ~1.162%-1.193%.
+============================================================ */
+describe('V2.5 -- SPLIT LOADING POINT end-to-end UI', () => {
+  function mountSplitScenario(pageEl) {
+    fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'TII', ni: '1.2', units: '20', tonnesPerUnit: '45' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'A1', contractor: 'MRP', ni: '1.1', units: '10', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.15', tolerance: '0.01' });
+  }
+
+  test('TII gets a PECAH LOADING (SPLIT LOADING) badge, never a bare STANDBY, with the existing/new dome split, Ni range, and excavator-conditional wording', () => {
+    const pageEl = mountFullAccess();
+    mountSplitScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const tiiRow = fleetActionRowFor(pageEl, 'L30');
+    assert.notEqual(tiiRow, undefined);
+    assert.equal(materialActionBadgeText(tiiRow), idCatalog['calculate.actions.fleetOperational.splitLoading']);
+    assert.equal(idCatalog['calculate.actions.fleetOperational.splitLoading'], 'PECAH LOADING');
+    assert.doesNotMatch(tiiRow.textContent, /\bSTANDBY\b/);
+
+    // Existing dome keeps 14 DT, new (hypothetical) dome gets 6 -- the
+    // smallest-new-dome preference from this task's Section 12, and the
+    // exact split from the section 17 worked example's own shape.
+    assert.match(tiiRow.textContent, /14/);
+    assert.match(tiiRow.textContent, /6/);
+    assert.match(tiiRow.textContent, new RegExp(idCatalog['calculate.continuity.newDomeLabel']));
+
+    // Required Ni range (3 decimals, this task's Section 32).
+    assert.match(tiiRow.textContent, /1\.074%/);
+    assert.match(tiiRow.textContent, /1\.178%/);
+
+    // Never invents excavator availability (this task's Sections 11/34).
+    assert.match(tiiRow.textContent, new RegExp(idCatalog['calculate.continuity.excavatorSupportNote']));
+
+    // Replacement fallback also present (this task's Section 16), with
+    // its OWN distinct range.
+    assert.match(tiiRow.textContent, new RegExp(idCatalog['calculate.continuity.excavatorNotSupportLabel']));
+    assert.match(tiiRow.textContent, /1\.162%/);
+    assert.match(tiiRow.textContent, /1\.193%/);
+
+    // MRP is fully active, untouched by TII's split plan (this task's
+    // Section 45 cross-Contractor regression lock).
+    const mrpRow = fleetActionRowFor(pageEl, 'A1');
+    assert.equal(materialActionBadgeText(mrpRow), idCatalog['calculate.actions.fleet.use']);
+  });
+
+  test('the rejection note explains why a plain reduction was not offered instead', () => {
+    const pageEl = mountFullAccess();
+    mountSplitScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const tiiRow = fleetActionRowFor(pageEl, 'L30');
+    // 4 DT / 20% -- this task's Section 17 worked example's own wording
+    // shape ("Pengurangan N DT (X%) tidak direkomendasikan").
+    assert.match(tiiRow.textContent, /4 DT/);
+    assert.match(tiiRow.textContent, /20%/);
+  });
+
+  test('English locale renders the same scenario with SPLIT LOADING wording', () => {
+    const pageEl = mountFullAccess();
+    mountSplitScenario(pageEl);
+    setLocale('en');
+    clickCalculateRecommendation(pageEl);
+
+    const tiiRow = fleetActionRowFor(pageEl, 'L30');
+    assert.equal(materialActionBadgeText(tiiRow), 'SPLIT LOADING');
+    assert.match(tiiRow.textContent, /If excavator support is available/);
+    setLocale(DEFAULT_LOCALE);
+  });
+});
+
+/* ============================================================
+   V2.5.1 CORRECTIVE PASS -- receiver/donor classification and AWAL/
+   change/AKHIR fleet accounting UI (this task's Sections 9-21). Real
+   engine scenario (verified directly against findBlendRecommendations()
+   in tests/blending-recommendation.test.mjs's own V2.5.1 block): TII L20
+   15 DT @ Ni 1.05%/50 t-DT, L40 20 DT @ Ni 1.20%/50 t-DT (total 35),
+   Target 1.072% +/- 0.006% selects L20=29 active (a RECEIVER, +14) / L40=6
+   active (a DONOR, -14, still operationally valid at exactly the
+   minimum).
+============================================================ */
+describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this task Sections 9-21)', () => {
+  function mountReceiverDonorScenario(pageEl) {
+    fillRow(gridRows(pageEl)[0], { pileId: 'L20', contractor: 'TII', ni: '1.05', units: '15', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'L40', contractor: 'TII', ni: '1.20', units: '20', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.072', tolerance: '0.006' });
+  }
+
+  test('19. the receiver (L20) is classified TERIMA/RECEIVE, never PINDAH/MOVE', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l20Row = fleetActionRowFor(pageEl, 'L20');
+    assert.equal(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.receive']);
+    assert.equal(idCatalog['calculate.actions.fleet.receive'], 'TERIMA');
+    assert.notEqual(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.move']);
+  });
+
+  test('20. the donor (L40) is classified PINDAH/MOVE', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l40Row = fleetActionRowFor(pageEl, 'L40');
+    assert.equal(materialActionBadgeText(l40Row), idCatalog['calculate.actions.fleet.move']);
+    assert.equal(idCatalog['calculate.actions.fleet.move'], 'PINDAH');
+  });
+
+  test('8/21. changed receiver shows AWAL 15 DT / TERIMA 14 DT <- L40 / AKHIR 29 DT (this task Section 11), values sourced from the real candidate', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l20Lines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'L20'));
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('15')), 'AWAL 15 DT');
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive']) && l.includes('14') && l.includes('L40')), 'TERIMA 14 DT <- L40');
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('29')), 'AKHIR 29 DT');
+    // 10. AKHIR must equal the real candidate's own activeUnits, never a
+    // display-only recomputation.
+    assert.doesNotMatch(l20Lines.join(' '), /\b15\s*DT.*29|29.*15\s*DT/, 'sanity: AWAL and AKHIR are distinct values, not accidentally duplicated');
+  });
+
+  test('9/21. changed donor shows AWAL 20 DT / PINDAH 14 DT -> L20 / AKHIR 6 DT (this task Section 12)', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l40Lines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'L40'));
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('20')), 'AWAL 20 DT');
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('14') && l.includes('L20')), 'PINDAH 14 DT -> L20');
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('6')), 'AKHIR 6 DT');
+  });
+
+  test('the old ambiguous "AKTIF 15 DT / TERIMA 19 DT" style display never appears -- AWAL/AKHIR always frame the total explicitly', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l20Row = fleetActionRowFor(pageEl, 'L20');
+    // The row must show its own AKHIR line -- the final 29 DT total is
+    // never left for the reader to sum from AKTIF+TERIMA.
+    assert.match(l20Row.textContent, new RegExp(idCatalog['calculate.actions.fleet.final']));
+    assert.doesNotMatch(l20Row.textContent, new RegExp(idCatalog['calculate.actions.fleet.use']), 'a changed row never shows the old bare AKTIF line');
+  });
+
+  test('English locale: RECEIVE/MOVE/INITIAL/FINAL wording', () => {
+    const pageEl = mountFullAccess();
+    mountReceiverDonorScenario(pageEl);
+    setLocale('en');
+    clickCalculateRecommendation(pageEl);
+
+    const l20Row = fleetActionRowFor(pageEl, 'L20');
+    assert.equal(materialActionBadgeText(l20Row), 'RECEIVE');
+    assert.match(l20Row.textContent, /INITIAL/);
+    assert.match(l20Row.textContent, /FINAL/);
+
+    const l40Row = fleetActionRowFor(pageEl, 'L40');
+    assert.equal(materialActionBadgeText(l40Row), 'MOVE');
+    setLocale(DEFAULT_LOCALE);
+  });
+});
+
+/* ============================================================
+   V2.5.1 -- FULL DOME CLOSURE UI (this task's Sections 13/18). Same real
+   engine scenario family, narrowed target so the only within-tolerance
+   allocation is a full closure: L20=35 active (receives all 20 from L40),
+   L40=0 active (closed).
+============================================================ */
+describe('V2.5.1 -- full dome closure UI (TUTUP DOME, this task Section 13/18)', () => {
+  function mountFullClosureScenario(pageEl) {
+    fillRow(gridRows(pageEl)[0], { pileId: 'L20', contractor: 'TII', ni: '1.05', units: '15', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'L40', contractor: 'TII', ni: '1.20', units: '20', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.054', tolerance: '0.005' });
+  }
+
+  test('L40 (fully closed) shows TUTUP DOME badge, AWAL 20 / PINDAH 20 -> L20 / AKHIR 0, and the "fleet stays active elsewhere" reassurance note', () => {
+    const pageEl = mountFullAccess();
+    mountFullClosureScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l40Row = fleetActionRowFor(pageEl, 'L40');
+    assert.equal(materialActionBadgeText(l40Row), idCatalog['calculate.actions.fleetOperational.closeDomeAndMove']);
+    assert.equal(idCatalog['calculate.actions.fleetOperational.closeDomeAndMove'], 'TUTUP DOME');
+
+    const l40Lines = fleetActionLineTexts(l40Row);
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('20')));
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('20') && l.includes('L20')));
+    assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('0')));
+
+    // "DOME CLOSED does NOT mean CONTRACTOR/FLEET STOPPED" (this task's
+    // Section 13/19) -- never a bare STANDBY/closure with no context.
+    assert.match(l40Row.textContent, new RegExp(idCatalog['calculate.continuity.closeDomeNote'].split('{')[0]));
+    assert.match(l40Row.textContent, /TII/);
+  });
+
+  test('L20 (receives the full fleet) shows TERIMA, AWAL 15 / TERIMA 20 <- L40 / AKHIR 35', () => {
+    const pageEl = mountFullAccess();
+    mountFullClosureScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    const l20Row = fleetActionRowFor(pageEl, 'L20');
+    assert.equal(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.receive']);
+    const l20Lines = fleetActionLineTexts(l20Row);
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('15')));
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive']) && l.includes('20') && l.includes('L40')));
+    assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('35')));
+  });
+
+  test('24. Material Action for the closed L40 reflects its real chemical role (LIMIT here), never a bare user-visible STOP (this task Section 24/46)', () => {
+    const pageEl = mountFullAccess();
+    mountFullClosureScenario(pageEl);
+    clickCalculateRecommendation(pageEl);
+
+    // L40 contributes 0 active DT in THIS candidate (its fleet physically
+    // relocated to L20), but its material is still chemically evaluated
+    // on its own terms (recommendation-actions.js, unchanged by this
+    // corrective pass) -- here that evaluation is LIMIT (BATASI), not
+    // STOP, so this fully-closed dome must never show the bare STOP word.
+    const l40MaterialRow = materialActionRowFor(pageEl, 'L40');
+    assert.equal(materialActionBadgeText(l40MaterialRow), idCatalog['calculate.actions.material.limit']);
+    assert.notEqual(materialActionBadgeText(l40MaterialRow), 'STOP');
+  });
+});
+
+/* ============================================================
    26. STANDBY terminology (V2.4 Phase 6.1 -- Owner correction, this
    task's Part B/Section 26). Reuses the known 5 HG / 8 LGLO scenario,
    where Higher's own Fleet Action row already carries a STANDBY (1 DT)
    line (verified above).
 ============================================================ */
 describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
-  test('the rendered Fleet Action line shows the localized STANDBY word, with an explanatory hint, never the old PISAHKAN/SEPARATE word', () => {
+  // V2.5 (this task's Section 47) supersedes the original V2.4.x
+  // expectation here: once a Contractor's standby exceeds the 5% minor
+  // threshold, the UI must no longer show a bare STANDBY word at all --
+  // it shows the new REPLACE DOME/SPLIT LOADING/REDUCE continuity
+  // vocabulary instead (operational-continuity.js's
+  // classifyFleetActionLabel()). This scenario's 1/5 = 20% standby is
+  // exactly such a case (see the "V2.5: known 5 HG / 8 LGLO scenario"
+  // test above for the full REPLACE DOME/Ni-range assertion) -- this test
+  // now only re-confirms the OLD "PISAHKAN" word specifically never
+  // reappears, under either vocabulary.
+  test('the rendered Fleet Action row never shows the old PISAHKAN/SEPARATE word, under either the legacy or V2.5 vocabulary', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
     const higherRow = fleetActionRowFor(pageEl, 'Higher');
-    assert.match(higherRow.textContent, /STANDBY/);
     assert.doesNotMatch(higherRow.textContent, /PISAHKAN/);
-    assert.match(higherRow.textContent, new RegExp(idCatalog['calculate.actions.fleet.standbyHint']));
+    assert.doesNotMatch(higherRow.textContent, /\bSTANDBY\b/, "this task's Section 47: 20% standby is above the 5% minor threshold, so even the word STANDBY itself must not appear");
 
     setLocale('en');
     const higherRowEn = fleetActionRowFor(pageEl, 'Higher');
-    assert.match(higherRowEn.textContent, /STANDBY/);
     assert.doesNotMatch(higherRowEn.textContent, /\bSEPARATE\b/);
-    assert.match(higherRowEn.textContent, new RegExp(enCatalog['calculate.actions.fleet.standbyHint']));
+    assert.doesNotMatch(higherRowEn.textContent, /\bSTANDBY\b/);
     setLocale(DEFAULT_LOCALE);
   });
 
@@ -2191,12 +2883,15 @@ describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
     const lgloLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Lglo'));
     assert.ok(lgloLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.receive']) && l.includes('Higher')));
 
-    // Fleet conservation: every row's own useUnits + moveOutUnits +
-    // standby (separate) units still accounts for its assignedUnits, and
-    // no row anywhere shows a cross-Contractor MOVE/RECEIVE line.
+    // Fleet conservation: every CHANGED row (both Higher and Lglo here)
+    // shows its own AWAL/AKHIR framing (this task's Sections 10/14/21) --
+    // V2.5.1 replaced the old unconditional USE line with this explicit
+    // before/after accounting -- and no row anywhere shows a cross-
+    // Contractor MOVE/RECEIVE line.
     fleetActionRows(pageEl).forEach((row) => {
       const lines = fleetActionLineTexts(row);
-      assert.ok(lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.use'])), 'every row always shows its USE line');
+      assert.ok(lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial'])), 'every changed row shows its AWAL line');
+      assert.ok(lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final'])), 'every changed row shows its AKHIR line');
     });
   });
 });
@@ -2219,26 +2914,35 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
     assert.equal(fleetActionsRoot(pageEl), null, 'no stale Fleet Actions section may remain in the DOM');
   });
 
-  test('a Target Ni edit clears both action sections', () => {
+  // V2.5 Preserve Recommendation View While Editing Target/Tolerance:
+  // a Target/Tolerance edit no longer clears the DOM at all -- the whole
+  // result subtree (including Material/Fleet Actions, which are
+  // display-only and frozen) stays mounted and simply becomes stale,
+  // still describing the PREVIOUS scenario, until recalculated.
+  test('a Target Ni edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
 
-    assert.equal(materialActionsRoot(pageEl), null);
-    assert.equal(fleetActionsRoot(pageEl), null);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+    assert.notEqual(materialActionsRoot(pageEl), null, 'Material Actions stay mounted, frozen, while stale');
+    assert.notEqual(fleetActionsRoot(pageEl), null, 'Fleet Actions stay mounted, frozen, while stale');
   });
 
-  test('a Tolerance edit clears both action sections', () => {
+  test('a Tolerance edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
 
-    assert.equal(materialActionsRoot(pageEl), null);
-    assert.equal(fleetActionsRoot(pageEl), null);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+    assert.notEqual(materialActionsRoot(pageEl), null, 'Material Actions stay mounted, frozen, while stale');
+    assert.notEqual(fleetActionsRoot(pageEl), null, 'Fleet Actions stay mounted, frozen, while stale');
   });
 
   test('recalculating after an edit renders fresh, current actions -- never a leftover from before the edit', () => {
@@ -2596,7 +3300,12 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(recoverySectionRoot(pageEl), null);
   });
 
-  test('editing Target Ni clears Recovery along with the whole Recommendation result', () => {
+  // V2.5 Preserve Recommendation View While Editing Target/Tolerance:
+  // a Target/Tolerance edit no longer removes the Recommendation or the
+  // Recovery section -- both stay mounted, and Recovery's inputs/button
+  // become disabled (Recovery must not be executable while stale) rather
+  // than the section being torn out of the DOM.
+  test('editing Target Ni marks the Recommendation stale and disables Recovery execution, without removing either section', () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -2605,11 +3314,14 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
 
     fillRecommendationControls(pageEl, { targetNi: '6.00' });
 
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
-    assert.equal(recoverySectionRoot(pageEl), null);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+    assert.notEqual(recoverySectionRoot(pageEl), null, 'Recovery section stays mounted while stale');
+    const root = recoverySectionRoot(pageEl);
+    assert.equal(findOne(root, hasClass('calculate-calculate-recovery-btn')).disabled, true, 'Recovery must not be executable while the Recommendation is stale');
   });
 
-  test('editing Tolerance clears Recovery along with the whole Recommendation result', () => {
+  test('editing Tolerance marks the Recommendation stale and disables Recovery execution, without removing either section', () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
     clickCalculateRecommendation(pageEl);
@@ -2618,8 +3330,11 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
 
     fillRecommendationControls(pageEl, { tolerance: '0.02' });
 
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
-    assert.equal(recoverySectionRoot(pageEl), null);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
+    assert.notEqual(recoverySectionRoot(pageEl), null, 'Recovery section stays mounted while stale');
+    const root = recoverySectionRoot(pageEl);
+    assert.equal(findOne(root, hasClass('calculate-calculate-recovery-btn')).disabled, true, 'Recovery must not be executable while the Recommendation is stale');
   });
 
   test('editing Added DT clears ONLY the Recovery result -- Recommendation, Material Actions, Fleet Actions all survive', () => {

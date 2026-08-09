@@ -1,11 +1,11 @@
-// V2.4.1: bumped once for the WHOLE combined Mobile Input and Sticky
-// Summary bugfix patch (locale-aware decimal input + mobile form-focus
-// zoom + sticky Blend summary -- see js/pages/calculate/number-input.js
-// and the CSS changes in assets/css/calculate.css/settings.css) -- evicts
-// every older cache via the existing activate-time cleanup (no second
-// version source; this is the ONE place a release's cache identity is
-// declared). Do not bump again for any single bug within this same patch.
-const CACHE_NAME = 'hpal-production-monitor-v2.4.1-mobile-input-sticky';
+// V2.5: bumped once for the WHOLE Contractor Continuity and Operational
+// Fleet Optimization feature (locale-aware decimal input, mobile form-
+// focus zoom, and sticky Blend summary fixes from V2.4.1 remain
+// preserved/unaffected -- see js/pages/calculate/operational-continuity.js
+// for the new runtime module this release adds) -- evicts every older
+// cache via the existing activate-time cleanup (no second version source;
+// this is the ONE place a release's cache identity is declared).
+const CACHE_NAME = 'hpal-production-monitor-v2.5.0-operational-continuity';
 const APP_SHELL = [
   './',
   './index.html',
@@ -61,6 +61,7 @@ const APP_SHELL = [
   './js/pages/calculate/recommendation-actions.js',
   './js/pages/calculate/planned-blend-recovery.js',
   './js/pages/calculate/hopper-pattern.js',
+  './js/pages/calculate/operational-continuity.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',

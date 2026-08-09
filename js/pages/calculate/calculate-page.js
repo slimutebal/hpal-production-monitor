@@ -52,12 +52,19 @@ import { hasFullAccess, requestFullAccessAttention } from '../../services/licens
 import { fmtTon, fmtRit } from '../report/report-utils.js';
 import { classifyOre } from '../../shared/ore-classification.js';
 import { calculatePileTonnage, calculateWeightedBlend } from './blend-calculator.js';
-import { validatePiles, toNumericPile, isRowBlank } from './calculate-validation.js';
+import { validatePiles, toNumericPile, isRowBlank, normalizeContractorForComparison } from './calculate-validation.js';
 import { findBlendRecommendations, DEFAULT_RECOMMENDATION_TOLERANCE } from './blending-recommendation.js';
 import { deriveOperationalHopperPattern } from './hopper-pattern.js';
-import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT, MATERIAL_ACTION_STOP } from './recommendation-actions.js';
+import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT } from './recommendation-actions.js';
 import { calculateRequiredNewDomeNi, findQualifyingSources } from './planned-blend-recovery.js';
 import { parseDecimalInput, formatDecimalForLocale } from './number-input.js';
+// V2.5 -- Contractor Continuity and Operational Fleet Optimization. See
+// operational-continuity.js's own header for why ranking (recommendation-
+// ranking.js) already does the heavy lifting; this page only derives the
+// per-Contractor PLAN from whichever candidate ranking already selected,
+// and maps Material/Fleet Actions' existing USE/LIMIT/STOP and use/move/
+// separate output onto the new user-facing operational vocabulary.
+import { deriveContractorContinuityPlan, classifyMaterialActionLabel, classifyFleetActionLabel, displayableMinRequiredNi } from './operational-continuity.js';
 
 const ORE_CLASSES = ['HGLO', 'MGLO', 'LGLO'];
 const EM_DASH = '—';
@@ -65,6 +72,13 @@ const HIGHER_GRADE_CLASSES = new Set(['HGLO', 'MGLO']);
 
 let page = null;
 let els = null;
+
+// V2.5 Sticky Recommendation Controls -- see observeBlendSummaryHeight()
+// below. Tracked at module scope (not a local) so a later initCalculatePage()
+// call (a genuine re-mount, e.g. the test harness's repeated mounts) can
+// disconnect the PREVIOUS observer before creating a new one, rather than
+// leaking one per mount.
+let blendSummaryResizeObserver = null;
 
 // Session state (in-memory only -- see header comment). pileRows holds
 // the RAW string values a text input hands back. INVARIANT maintained
@@ -135,6 +149,13 @@ export function initCalculatePage() {
 
   els = buildShell();
   page.replaceChildren(els.shell);
+  // V2.5 Sticky Recommendation Controls -- starts watching the live Blend
+  // summary's real height once it is attached to the page (this task's
+  // Section 5); recomputeLiveBlend() below already performs the first
+  // synchronous measurement via renderBlendSummary(), so call order here
+  // only matters for when continuous (ResizeObserver-driven) tracking
+  // begins, not for correctness of the very first render.
+  observeBlendSummaryHeight();
   updateStaticLabels();
   renderGridBody();
   recomputeLiveBlend();
@@ -272,19 +293,34 @@ function buildShell() {
   dtHint.className = 'calculate-recommendation-hint';
   shell.appendChild(dtHint);
 
+  // STICKY RECOMMENDATION CONTROLS (V2.5 -- Sticky Recommendation Controls
+  // Refinement). Target Ni/Tolerance + their field error + the Hitung
+  // Rekomendasi button live in ONE wrapper so the operator can adjust and
+  // recalculate a scenario without scrolling back up through the
+  // Recommendation result -- deliberately excludes the REKOMENDASI
+  // BLENDING heading, the DT hint, the engine error, and the result
+  // itself (those stay in normal flow, scrolling underneath). This
+  // wrapper becomes sticky in calculate.css, positioned directly below
+  // the live Blend summary via a JS-measured CSS custom property (see
+  // observeBlendSummaryHeight() below) -- never a fixed magic-number
+  // offset, since the summary's real height varies with locale wording/
+  // viewport width/font rendering.
+  const stickyControls = document.createElement('div');
+  stickyControls.className = 'calculate-recommendation-sticky-controls';
+
   const controls = document.createElement('div');
   controls.className = 'calculate-recommendation-controls';
   const targetField = buildRecommendationField('targetNi', 'decimal');
   const toleranceField = buildRecommendationField('tolerance', 'decimal');
   controls.appendChild(targetField.field);
   controls.appendChild(toleranceField.field);
-  shell.appendChild(controls);
+  stickyControls.appendChild(controls);
 
   const recommendationFieldError = document.createElement('p');
   recommendationFieldError.className = 'calculate-recommendation-field-error';
   recommendationFieldError.setAttribute('role', 'alert');
   recommendationFieldError.hidden = true;
-  shell.appendChild(recommendationFieldError);
+  stickyControls.appendChild(recommendationFieldError);
 
   const recCalcBtnRow = document.createElement('div');
   recCalcBtnRow.className = 'calculate-btn-row';
@@ -293,13 +329,38 @@ function buildShell() {
   recommendationCalculateBtn.className = 'calculate-btn calculate-btn-primary calculate-calculate-recommendation-btn';
   recommendationCalculateBtn.addEventListener('click', handleCalculateRecommendation);
   recCalcBtnRow.appendChild(recommendationCalculateBtn);
-  shell.appendChild(recCalcBtnRow);
+  stickyControls.appendChild(recCalcBtnRow);
+
+  shell.appendChild(stickyControls);
 
   const recommendationEngineError = document.createElement('p');
   recommendationEngineError.className = 'calculate-recommendation-error';
   recommendationEngineError.setAttribute('role', 'alert');
   recommendationEngineError.hidden = true;
   shell.appendChild(recommendationEngineError);
+
+  // STALE RESULT NOTICE (V2.5 -- Preserve Recommendation View While
+  // Editing Target/Tolerance, this task's Sections 3/13/32). Directly
+  // above the result subtree it describes, below the sticky controls --
+  // deliberately OUTSIDE stickyControls (the sticky area stays compact,
+  // this task's Section 13) and scrolls with the result. `role="status"`
+  // (an implicit polite live region) rather than `role="alert"` -- a
+  // stale Recommendation is informational context, not an error;
+  // applyRecommendationStaleState() below only ever WRITES to this
+  // element when its hidden state actually changes, never on every
+  // keystroke while already stale, so it does not create noisy
+  // repeated-announcement behavior (Section 32).
+  const recommendationStaleNotice = document.createElement('div');
+  recommendationStaleNotice.className = 'calculate-recommendation-stale-notice';
+  recommendationStaleNotice.setAttribute('role', 'status');
+  recommendationStaleNotice.hidden = true;
+  const staleNoticePrimary = document.createElement('p');
+  staleNoticePrimary.className = 'calculate-recommendation-stale-notice__primary';
+  const staleNoticeSecondary = document.createElement('p');
+  staleNoticeSecondary.className = 'calculate-recommendation-stale-notice__secondary';
+  recommendationStaleNotice.appendChild(staleNoticePrimary);
+  recommendationStaleNotice.appendChild(staleNoticeSecondary);
+  shell.appendChild(recommendationStaleNotice);
 
   const recommendationResult = document.createElement('div');
   recommendationResult.className = 'calculate-recommendation-result';
@@ -311,6 +372,7 @@ function buildShell() {
     gridBody, gridHeaderCells: gridHeader.cells,
     classBreakdownDetails, classBreakdownSummary, classBreakdown,
     recommendationSectionLabel, dtHint,
+    stickyControls,
     targetNiInput: targetField.input,
     targetNiLabel: targetField.label,
     toleranceInput: toleranceField.input,
@@ -318,14 +380,22 @@ function buildShell() {
     recommendationFieldError,
     recommendationCalculateBtn,
     recommendationEngineError,
+    recommendationStaleNotice,
+    staleNoticePrimary,
+    staleNoticeSecondary,
     recommendationResult,
   };
 }
 
 // Target Ni / Tolerance are plain decimal text inputs (never live-
 // calculated into a Recommendation result -- see
-// handleCalculateRecommendation()). Editing either one clears any existing
-// Recommendation result immediately (this task's Section 15).
+// handleCalculateRecommendation()). V2.5 (Preserve Recommendation View
+// While Editing Target/Tolerance, this task's Sections 1-10): editing
+// either one no longer clears an existing result outright -- it marks it
+// STALE instead (handleRecommendationInputEdit() below), so the viewport
+// never collapses while the operator is scrolled deep into the result
+// comparing scenarios via the sticky controls. Source-grid edits are
+// unaffected and keep the original full-clear behavior (recomputeLiveBlend()).
 function buildRecommendationField(fieldName, inputMode) {
   const field = document.createElement('div');
   field.className = 'calculate-recommendation-field';
@@ -343,7 +413,7 @@ function buildRecommendationField(fieldName, inputMode) {
   input.addEventListener('input', () => {
     if (fieldName === 'targetNi') targetNiRaw = input.value;
     else toleranceRaw = input.value;
-    clearRecommendationResult();
+    handleRecommendationInputEdit();
   });
 
   field.appendChild(label);
@@ -716,10 +786,66 @@ function renderLiveBlendDisplay() {
   renderClassBreakdown();
 }
 
+// ============================================================
+// V2.5 STICKY RECOMMENDATION CONTROLS -- dynamic offset (this task's
+// Sections 4-7). The Level 2 sticky block (Target Ni/Tolerance/Hitung
+// Rekomendasi) must sit directly below the Level 1 live Blend summary
+// with NO overlap and NO fixed magic-number offset, since the summary's
+// real rendered height varies with locale wording, viewport width, and
+// font rendering. calculate.css reads the measured height back via the
+// `--calculate-blend-summary-sticky-height` custom property (set on the
+// shell so it inherits to both sticky levels) in the Level 2 block's own
+// `top: calc(env(safe-area-inset-top) + var(--calculate-blend-summary-sticky-height))`.
+//
+// Guarded throughout for: (a) this file's own Node-based test harness,
+// whose FakeElement has neither `.style` nor `getBoundingClientRect()`
+// (this module's header comment), and (b) a real browser without
+// ResizeObserver (this task's Section 6's explicit "safe fallback"
+// requirement) -- in either case the custom property simply keeps
+// whatever value it last had (or its calculate.css default of 0px)
+// rather than throwing.
+// ============================================================
+function updateBlendSummaryStickyHeight() {
+  if (!els || !els.shell || !els.blendSummary) return;
+  if (!els.shell.style || typeof els.shell.style.setProperty !== 'function') return;
+  if (typeof els.blendSummary.getBoundingClientRect !== 'function') return;
+  const height = els.blendSummary.hidden ? 0 : els.blendSummary.getBoundingClientRect().height;
+  els.shell.style.setProperty('--calculate-blend-summary-sticky-height', `${height}px`);
+}
+
+// ResizeObserver here is used for exactly ONE purpose: keeping the CSS
+// custom property above in sync with the summary's ACTUAL size whenever
+// it changes for a reason renderBlendSummary() itself doesn't already
+// trigger a re-render for (viewport resize/orientation change, a late
+// web-font swap reflowing the text, etc.). It never positions anything
+// itself -- native `position: sticky` (calculate.css) remains entirely
+// responsible for the real sticky behavior; this file contains no scroll
+// listener, no manual position:fixed simulation, no translateY-on-scroll,
+// no requestAnimationFrame scroll tracking (this task's Section 6).
+function observeBlendSummaryHeight() {
+  if (blendSummaryResizeObserver) {
+    blendSummaryResizeObserver.disconnect();
+    blendSummaryResizeObserver = null;
+  }
+  updateBlendSummaryStickyHeight();
+  if (typeof ResizeObserver === 'undefined' || !els || !els.blendSummary || typeof els.blendSummary.getBoundingClientRect !== 'function') {
+    return; // safe fallback -- the explicit updateBlendSummaryStickyHeight() calls already wired into renderBlendSummary() still keep the offset correct across every state change this app itself causes.
+  }
+  blendSummaryResizeObserver = new ResizeObserver(() => updateBlendSummaryStickyHeight());
+  blendSummaryResizeObserver.observe(els.blendSummary);
+}
+
 function renderBlendSummary() {
   if (!lastResult) {
     els.blendSummary.hidden = true;
     els.blendSummary.replaceChildren();
+    // V2.5 (Sticky Recommendation Controls, this task's Section 7): a
+    // hidden summary must leave no reserved sticky offset for the
+    // Recommendation controls below it -- updated explicitly here (not
+    // left solely to ResizeObserver, whose firing on a display:none
+    // transition is not consistent enough to rely on) so it takes effect
+    // in the same synchronous render pass as the hidden toggle itself.
+    updateBlendSummaryStickyHeight();
     return;
   }
   els.blendSummary.hidden = false;
@@ -728,6 +854,7 @@ function renderBlendSummary() {
     buildSummaryItem('calculate.result.totalUnits', fmtRit(lastResult.totalUnits), 'calculate-total-units'),
     buildSummaryItem('calculate.result.totalTonnage', `${fmtTon(lastResult.totalTonnage)} t`, 'calculate-total-tonnage'),
   );
+  updateBlendSummaryStickyHeight();
 }
 
 // Small, non-blocking informational count (this task's Section 5) --
@@ -835,7 +962,18 @@ function handleCalculateRecommendation() {
   });
 
   if (!result.ok) {
-    lastRecommendationResult = null;
+    // V2.5 (Preserve Recommendation View, this task's Sections 1/10/28):
+    // a FAILED explicit recalculation attempt (invalid Target/Tolerance,
+    // or an engine-level SEARCH_SPACE_TOO_LARGE/NO_FEASIBLE_CANDIDATE)
+    // deliberately does NOT clear an existing lastRecommendationResult --
+    // doing so would collapse the result DOM and reintroduce the exact
+    // scroll-jump this feature exists to prevent, just reachable by
+    // pressing the button instead of by typing. Whatever result was
+    // already there stays visible as stale context (isRecommendationStale()
+    // is already true here, since the just-attempted input didn't even
+    // parse/validate, let alone match the old snapshot) alongside the new
+    // validation/engine error message. A first-ever attempt (nothing to
+    // preserve) is unaffected -- lastRecommendationResult is already null.
     if (result.error === 'INVALID_INPUT') {
       // completeRows are already individually field-valid AND mutually
       // duplicate-free by construction (getCompleteRows() only includes
@@ -869,14 +1007,17 @@ function handleCalculateRecommendation() {
   renderRecommendationResult();
 }
 
-// Clears any existing Recommendation result/error state (this task's
-// Section 15) -- called on every source-row edit, Remove Pile (via
-// recomputeLiveBlend()), and every Target Ni/Tolerance edit, so a stale
-// result is never left on screen looking like it still matches the
-// current inputs. No-ops (and skips re-rendering) when there is nothing
-// to clear. Planned Blend Recovery (V2.4 Phase 6, this task's Section 19)
-// disappears at the exact same time -- it only ever exists as a subtree
-// of the Recommendation result this function is about to hide/clear.
+// Clears any existing Recommendation result/error state COMPLETELY (this
+// task's Section 15) -- called on every source-row edit and Remove Pile
+// (via recomputeLiveBlend()), which change the actual source configuration
+// and live Blend, so a chemically obsolete Recommendation is never left on
+// screen (V2.5, this task's Section 7/21/27: source edits keep this
+// original stricter behavior; only Target Ni/Tolerance edits use the
+// gentler STALE treatment below, via handleRecommendationInputEdit()).
+// No-ops (and skips re-rendering) when there is nothing to clear. Planned
+// Blend Recovery (V2.4 Phase 6, this task's Section 19) disappears at the
+// exact same time -- it only ever exists as a subtree of the
+// Recommendation result this function is about to hide/clear.
 function clearRecommendationResult() {
   if (!lastRecommendationResult && !recommendationFieldErrors && !recommendationEngineErrorKey) return;
   lastRecommendationResult = null;
@@ -886,6 +1027,93 @@ function clearRecommendationResult() {
   renderRecommendationFieldError();
   renderRecommendationEngineError();
   renderRecommendationResult();
+}
+
+// ============================================================
+// V2.5 -- PRESERVE RECOMMENDATION VIEW WHILE EDITING TARGET/TOLERANCE
+// (this task's Sections 1-10/17/20). Staleness is a DERIVED value, never a
+// separately-tracked flag that could drift out of sync with reality: it
+// compares the CURRENT raw Target/Tolerance inputs (parsed for numeric
+// semantic equivalence -- "1.120" and "1,120" are the same value, this
+// task's Section 20, via the same shared parseDecimalInput() the rest of
+// Calculate already uses -- never a second parser) against the EXACT
+// numeric snapshot (result.targetNi/result.tolerance) already stored on
+// whichever result produced lastRecommendationResult. This is also what
+// makes "change back to the original value restores freshness without
+// recalculating" (Section 20) fall out for free -- there is no separate
+// state to explicitly revert.
+//
+// A source-grid edit needs no special handling here: it already fully
+// clears lastRecommendationResult via the unchanged
+// recomputeLiveBlend()/clearRecommendationResult() path (Section 7/21), so
+// this function simply returns false once there is nothing left to be
+// stale about.
+// ============================================================
+function isRecommendationStale() {
+  if (!lastRecommendationResult) return false;
+  const currentTarget = parseDecimalInput(targetNiRaw);
+  const currentTolerance = parseDecimalInput(toleranceRaw);
+  return currentTarget !== lastRecommendationResult.targetNi || currentTolerance !== lastRecommendationResult.tolerance;
+}
+
+// Handles every Target Ni/Tolerance 'input' keystroke (this task's Section
+// 6). Deliberately does NOT touch lastRecommendationResult, does NOT
+// rebuild the result subtree, and does NOT reset Recovery state -- only a
+// genuine new calculation attempt (handleCalculateRecommendation()) or a
+// source edit (clearRecommendationResult()) ever does those. Any PREVIOUS
+// validation/engine error refers to the old attempt and is cleared the
+// moment the operator starts typing a new value (matching the historical
+// behavior these two fields already had), while the old RESULT itself
+// stays exactly as rendered, now flagged stale by applyRecommendationStaleState().
+function handleRecommendationInputEdit() {
+  if (recommendationFieldErrors || recommendationEngineErrorKey) {
+    recommendationFieldErrors = null;
+    recommendationEngineErrorKey = null;
+    renderRecommendationFieldError();
+    renderRecommendationEngineError();
+  }
+  applyRecommendationStaleState();
+}
+
+// Cheap, idempotent visual/interactivity sync -- toggles the stale CSS
+// modifier, the stale notice banner, and disables Recovery's editable
+// controls (this task's Section 11), all WITHOUT rebuilding the result
+// subtree. Safe to call after every keystroke. Only ever WRITES to the
+// notice element when its hidden state actually changes (never
+// unconditionally on every keystroke while already stale), so it does not
+// produce noisy repeated status announcements (this task's Section 32).
+function applyRecommendationStaleState() {
+  if (!lastRecommendationResult) {
+    if (!els.recommendationStaleNotice.hidden) {
+      els.recommendationStaleNotice.hidden = true;
+      els.staleNoticePrimary.textContent = '';
+      els.staleNoticeSecondary.textContent = '';
+    }
+    return;
+  }
+
+  const stale = isRecommendationStale();
+  els.recommendationResult.className = `calculate-recommendation-result${stale ? ' is-stale' : ''}`;
+
+  if (stale) {
+    els.recommendationStaleNotice.hidden = false;
+    els.staleNoticePrimary.textContent = t('calculate.recommendation.staleNotice');
+    els.staleNoticeSecondary.textContent = t('calculate.recommendation.staleNoticeDetail');
+  } else if (!els.recommendationStaleNotice.hidden) {
+    els.recommendationStaleNotice.hidden = true;
+    els.staleNoticePrimary.textContent = '';
+    els.staleNoticeSecondary.textContent = '';
+  }
+
+  // Recovery (this task's Section 11) -- a stale Recommendation's Recovery
+  // must never be executable against the newly-typed, non-matching
+  // Target/Tolerance. `recoveryEls` only exists while a TARGET_NOT_ACHIEVABLE
+  // result's Recovery section is actually rendered.
+  if (recoveryEls) {
+    recoveryEls.addedDtInput.disabled = stale;
+    recoveryEls.tonnesPerDtInput.disabled = stale;
+    recoveryEls.calculateBtn.disabled = stale;
+  }
 }
 
 function renderRecommendationFieldError() {
@@ -925,11 +1153,14 @@ function renderRecommendationEngineError() {
 function renderRecommendationResult() {
   if (!lastRecommendationResult) {
     els.recommendationResult.hidden = true;
+    els.recommendationResult.className = 'calculate-recommendation-result';
     els.recommendationResult.replaceChildren();
+    applyRecommendationStaleState();
     return;
   }
   els.recommendationResult.hidden = false;
   els.recommendationResult.replaceChildren(...buildRecommendationResultChildren(lastRecommendationResult));
+  applyRecommendationStaleState();
 }
 
 function buildRecommendationResultChildren(result) {
@@ -1001,9 +1232,15 @@ function buildRecommendationResultChildren(result) {
   // their Phase 5 semantics unchanged regardless of how Hopper Pattern is
   // now displayed. Fleet Actions renders BEFORE Material Actions (this
   // task's Section 16 order correction).
+  // V2.5 -- one continuity plan per Contractor whose standbyRatio > 0,
+  // derived from THIS already-selected candidate (never re-running the
+  // search) -- see operational-continuity.js's own header comment.
+  const continuityPlans = deriveContractorContinuityPlan({ candidate, targetNi: result.targetNi, tolerance: result.tolerance });
+  const continuityPlanByContractor = new Map(continuityPlans.map((plan) => [normalizeContractorForComparison(plan.contractor), plan]));
+
   const actions = deriveRecommendationActions(result);
-  nodes.push(buildFleetActionsSection(actions));
-  nodes.push(buildMaterialActionsSection(actions));
+  nodes.push(buildFleetActionsSection(actions, continuityPlanByContractor));
+  nodes.push(buildMaterialActionsSection(actions, continuityPlanByContractor));
 
   // PLANNED BLEND RECOVERY (V2.4 Phase 6) -- rendered LAST, after every
   // existing Recommendation detail and Material/Fleet Actions (this task's
@@ -1326,7 +1563,7 @@ function buildRelocationRow(relocation) {
    already-decided values for display, the same DOM/pure split every other
    section on this page already follows.
 ============================================================ */
-function buildMaterialActionsSection(actions) {
+function buildMaterialActionsSection(actions, continuityPlanByContractor) {
   const wrap = document.createElement('div');
   wrap.className = 'calculate-actions-section calculate-material-actions';
 
@@ -1348,31 +1585,62 @@ function buildMaterialActionsSection(actions) {
 
   const list = document.createElement('div');
   list.className = 'calculate-actions-list';
-  actions.materialActions.forEach((entry) => list.appendChild(buildMaterialActionRow(entry)));
+  actions.materialActions.forEach((entry) => list.appendChild(buildMaterialActionRow(entry, continuityPlanByContractor)));
   wrap.appendChild(list);
 
   return wrap;
 }
 
-function materialActionLabelKey(action) {
-  if (action === MATERIAL_ACTION_USE) return 'calculate.actions.material.use';
-  if (action === MATERIAL_ACTION_LIMIT) return 'calculate.actions.material.limit';
+// `operationalAction` is one of MATERIAL_ACTION_USE/LIMIT/'REPLACE_DOME'/
+// MATERIAL_ACTION_STOP (V2.5 -- operational-continuity.js's
+// classifyMaterialActionLabel(), this task's Sections 8/22-23/46) -- the
+// pure domain action (MATERIAL_ACTION_USE/LIMIT/STOP,
+// recommendation-actions.js) is never itself changed, only what the UI
+// shows for it. 'REPLACE_DOME' is a UI-only value, used verbatim as a
+// lowercased CSS modifier alongside the pure domain ones.
+function materialActionLabelKey(operationalAction) {
+  if (operationalAction === MATERIAL_ACTION_USE) return 'calculate.actions.material.use';
+  if (operationalAction === MATERIAL_ACTION_LIMIT) return 'calculate.actions.material.limit';
+  if (operationalAction === 'REPLACE_DOME') return 'calculate.actions.material.replaceDome';
   return 'calculate.actions.material.stop';
 }
 
-function materialActionReasonKey(action) {
-  if (action === MATERIAL_ACTION_USE) return 'calculate.actions.material.useReason';
-  if (action === MATERIAL_ACTION_LIMIT) return 'calculate.actions.material.limitReason';
-  return 'calculate.actions.material.stopReason';
+// `range` is whichever Ni-range plan-object is most relevant to display for
+// a REPLACE_DOME material action -- the hypothetical new dome's own range
+// for a SPLIT strategy, or the full-Contractor replacement range for a
+// REPLACE strategy (this task's Section 25/8).
+function materialActionReplaceDomeRange(plan) {
+  if (!plan) return null;
+  if (plan.strategy === 'SPLIT') return plan.split;
+  if (plan.strategy === 'REPLACE') return plan.replacement;
+  return null;
 }
 
-// action is always exactly one of MATERIAL_ACTION_USE/LIMIT/STOP
-// (recommendation-actions.js's own return contract) -- used verbatim as a
-// lowercased CSS modifier so USE/LIMIT/STOP map onto --use/--limit/--stop
-// without a second hand-maintained lookup table.
-function buildMaterialActionRow(entry) {
+function materialActionReasonText(operationalAction, plan) {
+  if (operationalAction === MATERIAL_ACTION_USE) return t('calculate.actions.material.useReason');
+  if (operationalAction === MATERIAL_ACTION_LIMIT) return t('calculate.actions.material.limitReason');
+  if (operationalAction === 'REPLACE_DOME') {
+    const range = materialActionReplaceDomeRange(plan);
+    if (range) {
+      return t('calculate.actions.material.replaceDomeReason', {
+        min: displayableMinRequiredNi(range).toFixed(3),
+        max: range.maxRequiredNi.toFixed(3),
+      });
+    }
+  }
+  // Genuine operational conflict (this task's Section 25) -- no
+  // replacement plan could be derived, so the original chemical STOP
+  // reason is the only accurate explanation still available.
+  return t('calculate.actions.material.stopReason');
+}
+
+function buildMaterialActionRow(entry, continuityPlanByContractor) {
+  const plan = continuityPlanByContractor.get(normalizeContractorForComparison(entry.contractor)) || null;
+  const operationalAction = classifyMaterialActionLabel(entry.action, plan);
+  const modifier = operationalAction.toLowerCase().replace(/_/g, '-');
+
   const row = document.createElement('div');
-  row.className = `calculate-breakdown-row calculate-action-row calculate-material-action-row calculate-material-action-row--${entry.action.toLowerCase()}`;
+  row.className = `calculate-breakdown-row calculate-action-row calculate-material-action-row calculate-material-action-row--${modifier}`;
 
   const main = document.createElement('div');
   main.className = 'calculate-breakdown-row__main';
@@ -1383,8 +1651,8 @@ function buildMaterialActionRow(entry) {
 
   // Status must include text, never color alone (this task's Section 18).
   const badge = document.createElement('span');
-  badge.className = `calculate-action-badge calculate-action-badge--${entry.action.toLowerCase()}`;
-  badge.textContent = t(materialActionLabelKey(entry.action));
+  badge.className = `calculate-action-badge calculate-action-badge--${modifier}`;
+  badge.textContent = t(materialActionLabelKey(operationalAction));
   main.appendChild(badge);
   row.appendChild(main);
 
@@ -1397,13 +1665,13 @@ function buildMaterialActionRow(entry) {
   // internal score/deviation number.
   const reason = document.createElement('p');
   reason.className = 'calculate-action-reason';
-  reason.textContent = t(materialActionReasonKey(entry.action));
+  reason.textContent = materialActionReasonText(operationalAction, plan);
   row.appendChild(reason);
 
   return row;
 }
 
-function buildFleetActionsSection(actions) {
+function buildFleetActionsSection(actions, continuityPlanByContractor) {
   const wrap = document.createElement('div');
   wrap.className = 'calculate-actions-section calculate-fleet-actions';
 
@@ -1414,21 +1682,58 @@ function buildFleetActionsSection(actions) {
 
   const list = document.createElement('div');
   list.className = 'calculate-actions-list';
-  actions.fleetActions.forEach((entry) => list.appendChild(buildFleetActionRow(entry)));
+  // V2.5 (this task's Section 30/31): the full split/replacement/conflict
+  // continuity detail is shown at most ONCE per Contractor -- never
+  // duplicated across every one of that Contractor's own idle sources
+  // (`renderedContractors` tracks which have already gotten their detail
+  // block, in the same deterministic Contractor-then-Pile-ID order
+  // actions.fleetActions already carries).
+  const renderedContractors = new Set();
+  actions.fleetActions.forEach((entry) => list.appendChild(buildFleetActionRow(entry, continuityPlanByContractor, renderedContractors)));
   wrap.appendChild(list);
 
   return wrap;
 }
 
+// V2.5.1 (this task's Section 24) -- maps operational-continuity.js's
+// classifyFleetActionLabel() output onto the new user-facing fleet
+// vocabulary. ACTIVE/MOVE/RECEIVE reuse the existing calculate.actions.fleet.*
+// wording (AKTIF/PINDAH/TERIMA) unchanged; the rest are new. RECEIVE was
+// missing here before this corrective pass -- classifyFleetActionLabel()
+// could already return it (a pure receiver, moveInUnits > 0 and
+// moveOutUnits === 0), and an unmapped badge key would have crashed
+// t(undefined) (this task's Section 9/1, Problem A's real root cause).
+const FLEET_OPERATIONAL_LABEL_KEYS = {
+  ACTIVE: 'calculate.actions.fleet.use',
+  MOVE: 'calculate.actions.fleet.move',
+  RECEIVE: 'calculate.actions.fleet.receive',
+  CLOSE_DOME_AND_MOVE: 'calculate.actions.fleetOperational.closeDomeAndMove',
+  REDUCE: 'calculate.actions.fleetOperational.reduce',
+  SPLIT_LOADING: 'calculate.actions.fleetOperational.splitLoading',
+  REPLACE_DOME: 'calculate.actions.fleetOperational.replaceDome',
+  CONFLICT: 'calculate.actions.fleetOperational.conflict',
+};
+
+// True when a source has NO change to show at all (this task's Section
+// 14) -- its assigned fleet is exactly what stayed active, with no
+// relocation and no reduction. Such a row keeps the old compact single
+// AKTIF line; every OTHER row shows the full AWAL/change/AKHIR breakdown
+// (Sections 10-13) so the final total is never left implicit.
+function isFleetActionUnchanged(entry) {
+  return entry.assignedUnits === entry.activeUnits && entry.moveOutUnits === 0 && entry.moveInUnits === 0 && entry.separateUnits === 0;
+}
+
 // Physical DT breakdown for one source -- USE/MOVE/RECEIVE/SEPARATE are
 // independent QUANTITIES, never a single enum (unlike Material Action),
-// per this task's Section 2/11-13. Only nonzero lines render (Section 19:
-// "do not show zero-value rows unless useful"); useUnits is the one
-// exception shown even at zero, so a fully-relocated-away or fully-idle
-// source never renders an empty-looking row.
-function buildFleetActionRow(entry) {
+// per this task's Section 2/11-13.
+function buildFleetActionRow(entry, continuityPlanByContractor, renderedContractors) {
+  const contractorKey = normalizeContractorForComparison(entry.contractor);
+  const plan = continuityPlanByContractor.get(contractorKey) || null;
+  const operationalLabel = classifyFleetActionLabel(entry, plan);
+  const modifier = operationalLabel.toLowerCase().replace(/_/g, '-');
+
   const row = document.createElement('div');
-  row.className = 'calculate-breakdown-row calculate-action-row calculate-fleet-action-row';
+  row.className = `calculate-breakdown-row calculate-action-row calculate-fleet-action-row calculate-fleet-action-row--${modifier}`;
 
   const main = document.createElement('div');
   main.className = 'calculate-breakdown-row__main';
@@ -1436,51 +1741,205 @@ function buildFleetActionRow(entry) {
   idEl.className = 'calculate-breakdown-row__id';
   idEl.textContent = `${entry.contractor} · ${entry.pileId}`;
   main.appendChild(idEl);
+
+  // V2.5 -- an operational instruction badge (this task's Section 24),
+  // never color alone (same "status must include text" discipline
+  // Material Actions already follow).
+  const badge = document.createElement('span');
+  badge.className = `calculate-action-badge calculate-action-badge--${modifier}`;
+  badge.textContent = t(FLEET_OPERATIONAL_LABEL_KEYS[operationalLabel]);
+  main.appendChild(badge);
   row.appendChild(main);
 
   const lines = document.createElement('div');
   lines.className = 'calculate-fleet-action-row__lines';
 
-  lines.appendChild(buildFleetActionLine('use', `${fmtRit(entry.useUnits)} DT`));
+  if (isFleetActionUnchanged(entry)) {
+    lines.appendChild(buildFleetActionLine('use', `${fmtRit(entry.activeUnits)} DT`));
+  } else {
+    // AWAL / change(s) / AKHIR (this task's Sections 10-15) -- the final
+    // total is never implicit/left for the reader to sum. AWAL/AKHIR come
+    // straight from entry.assignedUnits/entry.activeUnits -- the exact
+    // engine values, never a display-only recomputation (Section 15).
+    lines.appendChild(buildFleetActionLine('initial', `${fmtRit(entry.assignedUnits)} DT`));
 
-  // Same-Contractor MOVE only -- the engine (fleet-allocation.js's
-  // planContractorRelocations()) never produces a cross-Contractor
-  // relocation in the first place (this task's Section 15), so there is
-  // nothing to filter out here.
-  entry.relocationsOut.forEach((relocation) => {
-    const suffix = t('calculate.actions.fleet.toPileSuffix', { pileId: relocation.toPileId });
-    lines.appendChild(buildFleetActionLine('move', `${fmtRit(relocation.units)} DT ${suffix}`));
-  });
+    // Same-Contractor relocation only -- fleet-allocation.js's
+    // planContractorRelocations() never produces a cross-Contractor
+    // relocation (this task's Section 26), so there is nothing to filter
+    // out here. A single source is never simultaneously a donor AND a
+    // receiver (operational-continuity.js's classifyFleetActionLabel()
+    // own header comment), so at most ONE of these two forEach bodies
+    // ever actually appends a line for a given row.
+    entry.relocationsOut.forEach((relocation) => {
+      const suffix = t('calculate.actions.fleet.toPileSuffix', { pileId: relocation.toPileId });
+      lines.appendChild(buildFleetActionLine('move', `${fmtRit(relocation.units)} DT ${suffix}`));
+    });
+    entry.relocationsIn.forEach((relocation) => {
+      const suffix = t('calculate.actions.fleet.fromPileSuffix', { pileId: relocation.fromPileId });
+      lines.appendChild(buildFleetActionLine('receive', `${fmtRit(relocation.units)} DT ${suffix}`));
+    });
 
-  // Optional RECEIVE clarity line (this task's Section 12) -- purely a
-  // display convenience; the underlying Fleet Action model (useUnits/
-  // moveOutUnits/moveInUnits/separateUnits) stays the same either way.
-  entry.relocationsIn.forEach((relocation) => {
-    const suffix = t('calculate.actions.fleet.fromPileSuffix', { pileId: relocation.fromPileId });
-    lines.appendChild(buildFleetActionLine('receive', `${fmtRit(relocation.units)} DT ${suffix}`));
-  });
+    // <=5% minor reduction (this task's Section 4/10) -- an explicit
+    // KURANGI quantity line, part of the same AWAL/change/AKHIR
+    // accounting as a move/receive.
+    if (operationalLabel === 'REDUCE') {
+      lines.appendChild(buildFleetActionLine('reduce', `${fmtRit(entry.separateUnits)} DT`));
+    }
 
-  // STANDBY (V2.4 Phase 6.1 -- UI wording only, internal
-  // separateUnits/'separate' unchanged). A short hint accompanies it so
-  // STANDBY is never misread as permanently removed/broken/Contractor-lost
-  // (this task's Section 15).
-  if (entry.separateUnits > 0) {
-    lines.appendChild(buildFleetActionLine('separate', `${fmtRit(entry.separateUnits)} DT`));
-    const standbyHint = document.createElement('p');
-    standbyHint.className = 'calculate-fleet-action-standby-hint';
-    standbyHint.textContent = t('calculate.actions.fleet.standbyHint');
-    lines.appendChild(standbyHint);
+    lines.appendChild(buildFleetActionLine('final', `${fmtRit(entry.activeUnits)} DT`));
   }
 
   row.appendChild(lines);
+
+  // Dome-closed reassurance (this task's Section 13/19) -- "DOME CLOSED
+  // does NOT mean CONTRACTOR/FLEET STOPPED", shown per-row (not deduped
+  // per-Contractor like the continuity detail below) since it explains
+  // THIS specific row's own closure, not a shared Contractor-wide plan.
+  if (operationalLabel === 'CLOSE_DOME_AND_MOVE') {
+    const note = document.createElement('p');
+    note.className = 'calculate-continuity-close-dome-note';
+    note.textContent = t('calculate.continuity.closeDomeNote', { contractor: entry.contractor });
+    row.appendChild(note);
+  }
+
+  // V2.5 continuity detail (this task's Sections 4/9-21/47) -- REPLACES
+  // the old unconditional "STANDBY N DT" line/hint. ACTIVE/MOVE/RECEIVE/
+  // CLOSE_DOME_AND_MOVE are already fully explained above, so no extra
+  // block is appended for those.
+  if (!renderedContractors.has(contractorKey)) {
+    const detail = buildFleetContinuityDetail(operationalLabel, plan);
+    if (detail) {
+      row.appendChild(detail);
+      renderedContractors.add(contractorKey);
+    }
+  }
+
   return row;
 }
 
+function buildFleetContinuityDetail(operationalLabel, plan) {
+  if (operationalLabel === 'REDUCE') {
+    const p = document.createElement('p');
+    p.className = 'calculate-continuity-detail';
+    p.textContent = t('calculate.continuity.reduceDetail', {
+      units: fmtRit(plan.reduceUnits),
+      total: fmtRit(plan.totalAssignedFleet),
+      pct: (plan.standbyRatio * 100).toFixed(1),
+    });
+    return p;
+  }
+
+  if (operationalLabel !== 'SPLIT_LOADING' && operationalLabel !== 'REPLACE_DOME' && operationalLabel !== 'CONFLICT') {
+    return null;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-continuity-detail';
+
+  // Explains why a plain reduction was NOT offered instead (this task's
+  // Section 17 worked example).
+  const rejectionNote = document.createElement('p');
+  rejectionNote.className = 'calculate-continuity-rejection-note';
+  rejectionNote.textContent = t('calculate.continuity.reductionNotRecommended', {
+    units: fmtRit(plan.standbyUnits),
+    pct: (plan.standbyRatio * 100).toFixed(0),
+  });
+  wrap.appendChild(rejectionNote);
+
+  if (operationalLabel === 'SPLIT_LOADING') {
+    const splitTitle = document.createElement('h4');
+    splitTitle.className = 'calculate-subsection-label calculate-continuity-split-title';
+    splitTitle.textContent = t('calculate.continuity.splitTitle');
+    wrap.appendChild(splitTitle);
+
+    wrap.appendChild(buildContinuityLine(plan.existingPileId, `${fmtRit(plan.split.existingDomeUnits)} DT`));
+    wrap.appendChild(buildContinuityLine(t('calculate.continuity.newDomeLabel'), `${fmtRit(plan.split.newDomeUnits)} DT`));
+    wrap.appendChild(buildContinuityLine(t('calculate.continuity.suggestedGradeLabel'), formatNiRange(plan.split)));
+
+    // The application has no excavator inventory (this task's Sections
+    // 11/34) -- always conditional, never a claim of availability.
+    const excavatorNote = document.createElement('p');
+    excavatorNote.className = 'calculate-continuity-excavator-note';
+    excavatorNote.textContent = t('calculate.continuity.excavatorSupportNote');
+    wrap.appendChild(excavatorNote);
+
+    // Fallback (this task's Section 16) -- offered alongside SPLIT,
+    // preserving the whole Contractor fleet either way.
+    if (plan.replacementFallback) {
+      const fallbackLabel = document.createElement('p');
+      fallbackLabel.className = 'calculate-continuity-excavator-note';
+      fallbackLabel.textContent = t('calculate.continuity.excavatorNotSupportLabel');
+      wrap.appendChild(fallbackLabel);
+
+      const fallbackDetail = document.createElement('p');
+      fallbackDetail.className = 'calculate-continuity-detail-line';
+      fallbackDetail.textContent = t('calculate.continuity.replaceDetail', {
+        pileId: plan.existingPileId,
+        min: displayableMinRequiredNi(plan.replacementFallback).toFixed(3),
+        max: plan.replacementFallback.maxRequiredNi.toFixed(3),
+        total: fmtRit(plan.totalAssignedFleet),
+      });
+      wrap.appendChild(fallbackDetail);
+    }
+  } else if (operationalLabel === 'REPLACE_DOME') {
+    const detailLine = document.createElement('p');
+    detailLine.className = 'calculate-continuity-detail-line';
+    detailLine.textContent = t('calculate.continuity.replaceDetail', {
+      pileId: plan.existingPileId,
+      min: displayableMinRequiredNi(plan.replacement).toFixed(3),
+      max: plan.replacement.maxRequiredNi.toFixed(3),
+      total: fmtRit(plan.totalAssignedFleet),
+    });
+    wrap.appendChild(detailLine);
+  } else {
+    // CONFLICT (this task's Section 25) -- never invents a solution; the
+    // best-attainable physical result is already shown elsewhere on this
+    // page (Recommendation Status / Hopper Pattern above).
+    const conflictLine = document.createElement('p');
+    conflictLine.className = 'calculate-continuity-conflict-message';
+    conflictLine.textContent = t('calculate.continuity.conflictMessage');
+    wrap.appendChild(conflictLine);
+  }
+
+  return wrap;
+}
+
+function formatNiRange(range) {
+  return t('calculate.continuity.gradeRange', {
+    min: displayableMinRequiredNi(range).toFixed(3),
+    max: range.maxRequiredNi.toFixed(3),
+  });
+}
+
+function buildContinuityLine(label, valueText) {
+  const line = document.createElement('div');
+  line.className = 'calculate-continuity-line';
+  const labelEl = document.createElement('span');
+  labelEl.textContent = label;
+  const valueEl = document.createElement('strong');
+  valueEl.textContent = valueText;
+  line.appendChild(labelEl);
+  line.appendChild(valueEl);
+  return line;
+}
+
+// 'separate' (STANDBY) is deliberately absent -- V2.5 replaced that
+// unconditional line with buildFleetContinuityDetail()'s operational
+// REDUCE/SPLIT_LOADING/REPLACE_DOME/CONFLICT detail (this task's Section
+// 47: "no user-visible large STANDBY" for any Contractor above the minor
+// threshold, and even the <=5% case now shows the explicit REDUCE wording
+// instead of a bare "STANDBY N DT" line).
 const FLEET_ACTION_LABEL_KEYS = {
   use: 'calculate.actions.fleet.use',
   move: 'calculate.actions.fleet.move',
   receive: 'calculate.actions.fleet.receive',
-  separate: 'calculate.actions.fleet.separate',
+  // V2.5.1 (this task's Sections 10/24) -- AWAL/AKHIR frame any changed
+  // row's before/after total explicitly; 'reduce' is the <=5% KURANGI
+  // quantity line (reuses the same badge word as the REDUCE operational
+  // label).
+  initial: 'calculate.actions.fleet.initial',
+  final: 'calculate.actions.fleet.final',
+  reduce: 'calculate.actions.fleetOperational.reduce',
 };
 
 function buildFleetActionLine(kind, valueText) {
@@ -1590,10 +2049,13 @@ function buildRecoverySection(result) {
   // so renderRecoveryResult() always matches qualifying sources against the
   // EXACT candidate this Recovery baseline came from (this task's Section
   // 26 -- reads the best-attainable candidate's own `.sources`, never a
-  // second independent lookup).
+  // second independent lookup). `calculateBtn` is kept here too (V2.5,
+  // this task's Section 11) so applyRecommendationStaleState() can disable
+  // it the moment the Recommendation it belongs to goes stale.
   recoveryEls = {
     addedDtInput: addedDtField.input,
     tonnesPerDtInput: tonnesPerDtField.input,
+    calculateBtn,
     fieldError,
     resultBox,
     qualifyingBox,
@@ -1602,6 +2064,12 @@ function buildRecoverySection(result) {
 
   renderRecoveryFieldError();
   renderRecoveryResult();
+  // Not calling applyRecommendationStaleState() here -- this function is
+  // only ever reached from buildRecommendationResultChildren(), whose one
+  // caller (renderRecommendationResult()) already calls it once, AFTER
+  // the whole subtree (including this Recovery section) finishes
+  // building, so `recoveryEls` above is already correctly in place by the
+  // time the disabled-while-stale state is applied.
 
   return wrap;
 }
@@ -1651,6 +2119,13 @@ function handleCalculateRecovery() {
   // TARGET_NOT_ACHIEVABLE Recovery section, so lastRecommendationResult is
   // always the matching result here.
   if (!lastRecommendationResult || lastRecommendationResult.status !== 'TARGET_NOT_ACHIEVABLE') return;
+  // V2.5 (Preserve Recommendation View, this task's Section 11): a HARD
+  // guarantee that Recovery can never execute against a stale
+  // Recommendation, independent of the `disabled` attribute
+  // applyRecommendationStaleState() already sets on its inputs/button --
+  // the button might still be reachable (e.g. a raw click event fired
+  // programmatically) even while visually/attribute-wise disabled.
+  if (isRecommendationStale()) return;
 
   const candidate = lastRecommendationResult.candidate;
   const result = calculateRequiredNewDomeNi({

@@ -18,6 +18,15 @@
   max-width: 640px;
   margin: 0 auto;
   padding: 4px 0 24px;
+  /* V2.5 Sticky Recommendation Controls -- JS-measured real height of
+     .calculate-blend-summary (calculate-page.js's
+     updateBlendSummaryStickyHeight()), consumed by
+     .calculate-recommendation-sticky-controls' own `top` below. Declared
+     here (the shared ancestor of both sticky levels) with a safe 0px
+     default so the Level 2 block still positions correctly (flush under
+     the safe-area top) even before any JS measurement has run, or if
+     ResizeObserver/getBoundingClientRect are unavailable. */
+  --calculate-blend-summary-sticky-height: 0px;
 }
 
 #page-calculate .calculate-header {
@@ -481,6 +490,58 @@
   margin: 10px 0 14px;
 }
 
+/* ---- V2.5 STICKY RECOMMENDATION CONTROLS (Sticky Recommendation
+   Controls Refinement) -- Target Ni/Tolerance/field-error/Hitung
+   Rekomendasi, LEVEL 2 of the sticky stack directly below the LEVEL 1
+   live Blend summary (.calculate-blend-summary, unchanged by this
+   revision). Deliberately excludes the REKOMENDASI BLENDING heading, the
+   DT hint, the engine error, and the result itself -- see
+   calculate-page.js's buildShell() for exactly which elements this
+   wrapper contains.
+
+   `top` follows the SAME env(safe-area-inset-top) strategy the Blend
+   summary already uses, offset by the summary's ACTUAL measured height
+   (--calculate-blend-summary-sticky-height, calculate-page.js's
+   updateBlendSummaryStickyHeight()) rather than a fixed magic-number --
+   that height genuinely varies with locale wording (ID/EN), viewport
+   width, and font rendering. When the summary is hidden, the JS sets that
+   custom property to 0px, so this block naturally sticks flush at the
+   safe-area top with no reserved gap.
+
+   z-index matches the Blend summary's own 5 (not a new/higher tier) --
+   the two sticky levels are vertically ADJACENT, never overlapping each
+   other, so sharing one z-index is correct; both still sit below
+   #bottom-navigation (900) and .modal-overlay (1000), and below the
+   contractor-assignment overlay (2147483000), preserving the app's
+   existing stacking hierarchy without inventing an arbitrary new number.
+
+   Opaque background (var(--bg-base), the same fully alpha-free token the
+   Blend summary uses) so Hopper/Fleet/Material cards scrolling underneath
+   never bleed through; a hairline top border gives the two stacked
+   sticky levels a small, consistent visual seam without an empty gap
+   (this task's Section 11) -- no backdrop-filter needed. */
+#page-calculate .calculate-recommendation-sticky-controls {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + var(--calculate-blend-summary-sticky-height, 0px));
+  z-index: 5;
+  background: var(--bg-base, #0a0e1a);
+  padding: 8px 0 4px;
+  margin: 0 0 10px;
+  border-top: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+/* Compact-only overrides scoped to the sticky wrapper (this task's
+   Section 9/19 "operational control bar, not a second Recommendation
+   result") -- .calculate-btn-row/.calculate-recommendation-controls
+   themselves stay untouched, since Recovery's own "Hitung Recovery"
+   button further down the page reuses .calculate-btn-row with its
+   original spacing. */
+#page-calculate .calculate-recommendation-sticky-controls .calculate-recommendation-controls {
+  margin-bottom: 0;
+}
+#page-calculate .calculate-recommendation-sticky-controls .calculate-btn-row {
+  margin: 8px 0 0;
+}
+
 #page-calculate .calculate-recommendation-controls {
   display: flex;
   gap: 10px;
@@ -541,6 +602,55 @@
   border: 1px solid rgba(248, 113, 113, 0.35);
   color: var(--bad, #f87171);
   font-size: 0.82rem;
+}
+
+/* ---- V2.5 STALE RECOMMENDATION RESULT (Preserve Recommendation View
+   While Editing Target/Tolerance) -- this task's Sections 3/4/31. A
+   compact status notice (never a large warning card), using the existing
+   --accent2/--glass-border/--muted tokens shared across the app, not an
+   isolated Calculate-only palette. Text-based (this task's Section 32) --
+   the amber accent border reinforces the state but is never the only
+   signal. ---- */
+#page-calculate .calculate-recommendation-stale-notice {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+#page-calculate .calculate-recommendation-stale-notice__primary {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent2, #fbbf24);
+}
+#page-calculate .calculate-recommendation-stale-notice__secondary {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted, #8fa3bd);
+}
+
+/* The stale result subtree itself: reduced opacity so it clearly reads as
+   inactive/frozen context, never blurred, never hidden -- the operator
+   must still be able to compare the previous Hopper Pattern/Fleet/
+   Material output against a newly-typed Target while deciding (this
+   task's Section 4). A subtle left accent bar (reusing the same
+   convention Material/Fleet Action rows already use for their own status
+   accents) reinforces the state without being the only signal. */
+#page-calculate .calculate-recommendation-result.is-stale {
+  opacity: 0.62;
+  border-left: 3px solid var(--accent2, #fbbf24);
+  padding-left: 10px;
+}
+
+/* Recovery inputs/button are disabled while stale (this task's Section
+   11) -- native `:disabled` styling, consistent with the rest of the app
+   (settings.css's own .settings-input:disabled/.settings-btn:disabled
+   convention), never a separate custom "locked" visual language. */
+#page-calculate .calculate-recommendation-result.is-stale .calculate-recommendation-input:disabled,
+#page-calculate .calculate-recommendation-result.is-stale .calculate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ---- Recommendation status card -- pairs color with an explicit
@@ -818,6 +928,33 @@
   background: rgba(248, 113, 113, 0.14);
   color: var(--bad, #f87171);
 }
+/* V2.5 operational vocabulary (this task's Sections 24/30) -- reuses the
+   same .calculate-action-badge shell for both Material (--replace-dome)
+   and Fleet (--receive/--reduce/--split-loading/--close-dome-and-move/
+   --conflict) rows; --replace-dome/--reduce/--split-loading intentionally
+   share the existing --limit/amber language (an attention-worthy
+   mitigation, not a failure), --close-dome-and-move/--receive share the
+   existing --move/accent language (a same-Contractor relocation outcome,
+   not a problem), and --conflict reuses --stop/--bad (a genuine
+   unresolved operational conflict, this task's Section 25). */
+#page-calculate .calculate-action-badge--receive {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-action-badge--close-dome-and-move {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-action-badge--reduce,
+#page-calculate .calculate-action-badge--split-loading,
+#page-calculate .calculate-action-badge--replace-dome {
+  background: rgba(251, 191, 36, 0.16);
+  color: var(--accent2, #fbbf24);
+}
+#page-calculate .calculate-action-badge--conflict {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--bad, #f87171);
+}
 
 /* A subtle left accent bar per Material Action state -- reinforces the
    badge color at a glance while scrolling a long list, still never the
@@ -868,25 +1005,74 @@
 #page-calculate .calculate-fleet-action-line strong {
   color: var(--text, inherit);
 }
-#page-calculate .calculate-fleet-action-line--use span {
+#page-calculate .calculate-fleet-action-line--use,
+#page-calculate .calculate-fleet-action-line--final {
+  border-top: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+  padding-top: 3px;
+  margin-top: 1px;
+}
+#page-calculate .calculate-fleet-action-line--use span,
+#page-calculate .calculate-fleet-action-line--final span {
   color: var(--good, #34d399);
+}
+#page-calculate .calculate-fleet-action-line--initial span {
+  color: var(--muted, #8fa3bd);
 }
 #page-calculate .calculate-fleet-action-line--move span,
 #page-calculate .calculate-fleet-action-line--receive span {
   color: var(--accent, #38bdf8);
 }
-#page-calculate .calculate-fleet-action-line--separate span {
+#page-calculate .calculate-fleet-action-line--reduce span {
   color: var(--accent2, #fbbf24);
 }
 
-/* STANDBY hint (V2.4 Phase 6.1) -- reuses the exact same muted/small
-   styling as Material Action's own .calculate-action-reason, so it reads
-   as the same kind of "brief explanatory note" convention. */
-#page-calculate .calculate-fleet-action-standby-hint {
-  margin: 2px 0 0;
+/* ---- V2.5 continuity detail (this task's Sections 4/9-21/30-32) --
+   REPLACES the old unconditional STANDBY line/hint whenever a
+   Contractor's fleet needs REDUCE/SPLIT_LOADING/REPLACE_DOME/CONFLICT
+   mitigation. Reuses the exact same muted/small styling as Material
+   Action's own .calculate-action-reason so it reads as the same "brief
+   explanatory note" convention, never a second visual language. ---- */
+#page-calculate .calculate-continuity-detail {
+  margin-top: 4px;
   font-size: 0.72rem;
   line-height: 1.4;
   color: var(--muted, #8fa3bd);
+}
+#page-calculate .calculate-continuity-rejection-note,
+#page-calculate .calculate-continuity-excavator-note,
+#page-calculate .calculate-continuity-close-dome-note {
+  margin: 2px 0 0;
+}
+#page-calculate .calculate-continuity-split-title {
+  margin: 8px 0 4px;
+}
+#page-calculate .calculate-continuity-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.78rem;
+  padding: 2px 0;
+}
+#page-calculate .calculate-continuity-line span {
+  color: var(--muted, #8fa3bd);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+#page-calculate .calculate-continuity-line strong {
+  color: var(--text, inherit);
+}
+#page-calculate .calculate-continuity-detail-line {
+  margin: 4px 0 0;
+  color: var(--text, inherit);
+}
+/* Never color-only (this task's own "status must include text" discipline,
+   consistent with every other action badge on this page) -- the CONFLICT
+   sentence pairs --bad with explicit wording, never a bare red line. */
+#page-calculate .calculate-continuity-conflict-message {
+  margin: 4px 0 0;
+  color: var(--bad, #f87171);
+  font-weight: 700;
 }
 
 @media (max-width: 374px) {

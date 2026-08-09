@@ -618,3 +618,73 @@ describe('Phase 3 non-goals -- no Material Action, no Recovery, no UI in the new
     });
   });
 });
+
+/* ============================================================
+   V2.5.1 CORRECTIVE PASS -- real end-to-end proof, through the actual
+   search+ranking pipeline (never a hand-picked fixture), that the
+   Owner-reported "L20=34 active / L40=1 active" class of bug cannot
+   recur (this task's Sections 1-3/17/18/23).
+   TII: L20 15 DT @ Ni 1.05%, L40 20 DT @ Ni 1.20%, both 50 t/DT (total 35
+   DT). The exact blend value for every possible (L20, L40) split was
+   computed directly (0..35) to choose Target/Tolerance windows where the
+   OLD ranking (fleet utilization + deviation only) would have selected an
+   allocation with an active loading point at 1-5 DT, while a genuinely
+   DIFFERENT, operationally VALID allocation is also within tolerance.
+============================================================ */
+describe('V2.5.1 -- minimum-6-DT active loading point, real engine regression (Sections 1-3/17/18/23)', () => {
+  const sources = [
+    { pileId: 'L20', contractor: 'TII', ni: '1.05', units: '15', tonnesPerUnit: '50' },
+    { pileId: 'L40', contractor: 'TII', ni: '1.20', units: '20', tonnesPerUnit: '50' },
+  ];
+
+  test('17. a valid 29/6 split wins over the old 30/5-style invalid pick, even though 30/5 is chemically closer to Target', () => {
+    // Within [1.066, 1.078]: L20=29 (valid, deviation 0.00371), L20=30
+    // (invalid -- L40=5, deviation 0.00057, chemically CLOSER), L20=31
+    // (invalid -- L40=4). The OLD ranking (deviation/utilization only)
+    // would have picked L20=30 (smallest deviation); V2.5.1 must pick the
+    // valid L20=29 instead.
+    const result = findBlendRecommendations({ targetNi: '1.072', tolerance: '0.006', sources });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    const l20 = result.candidate.sources.find((s) => s.pileId === 'L20');
+    const l40 = result.candidate.sources.find((s) => s.pileId === 'L40');
+    assert.equal(l20.activeUnits, 29);
+    assert.equal(l40.activeUnits, 6);
+    assert.ok(l40.activeUnits === 0 || l40.activeUnits >= 6, 'L40 must never land on 1-5 active DT');
+    assert.equal(l20.activeUnits + l40.activeUnits, 35, 'same-Contractor fleet conservation -- no DT silently lost');
+  });
+
+  test('18. full closure (35/0) wins over an invalid near-tie (e.g. 34/1-style), when closing the smaller dome is the only valid within-tolerance option nearby', () => {
+    // Within [1.049, 1.059]: L20=33 (invalid), L20=34 (invalid, deviation
+    // 0.00029 -- chemically CLOSEST), L20=35/L40=0 (valid, deviation
+    // 0.004). The OLD ranking would have picked L20=34/L40=1; V2.5.1 must
+    // prefer the fully-valid L20=35/L40=0 closure instead.
+    const result = findBlendRecommendations({ targetNi: '1.054', tolerance: '0.005', sources });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    const l20 = result.candidate.sources.find((s) => s.pileId === 'L20');
+    const l40 = result.candidate.sources.find((s) => s.pileId === 'L40');
+    assert.equal(l20.activeUnits, 35);
+    assert.equal(l40.activeUnits, 0, 'L40 closes entirely rather than running at an invalid 1-5 DT');
+    assert.equal(l20.activeUnits + l40.activeUnits, 35);
+  });
+
+  test('3. a candidate with a 1-DT active loading point never wins when a valid (0 or >=6) alternative is within tolerance, at the smallest possible scale', () => {
+    // Minimal scenario: L20 6 DT @ 1.00%, L40 1 DT @ 2.00%, both 50 t/DT
+    // (total fleet 7). A wide tolerance around 1.00% makes L40=1 (the
+    // chemically "obvious" full-fleet split) and L40=0 (fully closed, all
+    // 7 DT to L20) both reachable -- the engine must never settle on L40
+    // landing anywhere in the invalid 1-5 range.
+    const smallSources = [
+      { pileId: 'L20', contractor: 'TII', ni: '1.00', units: '6', tonnesPerUnit: '50' },
+      { pileId: 'L40', contractor: 'TII', ni: '2.00', units: '1', tonnesPerUnit: '50' },
+    ];
+    const result = findBlendRecommendations({ targetNi: '1.00', tolerance: '0.05', sources: smallSources });
+    assert.equal(result.ok, true);
+    const l20 = result.candidate.sources.find((s) => s.pileId === 'L20');
+    const l40 = result.candidate.sources.find((s) => s.pileId === 'L40');
+    assert.ok(l40.activeUnits === 0 || l40.activeUnits >= 6, `L40 landed on an invalid ${l40.activeUnits} active DT`);
+    assert.ok(l20.activeUnits === 0 || l20.activeUnits >= 6, `L20 landed on an invalid ${l20.activeUnits} active DT`);
+    assert.equal(l20.activeUnits + l40.activeUnits, 7, 'the full 7-DT Contractor fleet is conserved (allocation is not capped by each source\'s own original assignedUnits, matching the existing pre-V2.5 search model)');
+  });
+});

@@ -49,10 +49,10 @@ function extractCacheName(source) {
 const appShell = extractAppShell(swSource);
 const cacheName = extractCacheName(swSource);
 
-describe('22/35/37. Cache version bumped exactly once for the whole V2.4.1 patch (Bug A+B+C combined)', () => {
-  test('CACHE_NAME reflects the V2.4.1 release, not the old V2.4.0 name', () => {
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.0-calculate');
-    assert.match(cacheName, /^hpal-production-monitor-v2\.4\.1/);
+describe('22/40. Cache version bumped exactly once for the whole V2.5 patch', () => {
+  test('CACHE_NAME reflects the V2.5 release, not the old V2.4.1 name', () => {
+    assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.1-mobile-input-sticky');
+    assert.match(cacheName, /^hpal-production-monitor-v2\.5\.0/);
   });
 
   test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
@@ -81,8 +81,11 @@ describe('21. Calculate runtime assets are present in APP_SHELL', () => {
       './js/pages/calculate/recommendation-actions.js',
       './js/pages/calculate/planned-blend-recovery.js',
       './js/pages/calculate/hopper-pattern.js',
-      // V2.4.1 Bug A -- the new shared locale-aware decimal-parsing module.
+      // V2.4.1 Bug A -- the shared locale-aware decimal-parsing module.
       './js/pages/calculate/number-input.js',
+      // V2.5 -- the new Contractor Continuity / Operational Fleet
+      // Optimization module (this task's Section 41).
+      './js/pages/calculate/operational-continuity.js',
     ];
     for (const file of expected) {
       assert.ok(appShell.includes(file), `APP_SHELL is missing ${file}`);

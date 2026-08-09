@@ -180,6 +180,15 @@ export default {
   // rows (this task's Section 12) -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'Belum ada sumber lengkap untuk dihitung. Lengkapi minimal satu baris sumber (Pile ID, Kontraktor, Ni, DT, t/DT).',
 
+  // V2.5 -- Preserve Recommendation View While Editing Target/Tolerance.
+  // Shown directly above a Recommendation result that no longer matches
+  // the CURRENT sticky Target Ni/Tolerance inputs (this task's Sections
+  // 2-3) -- the result subtree itself stays rendered as stale context,
+  // never destroyed, so the viewport does not collapse while the operator
+  // is scrolled deep into it comparing scenarios.
+  'calculate.recommendation.staleNotice': 'Rekomendasi perlu dihitung ulang.',
+  'calculate.recommendation.staleNoticeDetail': 'Hasil di bawah menggunakan Target/Toleransi sebelumnya.',
+
   // Material Action / Fleet Action (V2.4 Phase 5) -- derived from the
   // already-selected primary Recommendation candidate
   // (recommendation-actions.js), rendered as two separate sections below
@@ -204,6 +213,13 @@ export default {
   'calculate.actions.fleet.use': 'AKTIF',
   'calculate.actions.fleet.move': 'PINDAH',
   'calculate.actions.fleet.receive': 'TERIMA',
+  // V2.5.1 corrective pass (this task's Sections 10/30) -- AWAL/AKHIR
+  // frame the before/after fleet total explicitly for any CHANGED source,
+  // so the final allocation is never left implicit/for the reader to sum
+  // (a fully unchanged source keeps the compact single AKTIF line above,
+  // this task's Section 14).
+  'calculate.actions.fleet.initial': 'AWAL',
+  'calculate.actions.fleet.final': 'AKHIR',
   // "STANDBY" (V2.4 Phase 6.1 Owner correction) replaces the old
   // "PISAHKAN" wording -- "Pisahkan" could be misread as separating
   // material or permanently removing the unit. The internal
@@ -229,6 +245,69 @@ export default {
   // mistake a best-attainable baseline for a successful within-tolerance
   // result.
   'calculate.actions.bestAttainableNote': 'Aksi berdasarkan hasil terbaik yang dapat dicapai',
+
+  // ============================================================
+  // V2.5 -- CONTRACTOR CONTINUITY AND OPERATIONAL FLEET OPTIMIZATION.
+  // User-facing operational vocabulary replacing plain STANDBY/STOP as the
+  // normal answer (this task's Sections 4/8/22-24) -- pure domain values
+  // (recommendation-actions.js's MATERIAL_ACTION_STOP, 'separate'/
+  // separateUnits) are UNCHANGED; only what the UI shows is new, mapped by
+  // js/pages/calculate/operational-continuity.js's classifyMaterialActionLabel()/
+  // classifyFleetActionLabel(). Short badge-style labels stay ALL CAPS,
+  // matching this file's existing calculate.actions.* badge convention
+  // (GUNAKAN/BATASI/AKTIF/PINDAH); longer explanatory sentences use normal
+  // sentence case, matching calculate.recommendation.searchSpaceTooLarge's
+  // existing convention -- both per this task's Section 48.
+  // ============================================================
+  'calculate.actions.material.replaceDome': 'GANTI DOME',
+  'calculate.actions.material.replaceDomeReason': 'Material ini sebaiknya diganti dengan dome berkadar Ni {min}% – {max}%.',
+
+  'calculate.actions.fleetOperational.reduce': 'KURANGI',
+  'calculate.actions.fleetOperational.splitLoading': 'PECAH LOADING',
+  // V2.5.1 correction (this task's Section 13): "TUTUP DOME" alone, not
+  // "TUTUP DOME + PINDAH" -- the PINDAH detail already appears as its own
+  // line directly beneath the badge, so the badge itself stays a single
+  // concise word.
+  'calculate.actions.fleetOperational.closeDomeAndMove': 'TUTUP DOME',
+  'calculate.actions.fleetOperational.replaceDome': 'GANTI DOME',
+  'calculate.actions.fleetOperational.conflict': 'KONFLIK OPERASIONAL',
+
+  // Reassures the reader a closed dome does not mean the Contractor itself
+  // stopped (this task's Section 13/19).
+  'calculate.continuity.closeDomeNote': 'Dome ditutup. Fleet tetap aktif pada loading point {contractor} lainnya.',
+
+  // {units}/{total}/{pct} DT reduced out of this Contractor's total fleet
+  // (this task's Section 4) -- shown only for a <=5% minor reduction,
+  // where REDUCE is itself the recommended answer (no rejection framing).
+  'calculate.continuity.reduceDetail': 'Kurangi {units} DT dari total {total} DT (~{pct}%).',
+
+  // Shown ABOVE a SPLIT/REPLACE/CONFLICT plan (this task's Section 17
+  // worked example) -- explains why a plain STANDBY/reduction was NOT
+  // offered instead.
+  'calculate.continuity.reductionNotRecommended': 'Pengurangan {units} DT ({pct}%) tidak direkomendasikan.',
+
+  'calculate.continuity.splitTitle': 'Pecah Loading Point',
+  'calculate.continuity.newDomeLabel': 'Dome tambahan',
+  'calculate.continuity.suggestedGradeLabel': 'Kadar yang disarankan',
+  // Ni range display, always 3 decimals (this task's Section 32) --
+  // {min}/{max} are already-formatted strings, not raw numbers.
+  'calculate.continuity.gradeRange': 'Ni {min}% – {max}%',
+  // The application has no excavator inventory (this task's Sections
+  // 11/34) -- always conditional wording, never a claim of availability.
+  'calculate.continuity.excavatorSupportNote': 'Jika excavator mendukung, buka loading point kedua.',
+  'calculate.continuity.excavatorNotSupportLabel': 'Jika excavator tidak mendukung:',
+  'calculate.continuity.replaceDetail': 'Ganti {pileId} dengan dome berkadar Ni {min}% – {max}% agar {total} DT tetap aktif.',
+
+  // Contractor summary context (this task's Section 31) -- never raw
+  // internal scores, only the same units/percentages already shown
+  // elsewhere on this page.
+  'calculate.continuity.contractorFleetSummary': '{total} DT · {loadingPoints} loading point',
+  'calculate.continuity.contractorInactiveSummary': '{units} DT tidak aktif · {pct}%',
+
+  // Operational conflict (this task's Section 25) -- never invents a
+  // solution; the best-attainable physical result is already shown
+  // elsewhere on this page (Recommendation Status / Hopper Pattern).
+  'calculate.continuity.conflictMessage': 'Target dan kontinuitas fleet tidak dapat dipenuhi bersama untuk Kontraktor ini.',
 
   'calculate.validation.targetNiRequired': 'Target Ni wajib diisi.',
   'calculate.validation.targetNiInvalid': 'Target Ni harus berupa angka yang valid.',
