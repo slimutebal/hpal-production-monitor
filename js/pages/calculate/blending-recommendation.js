@@ -42,11 +42,11 @@ import {
   planContractorRelocations,
   MAX_ALLOCATIONS_PER_CONTRACTOR,
   MAX_GLOBAL_CANDIDATES,
+  MIN_UNITS_PER_ACTIVE_LOADING_POINT,
 } from './fleet-allocation.js';
 import {
-  pickBestCandidate,
-  RANKING_MODE_WITHIN_TOLERANCE,
-  RANKING_MODE_BEST_ATTAINABLE,
+  compareWithinTolerance,
+  compareBestAttainable,
 } from './recommendation-ranking.js';
 
 // Gate A decision (architecture doc Section 16.1/41, this task's Section
@@ -274,6 +274,401 @@ function buildCandidate(groups, activeBySourceKey, targetNi, tolerance) {
 }
 
 // ============================================================
+// V3.0 Phase 4A/4B -- EXACT chemistry-bound pruning (docs/
+// V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md Sections 20/23).
+//
+// PROOF OF CONSERVATIVENESS (must hold for every partial node, proven by
+// tests/v3-phase4a-chemistry-bound.test.mjs and
+// tests/v3-phase4b-chemistry-bound.test.mjs): once some Contractor groups
+// are decided and others are still open, the final blend Ni is
+//
+//   finalNi = (fixedNumerator + Sum openGroupNumerator_i)
+//           / (fixedTonnage   + Sum openGroupTonnage_i)
+//
+// i.e. a WEIGHTED AVERAGE of the fixed portion's own Ni (fixedNumerator /
+// fixedTonnage, weight fixedTonnage) and, for each still-open group, that
+// group's own achieved average Ni (weight = whatever tonnage that group
+// ends up contributing, 0..groupMaxTonnage_i). Phase 4A stopped here and
+// bounded the weights as completely unconstrained (0..Infinity), which
+// yields a correct but LOOSE bound: minFinalNi/maxFinalNi collapse to the
+// pooled open-group Ni extent as soon as ANY fixed prefix exists, because
+// an unbounded weight can always be imagined to overwhelm the fixed
+// portion.
+//
+// V3.0 Phase 4B TIGHTENING: each open group's own achievable tonnage is
+// NOT actually unbounded -- feasible allocations only ever place up to
+// that group's own physical fleet on its single highest-tonnesPerUnit
+// source (enumerateOperationalAllocations() allows one active source to
+// take the group's ENTIRE fleet), so
+//
+//   groupMaxTonnage_i = fleet_i >= MIN_UNITS_PER_ACTIVE_LOADING_POINT
+//                        ? fleet_i * max(tonnesPerUnit over group i's sources)
+//                        : 0   (fleet_i < 6 -- EVERY source in this group is
+//                               structurally forced to 0 active units, so the
+//                               group can only ever contribute (0, 0))
+//
+// is a proven exact ceiling on group i's own achievable tonnage. Pooling
+// every still-open group's own (minNi, maxNi, groupMaxTonnage) gives one
+// aggregate open "budget": total open tonnage T_agg is confined to
+// [0, maxOpenTonnage] (maxOpenTonnage = Sum groupMaxTonnage_i over open
+// groups), and the corresponding open numerator W_agg is confined to
+// [T_agg * pooledMinNi, T_agg * pooledMaxNi] (pooledMinNi/pooledMaxNi being
+// the SAME Phase 4A per-group-Ni-extent pooling as before -- this box is a
+// RELAXATION/superset of the true achievable (T_agg, W_agg) region, so
+// bounding over it stays conservative).
+//
+// finalNi(T_agg) = (fixedNumerator + a*T_agg) / (fixedTonnage + T_agg), for
+// a in {pooledMinNi, pooledMaxNi}, is a Mobius function of T_agg whose
+// derivative sign (a*fixedTonnage - fixedNumerator, over (fixedTonnage +
+// T_agg)^2) does NOT depend on T_agg -- so it is monotonic across the whole
+// [0, maxOpenTonnage] interval, meaning its min/max over that interval is
+// always attained at one of the two ENDPOINTS (T_agg=0, giving exactly
+// fixedNi; or T_agg=maxOpenTonnage). Evaluating both endpoints and taking
+// min/max is therefore exact for the relaxed box, hence still a valid
+// (possibly loose, NEVER too narrow) outer bound on the true finalNi:
+//
+//   minFinalNi = min( fixedNi, (fixedNumerator + pooledMinNi*maxOpenTonnage)
+//                              / (fixedTonnage + maxOpenTonnage) )
+//   maxFinalNi = max( fixedNi, (fixedNumerator + pooledMaxNi*maxOpenTonnage)
+//                              / (fixedTonnage + maxOpenTonnage) )
+//
+// As maxOpenTonnage -> Infinity this collapses back to Phase 4A's original
+// pooled-extent-only bound (sanity limit, never asserted with literal
+// Infinity since that divides Infinity/Infinity in floating point --
+// maxOpenTonnage is always a real finite ceiling derived from actual
+// fleet/tonnesPerUnit numbers). When maxOpenTonnage is 0 (every remaining
+// open group's own fleet is below the 6 DT minimum), no open group can
+// EVER contribute nonzero tonnage from this node, so finalNi is pinned
+// EXACTLY at fixedNi -- the tightest possible bound, a single point.
+// ============================================================
+
+// Per-group source Ni extremes (pure). `sources` are already-numeric
+// (toNumericSource() output) -- called once per group per search, not per
+// node, since a group's OWN sources never change mid-search.
+export function groupSourceNiExtent(sources) {
+  let minNi = Infinity;
+  let maxNi = -Infinity;
+  sources.forEach((s) => {
+    if (s.ni < minNi) minNi = s.ni;
+    if (s.ni > maxNi) maxNi = s.ni;
+  });
+  return { minNi, maxNi };
+}
+
+function combineExtents(a, b) {
+  return { minNi: Math.min(a.minNi, b.minNi), maxNi: Math.max(a.maxNi, b.maxNi) };
+}
+
+// Exact ceiling on ONE group's own achievable tonnage (any feasible
+// allocation, any nonzero one included) -- see the Phase 4B derivation
+// above. `sources` need only `tonnesPerUnit`; `fleet` is that group's own
+// total physical DT (Sum of assignedUnits). Exported so both production and
+// the bound-proof test (which independently exhausts every feasible
+// allocation) call the EXACT SAME formula, never a re-implemented copy.
+export function groupMaxAchievableTonnage(fleet, sources) {
+  if (fleet < MIN_UNITS_PER_ACTIVE_LOADING_POINT) return 0;
+  let maxTonnesPerUnit = 0;
+  sources.forEach((s) => {
+    if (s.tonnesPerUnit > maxTonnesPerUnit) maxTonnesPerUnit = s.tonnesPerUnit;
+  });
+  return fleet * maxTonnesPerUnit;
+}
+
+// suffixBounds[i] = the combined (minNi, maxNi, maxOpenTonnage) across
+// groups [i .. groups.length), i.e. "every group not yet decided at depth
+// i". suffixBounds[groups.length] = {Infinity, -Infinity, 0} (no open
+// groups -- never consulted for pruning, since a bound check only ever
+// runs when groupIndex < groups.length, at which point group[groupIndex]
+// itself is always open and contributes finite extremes). Computed once per
+// search (V3.0 Phase 4B "CACHE CONTRACTOR BOUNDS" -- never recomputed per
+// node), same cost shape as Phase 4A's suffixExtents.
+function computeSuffixBounds(groups) {
+  const n = groups.length;
+  const suffixBounds = new Array(n + 1);
+  suffixBounds[n] = { minNi: Infinity, maxNi: -Infinity, maxOpenTonnage: 0 };
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const group = groups[i];
+    const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
+    const extent = combineExtents(groupSourceNiExtent(group.sources), suffixBounds[i + 1]);
+    const maxOpenTonnage = groupMaxAchievableTonnage(fleet, group.sources) + suffixBounds[i + 1].maxOpenTonnage;
+    suffixBounds[i] = { minNi: extent.minNi, maxNi: extent.maxNi, maxOpenTonnage };
+  }
+  return suffixBounds;
+}
+
+// Pure bound function -- see the proof above this section. `openBound` is
+// {minNi, maxNi, maxOpenTonnage} for every still-open group (suffixBounds[i]
+// above). Exported so the bound-proof test exercises the EXACT function
+// production uses, never a re-implemented copy.
+export function conservativeFinalNiBound(fixedNumerator, fixedTonnage, openBound) {
+  const { minNi, maxNi, maxOpenTonnage } = openBound;
+  if (fixedTonnage <= 0) return { minNi, maxNi };
+
+  const fixedNi = fixedNumerator / fixedTonnage;
+  if (maxOpenTonnage <= 0) return { minNi: fixedNi, maxNi: fixedNi };
+
+  const totalTonnage = fixedTonnage + maxOpenTonnage;
+  const minEndpointNi = (fixedNumerator + minNi * maxOpenTonnage) / totalTonnage;
+  const maxEndpointNi = (fixedNumerator + maxNi * maxOpenTonnage) / totalTonnage;
+  return {
+    minNi: Math.min(fixedNi, minEndpointNi),
+    maxNi: Math.max(fixedNi, maxEndpointNi),
+  };
+}
+
+// Reuses the SAME FLOAT_EPSILON as isWithinTolerance() so a branch is
+// never pruned for a target that a completed candidate would itself still
+// accept as within-tolerance (representation-noise-only guard, never a
+// business-tolerance widening -- see FLOAT_EPSILON's own comment).
+export function boundIntersectsTolerance(bound, targetNi, tolerance) {
+  const low = targetNi - tolerance - FLOAT_EPSILON;
+  const high = targetNi + tolerance + FLOAT_EPSILON;
+  return bound.maxNi >= low && bound.minNi <= high;
+}
+
+// ============================================================
+// V3.0 Phase 4B -- EXACT search ordering (docs/
+// V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md Section 20/23's
+// "traversal order may change only to find a strong incumbent earlier").
+//
+// This ONLY reorders each Contractor group's OWN allocation array -- it
+// never discards, merges, or invents an allocation, never changes
+// candidateCount (operationalCandidateSpaceSize() below only ever reads
+// .length), and never participates in the pruning decision itself
+// (conservativeFinalNiBound/boundIntersectsTolerance above are computed
+// identically regardless of visit order). It exists purely so a
+// within-tolerance incumbent tends to stream through EARLIER, which lets
+// pruningGate.active flip to true sooner and gives chemistry pruning more
+// of the traversal to actually work with.
+//
+// Composite deterministic sort key per allocation, applied once per
+// Contractor group at search setup (never recomputed per node):
+//   1. higher fleet utilization first (activeUnits / fleet, descending) --
+//      a fuller allocation is a more "operationally realistic" candidate.
+//   2. lower standby (idle) units first, ascending -- fleet - activeUnits;
+//      for a single group this tracks utilization exactly (same
+//      information, kept as an explicit secondary key per spec).
+//   3. chemistry contribution closer to target direction first -- this
+//      allocation's OWN weighted-average Ni (numerator/tonnage), ascending
+//      distance from targetNi; the all-zero allocation (tonnage 0, no
+//      defined average) sorts last via +Infinity distance.
+//   4. canonical lexicographic order of the allocation tuple itself, so
+//      ties are resolved the SAME way regardless of the JS engine's
+//      Array#sort stability guarantees -- required for "same input
+//      remains deterministic" across environments.
+// ============================================================
+function allocationOrderKey(allocation, sources, fleet, targetNiValue) {
+  let activeUnits = 0;
+  let numerator = 0;
+  let tonnage = 0;
+  allocation.forEach((v, i) => {
+    activeUnits += v;
+    const t = v * sources[i].tonnesPerUnit;
+    tonnage += t;
+    numerator += sources[i].ni * t;
+  });
+  return {
+    utilization: fleet > 0 ? activeUnits / fleet : 0,
+    standby: fleet - activeUnits,
+    chemDistance: tonnage > 0 ? Math.abs(numerator / tonnage - targetNiValue) : Infinity,
+  };
+}
+
+// Exported so tests can assert the ordering directly (production applies
+// this once per group inside prepareSearch()/prepareSearchUnbounded() below,
+// never per node).
+export function orderAllocationsForSearch(group, allocations, targetNiValue) {
+  const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
+  return allocations
+    .map((allocation) => ({ allocation, key: allocationOrderKey(allocation, group.sources, fleet, targetNiValue) }))
+    .sort((a, b) => {
+      if (b.key.utilization !== a.key.utilization) return b.key.utilization - a.key.utilization;
+      if (a.key.standby !== b.key.standby) return a.key.standby - b.key.standby;
+      if (a.key.chemDistance !== b.key.chemDistance) return a.key.chemDistance - b.key.chemDistance;
+      const aKey = a.allocation.join(',');
+      const bKey = b.allocation.join(',');
+      return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+    })
+    .map((entry) => entry.allocation);
+}
+
+// Explicit branch-and-bound traversal (this task's Section "SEARCH
+// STRUCTURE"/"Refactor... into explicit partial-node traversal"). Replaces
+// the plain recursive Cartesian combine with one that threads running
+// accumulators (contractor depth, weighted-Ni numerator, tonnage) so the
+// chemistry bound can be evaluated at every node BEFORE its subtree is
+// explored, without recomputing anything from scratch.
+//
+// PRUNING SAFETY (this task's "IMPORTANT BEST-ATTAINABLE RULE"): pruning
+// only ever consults `pruningGate.active`, which the caller sets true ONLY
+// once a within-tolerance candidate has actually streamed through. Before
+// that, every node is fully explored (pruningGate.active stays false), so
+// TARGET_NOT_ACHIEVABLE's bestAttainable is always found by the same
+// exhaustive traversal Phase 3 used -- no bound is invented for that path.
+// Once a within-tolerance incumbent exists, the final status is
+// permanently 'OK' regardless of what is pruned afterward (bestWithinTolerance
+// is never reset to null), so pruning bestAttainable-only branches from that
+// point on cannot change the returned result.
+//
+// Also proves sourcesInAnyWithinToleranceCandidate stays exact under
+// pruning: a branch is only pruned when its bound CANNOT intersect
+// [target-tolerance, target+tolerance], which by the proof above means NO
+// completion in that branch can be within tolerance -- so pruning never
+// discards a source that would have participated in a within-tolerance
+// candidate.
+function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit) {
+  const suffixBounds = computeSuffixBounds(groups);
+  const diagnostics = { visitedNodes: 0, prunedByChemistry: 0, completedCandidates: 0 };
+
+  // groupIndex: current Contractor depth. fixedNumerator/fixedTonnage:
+  // accumulated weighted-Ni numerator/tonnage across DECIDED groups only.
+  // fixedActiveUnits: accumulated active units across decided groups
+  // (diagnostic-only -- no bound in this phase consumes it, per this
+  // task's "do not invent such a bound just to increase pruning").
+  // activeBySourceKey: enough state (every decided group's chosen
+  // allocation) to call buildCandidate() exactly once groupIndex reaches
+  // groups.length.
+  function combine(groupIndex, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits) {
+    diagnostics.visitedNodes += 1;
+
+    if (groupIndex === groups.length) {
+      const candidate = buildCandidate(groups, activeBySourceKey, targetNiValue, toleranceValue);
+      if (candidate) {
+        diagnostics.completedCandidates += 1;
+        visit(candidate);
+      }
+      return;
+    }
+
+    if (pruningGate.active) {
+      const bound = conservativeFinalNiBound(fixedNumerator, fixedTonnage, suffixBounds[groupIndex]);
+      if (!boundIntersectsTolerance(bound, targetNiValue, toleranceValue)) {
+        diagnostics.prunedByChemistry += 1;
+        return;
+      }
+    }
+
+    const group = groups[groupIndex];
+    for (const allocation of perContractorAllocations[groupIndex]) {
+      const next = new Map(activeBySourceKey);
+      let allocNumerator = 0;
+      let allocTonnage = 0;
+      let allocActiveUnits = 0;
+      group.sources.forEach((s, i) => {
+        next.set(normalizeSourceIdentity(s.pileId, s.contractor), allocation[i]);
+        const tonnage = allocation[i] * s.tonnesPerUnit;
+        allocTonnage += tonnage;
+        allocNumerator += s.ni * tonnage;
+        allocActiveUnits += allocation[i];
+      });
+      combine(groupIndex + 1, next, fixedNumerator + allocNumerator, fixedTonnage + allocTonnage, fixedActiveUnits + allocActiveUnits);
+    }
+  }
+
+  combine(0, new Map(), 0, 0, 0);
+  return diagnostics;
+}
+
+// Shared streaming-incumbent core (this task's preserved Phase 3
+// contract) -- identical for both the Phase 4A pruned production path and
+// the Phase 3 (gate permanently disabled) test-support reference below, so
+// the ONLY behavioral difference between them is whether `enablePruningGate`
+// ever lets chemistry pruning engage.
+function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate) {
+  let bestWithinTolerance = null;
+  let bestAttainable = null;
+  const sourcesInAnyWithinToleranceCandidate = new Set();
+  const pruningGate = { active: false };
+
+  // Actual visit count lives in diagnostics.completedCandidates (below) --
+  // this function never tracks its own separate copy, since that would
+  // invite the exact Phase 4A bug this task fixes: a traversal-visit count
+  // masquerading as the search space's own SIZE (see
+  // operationalCandidateSpaceSize(), which callers use for the real
+  // candidateCount instead).
+  const diagnostics = forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, (candidate) => {
+    if (bestAttainable === null || compareBestAttainable(candidate, bestAttainable) < 0) {
+      bestAttainable = candidate;
+    }
+
+    if (candidate.withinTolerance) {
+      candidate.sources.forEach((source) => {
+        if (source.activeUnits > 0) {
+          sourcesInAnyWithinToleranceCandidate.add(normalizeSourceIdentity(source.pileId, source.contractor));
+        }
+      });
+      if (bestWithinTolerance === null || compareWithinTolerance(candidate, bestWithinTolerance) < 0) {
+        bestWithinTolerance = candidate;
+      }
+      if (enablePruningGate) pruningGate.active = true;
+    }
+  });
+
+  return { bestWithinTolerance, bestAttainable, sourcesInAnyWithinToleranceCandidate, diagnostics };
+}
+
+// Exact size of the OPERATIONAL Cartesian product across every Contractor
+// group, INCLUDING the single global all-zero allocation -- computed
+// directly from each group's own enumerateOperationalAllocations() output
+// length, which is exact BY CONSTRUCTION (cross-checked against
+// countOperationalAllocations() by tests/v3-operational-allocation.test.mjs's
+// counting matrix and by prepareSearch()'s own gate above, which rejects
+// before generation using the identical countOperationalAllocations() per
+// group). This is what makes candidateCount below independent of Branch-
+// and-Bound traversal: it is derived from the SEARCH SPACE (Phase 2's
+// already-exact operational allocation counts), never from how many leaves
+// a particular traversal happened to visit or prune (this task's "Use the
+// already-exact Phase 2 operational allocation counts").
+function operationalCandidateSpaceSize(perContractorAllocations) {
+  return perContractorAllocations.reduce((product, allocations) => product * allocations.length, 1);
+}
+
+// candidateCount below is the total operational Cartesian size MINUS the
+// one global all-zero allocation (this task's REQUIRED section): that
+// all-zero tuple is counted once by the per-group allocation sets (each
+// group's own set includes its own all-zero tuple), but buildCandidate()
+// always excludes it from actual candidates (totalActiveUnits === 0), so
+// subtracting exactly 1 -- never more -- restores the pre-pruning,
+// pre-Phase-4A semantic meaning of candidateCount: "how many
+// operationally-feasible non-all-zero candidates does this search space
+// represent", NOT "how many completed leaves did Branch-and-Bound visit".
+function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount) {
+  if (candidateCount === 0) {
+    return { ok: false, error: 'NO_FEASIBLE_CANDIDATE' };
+  }
+
+  if (search.bestWithinTolerance) {
+    return {
+      ok: true,
+      status: 'OK',
+      candidate: search.bestWithinTolerance,
+      targetNi: targetNiValue,
+      tolerance: toleranceValue,
+      candidateCount,
+      sourcesInAnyWithinToleranceCandidate: search.sourcesInAnyWithinToleranceCandidate,
+    };
+  }
+
+  return {
+    ok: true,
+    status: 'TARGET_NOT_ACHIEVABLE',
+    candidate: search.bestAttainable,
+    targetNi: targetNiValue,
+    tolerance: toleranceValue,
+    bestAttainableNi: search.bestAttainable.estimatedNi,
+    gap: search.bestAttainable.deviation,
+    candidateCount,
+    // Always empty here BY DEFINITION -- reaching this branch already
+    // means no candidate streamed through was within tolerance, so no
+    // within-tolerance candidate exists for ANY source to participate in.
+    // Included (rather than omitted) so every 'ok: true' result carries
+    // the same field shape regardless of status, and recommendation-
+    // actions.js never needs a status-specific branch just to read it.
+    sourcesInAnyWithinToleranceCandidate: new Set(),
+  };
+}
+
+// ============================================================
 // SEARCH + RANKING ENTRY POINT (this task's Section 1/18-19/20/23)
 // ============================================================
 //
@@ -292,13 +687,42 @@ function buildCandidate(groups, activeBySourceKey, targetNi, tolerance) {
 //   { ok: true, status: 'OK', candidate, targetNi, tolerance, candidateCount }
 //   { ok: true, status: 'TARGET_NOT_ACHIEVABLE', candidate, targetNi,
 //     tolerance, bestAttainableNi, gap, candidateCount }
+//
+// V3.0 Phase 4A.1 (this task's PRESERVE CANDIDATE COUNT SEMANTICS):
+// candidateCount is the exact operational Cartesian size (product of each
+// Contractor group's already-exact Phase 2 allocation count) minus the one
+// excluded all-zero allocation -- it describes the SEARCH SPACE, never how
+// many leaves Branch-and-Bound happened to visit or prune. It is therefore
+// IDENTICAL whether chemistry pruning discards zero branches or thousands
+// (see operationalCandidateSpaceSize()'s own comment, and
+// tests/v3-phase4a-branch-and-bound.test.mjs's Phase3-vs-Phase4A
+// candidateCount equality assertion). Use completedCandidates/visitedNodes/
+// prunedByChemistry (findBlendRecommendationsWithDiagnostics()) to observe
+// actual traversal work; the WINNING candidate itself is unaffected either
+// way (proven above: pruning never discards a branch that could still win).
 export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
+  const prepared = prepareSearch({ targetNi, tolerance, sources });
+  if (!prepared.ok) return prepared.result;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true);
+  const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
+  return buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
+}
+
+// Shared validation + generation-time-feasibility gate + per-Contractor
+// allocation-set setup (this task's Section 19's bound-before-generating
+// gate, unchanged from Phase 2) -- factored out so the Phase 3 streaming
+// production path above and the test-only materialized differential path
+// below (findBlendRecommendationsMaterialized()) run through byte-identical
+// setup and can never silently diverge on validation/gating behavior.
+function prepareSearch({ targetNi, tolerance, sources }) {
   const targetError = validateTargetNi(targetNi);
   const toleranceError = validateTolerance(tolerance);
   const { sourceErrors, fleetError, valid: sourcesValid } = validateRecommendationSources(sources);
 
   if (targetError || toleranceError || !sourcesValid) {
-    return { ok: false, error: 'INVALID_INPUT', targetError, toleranceError, sourceErrors, fleetError };
+    return { ok: false, result: { ok: false, error: 'INVALID_INPUT', targetError, toleranceError, sourceErrors, fleetError } };
   }
 
   const targetNiValue = parseDecimalInput(targetNi);
@@ -324,28 +748,40 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
     const count = countOperationalAllocations(fleet, group.sources.length);
     if (count > MAX_ALLOCATIONS_PER_CONTRACTOR) {
-      return { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', contractor: group.contractorKey, allocationCount: count };
+      return { ok: false, result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', contractor: group.contractorKey, allocationCount: count } };
     }
     globalCount *= count;
     if (globalCount > MAX_GLOBAL_CANDIDATES) {
-      return { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', allocationCount: globalCount };
+      return { ok: false, result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', allocationCount: globalCount } };
     }
   }
 
   // ---- Per-Contractor allocation sets, then Cartesian-combine ----------
+  // V3.0 Phase 4B: each group's own allocation set is reordered (never
+  // filtered/resized -- see orderAllocationsForSearch()'s own comment) so a
+  // strong incumbent tends to stream through earlier in the traversal.
   const perContractorAllocations = groups.map((group) => {
     const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
-    return enumerateOperationalAllocations(fleet, group.sources.length);
+    const allocations = enumerateOperationalAllocations(fleet, group.sources.length);
+    return orderAllocationsForSearch(group, allocations, targetNiValue);
   });
 
-  const candidates = [];
+  return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue };
+}
+
+// Shared leaf-candidate generator (this task's Section 28/29) -- the same
+// Cartesian-combine traversal used by BOTH the Phase 3 streaming production
+// path above and the test-only materialized path below, so differential
+// tests compare two different CONSUMPTION strategies over the identical
+// candidate stream/order, never two different generators.
+function forEachCandidate(groups, perContractorAllocations, targetNiValue, toleranceValue, visit) {
   // Keyed by normalizeSourceIdentity(pileId, contractor), never pileId
   // alone -- see buildCandidate()'s own comment for why a Pile-ID-only key
   // would silently collide once two different Contractors share a Pile ID.
   function combine(groupIndex, activeBySourceKey) {
     if (groupIndex === groups.length) {
       const candidate = buildCandidate(groups, activeBySourceKey, targetNiValue, toleranceValue);
-      if (candidate) candidates.push(candidate);
+      if (candidate) visit(candidate);
       return;
     }
     const group = groups[groupIndex];
@@ -356,6 +792,33 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     }
   }
   combine(0, new Map());
+}
+
+// ============================================================
+// TEST-SUPPORT ONLY -- Phase 2-style materialized selection (this task's
+// TESTS requirement #1: "streaming winner equals existing ranking winner").
+// Re-materializes the full candidate list (candidates[]/withinTolerance[]
+// arrays + slice().sort()[0], exactly like findBlendRecommendations() did
+// before V3.0 Phase 3) so tests/v3-phase3-streaming.test.mjs can assert the
+// Phase 3 streaming winner above is byte-identical to what full
+// materialization would have produced, for every tractable scenario.
+// Shares prepareSearch()/forEachCandidate()/buildCandidate() with the real
+// production path -- the ONLY thing duplicated here is the
+// collect-then-sort SHAPE being replaced, never the business rules
+// (buildCandidate, compareWithinTolerance, compareBestAttainable) that
+// decide what a candidate looks like or which one wins. NEVER call this
+// from production code -- it deliberately reintroduces the O(candidateCount)
+// materialization this phase removes.
+// ============================================================
+export function findBlendRecommendationsMaterialized({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
+  const prepared = prepareSearch({ targetNi, tolerance, sources });
+  if (!prepared.ok) return prepared.result;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+
+  const candidates = [];
+  forEachCandidate(groups, perContractorAllocations, targetNiValue, toleranceValue, (candidate) => {
+    candidates.push(candidate);
+  });
 
   if (candidates.length === 0) {
     return { ok: false, error: 'NO_FEASIBLE_CANDIDATE' };
@@ -363,7 +826,7 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
 
   const withinTolerance = candidates.filter((c) => c.withinTolerance);
   if (withinTolerance.length > 0) {
-    const best = pickBestCandidate(withinTolerance, RANKING_MODE_WITHIN_TOLERANCE);
+    const best = withinTolerance.slice().sort(compareWithinTolerance)[0];
     return {
       ok: true,
       status: 'OK',
@@ -371,23 +834,11 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
       targetNi: targetNiValue,
       tolerance: toleranceValue,
       candidateCount: candidates.length,
-      // Material Action Phase 5 (this task's Section 9): a compact DERIVED
-      // set -- normalizeSourceIdentity() keys of every source that has
-      // activeUnits > 0 in AT LEAST ONE within-tolerance candidate, not
-      // only the one actually selected above. This is what lets
-      // recommendation-actions.js's STOP condition 3 ("no feasible
-      // within-tolerance recommendation requires that source") be answered
-      // without re-running a second, inconsistent search or exposing the
-      // full `candidates`/`withinTolerance` arrays (which can be large,
-      // Section 19) to any caller. Built from the exact same
-      // `withinTolerance` array `best` was already picked from -- zero
-      // extra search work, and it can never disagree with `best` about
-      // which candidates are within tolerance.
       sourcesInAnyWithinToleranceCandidate: collectActiveSourceIdentities(withinTolerance),
     };
   }
 
-  const best = pickBestCandidate(candidates, RANKING_MODE_BEST_ATTAINABLE);
+  const best = candidates.slice().sort(compareBestAttainable)[0];
   return {
     ok: true,
     status: 'TARGET_NOT_ACHIEVABLE',
@@ -397,19 +848,14 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     bestAttainableNi: best.estimatedNi,
     gap: best.deviation,
     candidateCount: candidates.length,
-    // Always empty here BY DEFINITION -- reaching this branch already
-    // means withinTolerance.length === 0 (see above), so no within-
-    // tolerance candidate exists for ANY source to participate in.
-    // Included (rather than omitted) so every 'ok: true' result carries
-    // the same field shape regardless of status, and recommendation-
-    // actions.js never needs a status-specific branch just to read it.
     sourcesInAnyWithinToleranceCandidate: new Set(),
   };
 }
 
-// Compact derived participation set (this task's Section 9) -- a Set of
-// normalizeSourceIdentity(pileId, contractor) keys, never the raw
-// candidate objects themselves.
+// Compact derived participation set (this task's Section 9) -- TEST-SUPPORT
+// ONLY, used by findBlendRecommendationsMaterialized() above. Production's
+// streaming path accumulates this inline instead (see
+// findBlendRecommendations()).
 function collectActiveSourceIdentities(candidateList) {
   const identities = new Set();
   candidateList.forEach((candidate) => {
@@ -420,4 +866,89 @@ function collectActiveSourceIdentities(candidateList) {
     });
   });
   return identities;
+}
+
+// ============================================================
+// TEST-SUPPORT ONLY -- V3.0 Phase 4A benchmarking/differential helpers.
+// These reuse forEachCandidatePruned()/runStreamingSearch()/
+// buildResultFromSearch() from the production section above byte-for-byte
+// (never a re-implemented copy) -- the ONLY thing each helper below adds is
+// a different way of DRIVING that same traversal (gate permanently
+// disabled, diagnostics surfaced, or the SEARCH_SPACE_TOO_LARGE gate
+// bypassed). NEVER call any of these from production code.
+// ============================================================
+
+// Phase 3 reference, restated on the Phase 4A explicit-node traversal
+// structure with chemistry pruning permanently disabled (pruningGate.active
+// never set true) -- so tests/v3-phase4a-branch-and-bound.test.mjs can diff
+// "Phase 3 unpruned" against production's Phase 4A pruned result while
+// holding the traversal SHAPE identical, isolating the comparison to the
+// pruning decision itself. Behaviorally equivalent to calling
+// findBlendRecommendations() before this phase's edit.
+export function findBlendRecommendationsStreamingUnpruned({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
+  const prepared = prepareSearch({ targetNi, tolerance, sources });
+  if (!prepared.ok) return prepared.result;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, false);
+  const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
+  return buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
+}
+
+// Same production Phase 4A search as findBlendRecommendations(), but also
+// returns the { visitedNodes, prunedByChemistry, completedCandidates }
+// diagnostics -- kept OUT of findBlendRecommendations()'s own return shape
+// so no existing exact-equality/canonicalization test is affected (this
+// task's "isolated to tests/dev use").
+export function findBlendRecommendationsWithDiagnostics({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
+  const prepared = prepareSearch({ targetNi, tolerance, sources });
+  if (!prepared.ok) return { result: prepared.result, diagnostics: null };
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true);
+  const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
+  return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
+}
+
+// Identical to prepareSearch() (validation, numeric conversion, canonical
+// grouping, per-Contractor operational allocation sets) but WITHOUT the
+// MAX_ALLOCATIONS_PER_CONTRACTOR/MAX_GLOBAL_CANDIDATES safety gate --
+// exists ONLY so a benchmark can exercise the real Phase 4A traversal at
+// sizes production deliberately refuses (this task's PERFORMANCE Scenario
+// B), without raising the production limits themselves. Production code
+// must always go through prepareSearch()'s gated path.
+export function prepareSearchUnbounded({ targetNi, tolerance, sources }) {
+  const targetError = validateTargetNi(targetNi);
+  const toleranceError = validateTolerance(tolerance);
+  const { sourceErrors, fleetError, valid: sourcesValid } = validateRecommendationSources(sources);
+
+  if (targetError || toleranceError || !sourcesValid) {
+    return { ok: false, result: { ok: false, error: 'INVALID_INPUT', targetError, toleranceError, sourceErrors, fleetError } };
+  }
+
+  const targetNiValue = parseDecimalInput(targetNi);
+  const toleranceValue = parseDecimalInput(tolerance);
+  const numericSources = sources.map(toNumericSource);
+  const groups = groupSourcesByContractor(numericSources);
+  const perContractorAllocations = groups.map((group) => {
+    const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
+    const allocations = enumerateOperationalAllocations(fleet, group.sources.length);
+    return orderAllocationsForSearch(group, allocations, targetNiValue);
+  });
+
+  return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue };
+}
+
+// Runs the Phase 4A pruned search directly against prepareSearchUnbounded()'s
+// output (or prepareSearch()'s -- either shares the same shape), returning
+// both the result and its diagnostics. Benchmark-only counterpart to
+// findBlendRecommendationsWithDiagnostics() that skips prepareSearch()'s own
+// gate call entirely (the caller already decided to bypass it via
+// prepareSearchUnbounded()). `enablePruning` defaults to true (Phase 4A);
+// pass false to benchmark/diff the same traversal shape with chemistry
+// pruning permanently disabled (the Phase 3 reference behavior).
+export function runSearchDirect({ groups, perContractorAllocations, targetNiValue, toleranceValue }, enablePruning = true) {
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruning);
+  const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
+  return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
 }
