@@ -194,7 +194,7 @@ describe('V3.0 Phase 4B benchmarks -- A/B/D (C is covered by tests/v3-phase4a-br
     reportBenchmark('A (4 dome / 2 Contractor / 60 DT)', rawOperationalSize, { result, diagnostics }, null, elapsedMs);
   });
 
-  test('B. 6 domes / 3 Contractors / 60 DT -- test-only unbounded traversal (production gate untouched, still rejects with SEARCH_SPACE_TOO_LARGE)', () => {
+  test('B. 6 domes / 3 Contractors / 60 DT -- V3.0 Phase 4D: production gate no longer rejects it, real findBlendRecommendations() completes it exactly', () => {
     const sources = [];
     for (let c = 0; c < 3; c += 1) {
       for (let s = 0; s < 2; s += 1) {
@@ -202,8 +202,9 @@ describe('V3.0 Phase 4B benchmarks -- A/B/D (C is covered by tests/v3-phase4a-br
       }
     }
     const gated = findBlendRecommendations({ targetNi: '1.15', tolerance: '0.05', sources });
-    assert.equal(gated.ok, false);
-    assert.equal(gated.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(gated.ok, true);
+    assert.equal(gated.status, 'OK');
+    assert.equal(gated.candidateCount, 438975);
 
     const rawOperationalSize = countOperationalAllocations(20, 2) ** 3;
     const prepared = prepareSearchUnbounded({ targetNi: '1.15', tolerance: '0.05', sources });
@@ -213,7 +214,7 @@ describe('V3.0 Phase 4B benchmarks -- A/B/D (C is covered by tests/v3-phase4a-br
     const pruned = runSearchDirect(prepared, true);
     const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
     assert.equal(pruned.result.ok, true);
-    reportBenchmark('B (6 dome / 3 Contractor / 60 DT, gate-bypassed traversal only, unbounded per Section 7)', rawOperationalSize, pruned, null, elapsedMs);
+    reportBenchmark('B (6 dome / 3 Contractor / 60 DT)', rawOperationalSize, pruned, null, elapsedMs);
   });
 
   test('D. chemistry-separable "dominant fixed prefix" scenario -- designed so Phase 4B\'s tonnage-capped bound prunes where Phase 4A\'s pooled-extent-only bound provably could not', () => {

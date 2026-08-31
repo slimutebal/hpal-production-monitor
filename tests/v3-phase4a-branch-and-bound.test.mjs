@@ -25,7 +25,7 @@ import {
   prepareSearchUnbounded,
   runSearchDirect,
 } from '../js/pages/calculate/blending-recommendation.js';
-import { countOperationalAllocations, countContractorAllocations, MAX_GLOBAL_CANDIDATES } from '../js/pages/calculate/fleet-allocation.js';
+import { countOperationalAllocations, countContractorAllocations } from '../js/pages/calculate/fleet-allocation.js';
 import { mulberry32, NAMED_SEEDS } from './reference/seeded-random.mjs';
 import { generateScenario } from './reference/v3-scenario-generator.mjs';
 import { canonicalizeRecommendationResult, firstCanonicalDifference } from './reference/canonical-recommendation-result.mjs';
@@ -257,10 +257,14 @@ function buildScenarioA() {
 
 function buildScenarioBC() {
   // 6 domes / 3 Contractors / 60 DT (this task's PERFORMANCE B/C) --
-  // operational count ~438,976 > MAX_GLOBAL_CANDIDATES=200,000, so
-  // production's findBlendRecommendations() rejects it with
-  // SEARCH_SPACE_TOO_LARGE (verified below) -- benchmarking it requires
-  // prepareSearchUnbounded()'s explicit, clearly-labeled gate bypass.
+  // operational count ~438,976. V3.0 Phase 4D removed the theoretical
+  // cross-Contractor MAX_GLOBAL_CANDIDATES pre-gate this comment used to
+  // describe: production's findBlendRecommendations() now runs this
+  // scenario directly and completes it exactly, well under
+  // MAX_SEARCH_NODES (verified below; see also
+  // tests/v3-phase4d-node-budget.test.mjs for dedicated coverage).
+  // prepareSearchUnbounded() is still used here only to reuse the same
+  // { groups, perContractorAllocations } shape runSearchDirect() expects.
   const sources = [];
   for (let c = 0; c < 3; c += 1) {
     for (let s = 0; s < 2; s += 1) {
@@ -308,14 +312,15 @@ describe('V3.0 Phase 4A performance benchmarks (this task\'s PERFORMANCE A/B/C)'
     reportBenchmark('A (4 dome / 2 Contractor / 60 DT)', rawOperationalSize, { result, diagnostics }, null, elapsedMs);
   });
 
-  test('B. 6 domes / 3 Contractors / 60 DT -- production gate still rejects it (SEARCH_SPACE_TOO_LARGE); lower-level traversal benchmarked separately via the explicit test-only gate bypass, production limits untouched', () => {
+  test('B. 6 domes / 3 Contractors / 60 DT -- V3.0 Phase 4D: production gate no longer rejects it, real findBlendRecommendations() completes it exactly', () => {
     const sources = buildScenarioBC();
 
     const gated = findBlendRecommendations({ targetNi: '1.15', tolerance: '0.05', sources });
-    assert.equal(gated.ok, false);
-    assert.equal(gated.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(gated.ok, true);
+    assert.equal(gated.status, 'OK');
+    assert.equal(gated.candidateCount, 438975);
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase4a-branch-and-bound] BENCHMARK B: production gate confirms SEARCH_SPACE_TOO_LARGE (allocationCount=${gated.allocationCount ?? 'n/a'}) for the 3x2x10DT shape -- MAX_GLOBAL_CANDIDATES=${MAX_GLOBAL_CANDIDATES} was NOT raised; benchmarking below uses prepareSearchUnbounded()'s explicit bypass only.`);
+    console.log(`[v3-phase4a-branch-and-bound] BENCHMARK B: production ACCEPTS the 3x2x10DT shape (candidateCount=${gated.candidateCount}) -- the removed MAX_GLOBAL_CANDIDATES gate no longer applies; benchmarking below uses the SAME real production entry point.`);
 
     // Per-Contractor fleet is 20 (2 sources x 10 assignedUnits each) -- see
     // countOperationalAllocations(20, 2) = 76, so 76^3 = 438,976 matches the
@@ -329,7 +334,7 @@ describe('V3.0 Phase 4A performance benchmarks (this task\'s PERFORMANCE A/B/C)'
     const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
 
     assert.equal(pruned.result.ok, true);
-    reportBenchmark('B (6 dome / 3 Contractor / 60 DT, gate-bypassed traversal only)', rawOperationalSize, pruned, null, elapsedMs);
+    reportBenchmark('B (6 dome / 3 Contractor / 60 DT)', rawOperationalSize, pruned, null, elapsedMs);
   });
 
   test('C. same 6-dome/3-Contractor/60 DT dome/unit shape, per-Contractor grade PARTITIONED so chemistry pruning is effective', () => {

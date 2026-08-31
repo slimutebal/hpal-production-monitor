@@ -21,7 +21,6 @@ import {
   groupSourcesByContractor,
   planContractorRelocations,
   MAX_ALLOCATIONS_PER_CONTRACTOR,
-  MAX_GLOBAL_CANDIDATES,
 } from '../js/pages/calculate/fleet-allocation.js';
 
 describe('gcd()', () => {
@@ -152,9 +151,13 @@ describe('enumerateAllocations() -- exhaustive integer tuples, Sum <= fleet', ()
 });
 
 describe('safety bounds are exported and sane', () => {
-  test('MAX_ALLOCATIONS_PER_CONTRACTOR and MAX_GLOBAL_CANDIDATES are positive finite integers', () => {
+  test('MAX_ALLOCATIONS_PER_CONTRACTOR is a positive finite integer', () => {
+    // V3.0 Phase 4D removed the sibling MAX_GLOBAL_CANDIDATES (cross-
+    // Contractor product) gate -- see fleet-allocation.js's own comment;
+    // blending-recommendation.js's MAX_SEARCH_NODES replaces it with an
+    // actual-traversal-work budget instead. MAX_ALLOCATIONS_PER_CONTRACTOR
+    // itself is unchanged (still a real generation-time gate).
     assert.ok(Number.isInteger(MAX_ALLOCATIONS_PER_CONTRACTOR) && MAX_ALLOCATIONS_PER_CONTRACTOR > 0);
-    assert.ok(Number.isInteger(MAX_GLOBAL_CANDIDATES) && MAX_GLOBAL_CANDIDATES > 0);
   });
 });
 

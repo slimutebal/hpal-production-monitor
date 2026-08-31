@@ -240,12 +240,15 @@ describe('8. Phase 2 minimum-6 behavior unchanged under streaming (this task\'s 
 });
 
 // ============================================================
-// 9. SEARCH_SPACE_TOO_LARGE BEHAVIOR UNCHANGED (this task's TESTS
-// requirement 9) -- the bound-before-generating gate (prepareSearch(),
-// unchanged from Phase 2) must still reject the same oversized scenarios
-// with the same error, before any streaming/materialization begins.
+// 9. SEARCH_SPACE_TOO_LARGE BEHAVIOR (this task's TESTS requirement 9) --
+// the per-Contractor bound-before-generating gate (prepareSearch()) must
+// still reject a single oversized Contractor group identically, before any
+// streaming/materialization begins. V3.0 Phase 4D removed the SIBLING
+// cross-Contractor MAX_GLOBAL_CANDIDATES gate (see the second test below,
+// updated to reflect that removal) -- this describe block's per-Contractor
+// coverage itself is otherwise unchanged.
 // ============================================================
-describe('9. SEARCH_SPACE_TOO_LARGE behavior unchanged (this task\'s TESTS 9)', () => {
+describe('9. SEARCH_SPACE_TOO_LARGE behavior (this task\'s TESTS 9)', () => {
   test('a genuinely oversized single-source fleet (F=25000, n=1) is still rejected', () => {
     const input = {
       targetNi: 1.2,
@@ -257,7 +260,7 @@ describe('9. SEARCH_SPACE_TOO_LARGE behavior unchanged (this task\'s TESTS 9)', 
     assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
   });
 
-  test('3 Contractors x 2 sources x 10 DT (operational count 438,976 > 200,000) is still rejected', () => {
+  test('V3.0 Phase 4D UPDATE: 3 Contractors x 2 sources x 10 DT (operational count 438,976) is now UNBLOCKED -- the removed MAX_GLOBAL_CANDIDATES gate no longer rejects it; a single oversized Contractor group (test above) still is', () => {
     const sources = [];
     for (let c = 0; c < 3; c += 1) {
       for (let s = 0; s < 2; s += 1) {
@@ -271,8 +274,9 @@ describe('9. SEARCH_SPACE_TOO_LARGE behavior unchanged (this task\'s TESTS 9)', 
       }
     }
     const result = findBlendRecommendations({ targetNi: 1.15, tolerance: 0.05, sources });
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.candidateCount, 438975);
   });
 
   test('the materialized test-support path is gated identically (proves the shared prepareSearch() gate, not a streaming-only shortcut)', () => {

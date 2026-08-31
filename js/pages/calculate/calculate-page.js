@@ -102,7 +102,7 @@ let rowSeq = 0;
 let targetNiRaw = '';
 let toleranceRaw = '';
 let recommendationFieldErrors = null; // null, or { targetNi, tolerance, fleet } i18n keys
-let recommendationEngineErrorKey = null; // null, or an i18n key (SEARCH_SPACE_TOO_LARGE / NO_FEASIBLE_CANDIDATE / no complete sources)
+let recommendationEngineErrorKey = null; // null, or an i18n key (SEARCH_SPACE_TOO_LARGE / SEARCH_INCOMPLETE / NO_FEASIBLE_CANDIDATE / no complete sources)
 let lastRecommendationResult = null; // null, or the ok:true result from findBlendRecommendations()
 
 // Planned Blend Recovery (V2.4 Phase 6) -- only ever meaningful while
@@ -985,13 +985,20 @@ function handleCalculateRecommendation() {
       recommendationFieldErrors = { targetNi: result.targetError, tolerance: result.toleranceError, fleet: result.fleetError };
       recommendationEngineErrorKey = null;
     } else {
-      // SEARCH_SPACE_TOO_LARGE / NO_FEASIBLE_CANDIDATE -- an explicit,
-      // localized inline state, never an alert()/console-only/silent
-      // failure, and never presented as if it were a valid recommendation.
+      // SEARCH_SPACE_TOO_LARGE / SEARCH_INCOMPLETE / NO_FEASIBLE_CANDIDATE --
+      // an explicit, localized inline state, never an alert()/console-only/
+      // silent failure, and never presented as if it were a valid
+      // recommendation. V3.0 Phase 4D: SEARCH_INCOMPLETE (the Branch-and-
+      // Bound node budget was spent before an exact result could be proven)
+      // gets its OWN distinct message -- it must never fall into the
+      // generic noFeasibleCandidate copy, which claims no feasible
+      // combination exists at all (a stronger, different claim than "the
+      // search couldn't finish in time").
       recommendationFieldErrors = null;
-      recommendationEngineErrorKey = result.error === 'SEARCH_SPACE_TOO_LARGE'
-        ? 'calculate.recommendation.searchSpaceTooLarge'
-        : 'calculate.recommendation.noFeasibleCandidate';
+      recommendationEngineErrorKey = {
+        SEARCH_SPACE_TOO_LARGE: 'calculate.recommendation.searchSpaceTooLarge',
+        SEARCH_INCOMPLETE: 'calculate.recommendation.searchIncomplete',
+      }[result.error] || 'calculate.recommendation.noFeasibleCandidate';
     }
     renderRecommendationFieldError();
     renderRecommendationEngineError();

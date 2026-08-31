@@ -41,7 +41,6 @@ import {
   enumerateOperationalAllocations,
   planContractorRelocations,
   MAX_ALLOCATIONS_PER_CONTRACTOR,
-  MAX_GLOBAL_CANDIDATES,
   MIN_UNITS_PER_ACTIVE_LOADING_POINT,
 } from './fleet-allocation.js';
 import {
@@ -398,12 +397,17 @@ export function groupMaxAchievableTonnage(fleet, sources) {
 // itself is always open and contributes finite extremes). Computed once per
 // search (V3.0 Phase 4B "CACHE CONTRACTOR BOUNDS" -- never recomputed per
 // node), same cost shape as Phase 4A's suffixExtents.
-function computeSuffixBounds(groups) {
-  const n = groups.length;
+// `searchOrder` (V3.0 Phase 6A -- see that section below) is an array of
+// CANONICAL group indices giving the TRAVERSAL order; suffixBounds[i] is
+// therefore "every group not yet decided at DEPTH i", i.e. groups
+// searchOrder[i..n). Passing the canonical identity order (searchOrder[i]
+// === i) reproduces Phase 4B's original canonical-order behavior exactly.
+function computeSuffixBounds(groups, searchOrder) {
+  const n = searchOrder.length;
   const suffixBounds = new Array(n + 1);
   suffixBounds[n] = { minNi: Infinity, maxNi: -Infinity, maxOpenTonnage: 0 };
   for (let i = n - 1; i >= 0; i -= 1) {
-    const group = groups[i];
+    const group = groups[searchOrder[i]];
     const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
     const extent = combineExtents(groupSourceNiExtent(group.sources), suffixBounds[i + 1]);
     const maxOpenTonnage = groupMaxAchievableTonnage(fleet, group.sources) + suffixBounds[i + 1].maxOpenTonnage;
@@ -628,13 +632,16 @@ function computeGroupRankProfile(group, allocations) {
 // Computed once per search (never per node), same cost shape/contract as
 // Phase 4B's computeSuffixBounds() above. suffixRankBounds[groups.length]
 // is the empty-contribution identity (no open groups left).
-function computeSuffixRankBounds(groups, perContractorAllocations) {
-  const n = groups.length;
+// `searchOrder` -- see computeSuffixBounds()'s own comment; the SAME
+// permutation must be used for both bound arrays within one search so
+// depth `i` means the same "still open" set in each.
+function computeSuffixRankBounds(groups, perContractorAllocations, searchOrder) {
+  const n = searchOrder.length;
   const profiles = groups.map((group, i) => computeGroupRankProfile(group, perContractorAllocations[i]));
   const suffixRankBounds = new Array(n + 1);
   suffixRankBounds[n] = { minCriticalCount: 0, maxActiveUnits: 0, minWorstRatio: 0, minMitigationCount: 0, minFullyUnusedCount: 0 };
   for (let i = n - 1; i >= 0; i -= 1) {
-    const p = profiles[i];
+    const p = profiles[searchOrder[i]];
     const rest = suffixRankBounds[i + 1];
     suffixRankBounds[i] = {
       minCriticalCount: p.minCriticalCount + rest.minCriticalCount,
@@ -711,6 +718,130 @@ export function boundCannotBeatIncumbent(bound, incumbent) {
   return false;
 }
 
+// ============================================================
+// V3.0 Phase 6A -- EXACT Contractor search order (docs/
+// V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md "Contractor-Level
+// Decomposition", this task's Section 1).
+//
+// This ONLY reorders which Contractor group is DECIDED at which recursion
+// DEPTH in forEachCandidatePruned() -- never which groups exist, never
+// which allocations exist within a group (that is Phase 4B's OWN,
+// unrelated per-group orderAllocationsForSearch()), and critically never
+// candidate identity: buildCandidate() always iterates the CANONICAL
+// `groups` array regardless of traversal order (activeBySourceKey is keyed
+// by source identity, not by group/traversal position -- see
+// buildCandidate()'s own comment), so allocationSignature and
+// candidateCount are exactly as before. The Phase 4B chemistry bound and
+// Phase 4C ranking-prefix bound are themselves UNCHANGED here (see
+// computeSuffixBounds()/computeSuffixRankBounds() above, both now
+// parameterized by `searchOrder` but computing the exact same math) -- this
+// section exists purely so those two EXISTING exact bounds see a smaller
+// pooled "open" budget earlier in the traversal, letting them fire sooner.
+// ============================================================
+
+// Pure per-group metrics relevant to search-order decisions (called once
+// per group per search, never per node). `allocationCount` is that group's
+// own already-computed enumerateOperationalAllocations() length -- never
+// re-enumerated here.
+export function groupSearchOrderMetrics(group, allocationCount) {
+  const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
+  const { minNi, maxNi } = groupSourceNiExtent(group.sources);
+  return {
+    allocationCount,
+    niSpan: group.sources.length > 0 ? maxNi - minNi : 0,
+    maxTonnageInfluence: groupMaxAchievableTonnage(fleet, group.sources),
+  };
+}
+
+// Deterministic canonical-Contractor-key tie-break shared by every strategy
+// below -- NEVER iteration order/object identity, so the resulting
+// permutation is reproducible regardless of how `groups` was constructed
+// (this task's DETERMINISM requirement).
+function bySearchOrderStrategy(groups, primaryCompare) {
+  return (a, b) => {
+    const primary = primaryCompare(a, b);
+    if (primary !== 0) return primary;
+    return groups[a].contractorKey < groups[b].contractorKey ? -1 : groups[a].contractorKey > groups[b].contractorKey ? 1 : 0;
+  };
+}
+
+// TEST-SUPPORT ONLY -- computes a candidate group TRAVERSAL order (an array
+// of CANONICAL indices into `groups`/`perContractorAllocations`) for one
+// NAMED strategy at a time, so tests/v3-phase6a-search-order.test.mjs can
+// benchmark each strategy against the identical production traversal
+// (forEachCandidatePruned() accepts any permutation of `groups`'s own
+// indices). Production's own prepareSearch() NEVER calls this directly --
+// it always calls computeContractorSearchOrder() below (the ONE strategy
+// this task's benchmark selected), never a runtime string the hot path
+// would have to branch on.
+export function computeSearchOrderForStrategy(groups, perContractorAllocations, strategy) {
+  const metrics = groups.map((group, i) => groupSearchOrderMetrics(group, perContractorAllocations[i].length));
+  const indices = groups.map((_, i) => i);
+
+  switch (strategy) {
+    case 'canonical':
+      return indices;
+    case 'smallest-space-first':
+      return indices.slice().sort(bySearchOrderStrategy(groups, (a, b) => metrics[a].allocationCount - metrics[b].allocationCount));
+    case 'largest-space-first':
+      return indices.slice().sort(bySearchOrderStrategy(groups, (a, b) => metrics[b].allocationCount - metrics[a].allocationCount));
+    case 'tonnage-influence-first':
+      return indices.slice().sort(bySearchOrderStrategy(groups, (a, b) => metrics[b].maxTonnageInfluence - metrics[a].maxTonnageInfluence));
+    case 'ni-span-first':
+      return indices.slice().sort(bySearchOrderStrategy(groups, (a, b) => metrics[b].niSpan - metrics[a].niSpan));
+    case 'tonnage-then-smallest-space':
+      return indices.slice().sort(bySearchOrderStrategy(groups, (a, b) => {
+        if (metrics[b].maxTonnageInfluence !== metrics[a].maxTonnageInfluence) return metrics[b].maxTonnageInfluence - metrics[a].maxTonnageInfluence;
+        return metrics[a].allocationCount - metrics[b].allocationCount;
+      }));
+    default:
+      throw new Error(`unknown V3.0 Phase 6A search order strategy: ${strategy}`);
+  }
+}
+
+// PRODUCTION search order -- this task's chosen strategy, selected by
+// tests/v3-phase6a-search-order.test.mjs's benchmark against Phase 5's C/D
+// (see that file's header for the measured evidence). Deliberately NOT a
+// runtime switch over computeSearchOrderForStrategy() -- one fixed,
+// unconditional computation, matching this task's "select ONE strategy
+// only if evidence shows material improvement" instruction.
+export function computeContractorSearchOrder(groups, perContractorAllocations) {
+  return computeSearchOrderForStrategy(groups, perContractorAllocations, 'smallest-space-first');
+}
+
+// ============================================================
+// V3.0 Phase 4D -- ACTUAL-WORK search-space safety bound (docs/
+// V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md "Replace Legacy
+// Theoretical Candidate Gate"). Replaces the removed MAX_GLOBAL_CANDIDATES
+// pre-search gate (fleet-allocation.js's own comment explains why that
+// gate is obsolete): a real B&B traversal's cost tracks how many search
+// NODES it actually visits, not the theoretical candidateCount, and Phase
+// 4C's chemistry/ranking-prefix pruning routinely visits a tiny fraction
+// of candidateCount once an incumbent streams through. This bound is
+// therefore enforced INSIDE forEachCandidatePruned() below (against
+// diagnostics.visitedNodes, incremented once per node -- internal or
+// leaf), never before generation, and is a fixed node COUNT, never a
+// wall-clock timeout (this task's "Do NOT introduce time-based
+// correctness decisions... hardware-dependent timing is not
+// deterministic").
+//
+// Chosen from measured evidence (tests/v3-phase4d-node-budget.test.mjs
+// reproduces these numbers), not an arbitrary round number:
+//   - 4 dome / 2 Contractor / 60 DT   (candidateCount 58,080)  -> ~4,800 nodes
+//   - 6 dome / 3 Contractor / 60 DT   (candidateCount 438,975) -> ~6,900 nodes
+//   - 8 dome / 4 Contractor / 80 DT   (candidateCount ~33.4M)  -> ~62,300 nodes
+// 500,000 gives the two REQUIRED scenarios a 70-100x margin, comfortably
+// covers the 8-dome case above (~8x margin) as real headroom for gradual
+// scale-up, and still turns a genuinely pathological shape (few
+// Contractor groups, each near the per-group MAX_ALLOCATIONS_PER_CONTRACTOR
+// ceiling, with a target that never lets pruning engage -- see this task's
+// SAFETY TEST) into a bounded, deterministic SEARCH_INCOMPLETE within a
+// fraction of a second rather than a multi-minute/unbounded traversal.
+// This is NOT a claim that every input up to this node count is "fast
+// enough for production" in every sense -- only that it is the point past
+// which this phase deliberately stops guaranteeing an exact answer.
+export const MAX_SEARCH_NODES = 500000;
+
 // Explicit branch-and-bound traversal (this task's Section "SEARCH
 // STRUCTURE"/"Refactor... into explicit partial-node traversal"). Replaces
 // the plain recursive Cartesian combine with one that threads running
@@ -738,17 +869,25 @@ export function boundCannotBeatIncumbent(bound, incumbent) {
 // bound below: it only discards a branch when NO completion could
 // outrank the current bestWithinTolerance, so it can never discard the
 // eventual winner either (proven by tests/v3-phase4c-ranking-bound.test.mjs).
-function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit) {
-  const suffixBounds = computeSuffixBounds(groups);
+// `searchOrder` (V3.0 Phase 6A, see that section below) -- an array of
+// CANONICAL indices into `groups`/`perContractorAllocations` giving the
+// TRAVERSAL order (searchOrder[depth] = which canonical group is decided
+// at that recursion depth). Passing the canonical identity order
+// reproduces the exact pre-Phase-6A traversal. This NEVER affects
+// candidate identity: buildCandidate() below always reads the CANONICAL
+// `groups` array, and activeBySourceKey is keyed by source identity, not
+// by traversal position -- see buildCandidate()'s own comment.
+function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit, searchOrder) {
+  const suffixBounds = computeSuffixBounds(groups, searchOrder);
   // V3.0 Phase 4C -- pooled best-case ranking contribution of each
   // still-open suffix of groups, computed once per search (never per
   // node), same cost shape as suffixBounds above.
-  const suffixRankBounds = computeSuffixRankBounds(groups, perContractorAllocations);
+  const suffixRankBounds = computeSuffixRankBounds(groups, perContractorAllocations, searchOrder);
   // Each group's own total fleet, computed once per search -- combine()
   // below reads groupFleets[groupIndex] rather than re-reducing
   // group.sources on every node reached at that depth.
   const groupFleets = groups.map((group) => group.sources.reduce((sum, s) => sum + s.assignedUnits, 0));
-  const diagnostics = { visitedNodes: 0, prunedByChemistry: 0, prunedByRanking: 0, completedCandidates: 0 };
+  const diagnostics = { visitedNodes: 0, prunedByChemistry: 0, prunedByRanking: 0, completedCandidates: 0, incomplete: false };
 
   // groupIndex: current Contractor depth. fixedNumerator/fixedTonnage:
   // accumulated weighted-Ni numerator/tonnage across DECIDED groups only.
@@ -760,10 +899,26 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
   // of the DECIDED groups only (V3.0 Phase 4C). activeBySourceKey: enough
   // state (every decided group's chosen allocation) to call
   // buildCandidate() exactly once groupIndex reaches groups.length.
-  function combine(groupIndex, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits, fixedCriticalCount, fixedWorstRatio, fixedMitigationCount, fixedFullyUnusedCount) {
+  //
+  // V3.0 Phase 4D node budget (see MAX_SEARCH_NODES's own comment above):
+  // checked BEFORE incrementing visitedNodes, so once the budget is hit
+  // diagnostics.incomplete flips exactly once and diagnostics.visitedNodes
+  // never exceeds MAX_SEARCH_NODES. Every already-in-flight recursive call
+  // (this function, or a parent's for-loop below) checks
+  // diagnostics.incomplete first and returns/breaks immediately -- no
+  // further node is scored, pruned, or built once the budget is spent, so
+  // any candidate visit() was already called with (via runStreamingSearch's
+  // bestWithinTolerance/bestAttainable) remains merely "best seen so far",
+  // never asserted as exhaustively optimal.
+  function combine(depth, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits, fixedCriticalCount, fixedWorstRatio, fixedMitigationCount, fixedFullyUnusedCount) {
+    if (diagnostics.incomplete) return;
+    if (diagnostics.visitedNodes >= MAX_SEARCH_NODES) {
+      diagnostics.incomplete = true;
+      return;
+    }
     diagnostics.visitedNodes += 1;
 
-    if (groupIndex === groups.length) {
+    if (depth === searchOrder.length) {
       const candidate = buildCandidate(groups, activeBySourceKey, targetNiValue, toleranceValue);
       if (candidate) {
         diagnostics.completedCandidates += 1;
@@ -773,7 +928,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
     }
 
     if (pruningGate.active) {
-      const bound = conservativeFinalNiBound(fixedNumerator, fixedTonnage, suffixBounds[groupIndex]);
+      const bound = conservativeFinalNiBound(fixedNumerator, fixedTonnage, suffixBounds[depth]);
       if (!boundIntersectsTolerance(bound, targetNiValue, toleranceValue)) {
         diagnostics.prunedByChemistry += 1;
         return;
@@ -782,7 +937,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
       if (pruningGate.rankingEnabled) {
         const rankBound = conservativeRankingBound(
           { criticalCount: fixedCriticalCount, activeUnits: fixedActiveUnits, worstRatio: fixedWorstRatio, mitigationCount: fixedMitigationCount, fullyUnusedCount: fixedFullyUnusedCount },
-          suffixRankBounds[groupIndex],
+          suffixRankBounds[depth],
         );
         if (boundCannotBeatIncumbent(rankBound, pruningGate.rankMetrics)) {
           diagnostics.prunedByRanking += 1;
@@ -791,9 +946,14 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
       }
     }
 
-    const group = groups[groupIndex];
-    const fleet = groupFleets[groupIndex];
-    for (const allocation of perContractorAllocations[groupIndex]) {
+    // V3.0 Phase 6A: `depth` is a position in TRAVERSAL order, never a
+    // canonical group index directly -- searchOrder[depth] maps it back to
+    // the canonical group actually being decided here.
+    const canonicalIndex = searchOrder[depth];
+    const group = groups[canonicalIndex];
+    const fleet = groupFleets[canonicalIndex];
+    for (const allocation of perContractorAllocations[canonicalIndex]) {
+      if (diagnostics.incomplete) break;
       const next = new Map(activeBySourceKey);
       let allocNumerator = 0;
       let allocTonnage = 0;
@@ -805,7 +965,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
       });
       const allocMetrics = allocationRankMetrics(group, allocation, fleet);
       combine(
-        groupIndex + 1,
+        depth + 1,
         next,
         fixedNumerator + allocNumerator,
         fixedTonnage + allocTonnage,
@@ -833,7 +993,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
 // behavior), letting tests/v3-phase4c-ranking-bound.test.mjs's benchmark
 // compare Phase 4B against Phase 4C on the identical traversal. Production
 // code never passes a third argument here.
-function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate, enableRankingPruning = true) {
+function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate, enableRankingPruning = true, searchOrder) {
   let bestWithinTolerance = null;
   let bestAttainable = null;
   const sourcesInAnyWithinToleranceCandidate = new Set();
@@ -866,7 +1026,7 @@ function runStreamingSearch(groups, perContractorAllocations, targetNiValue, tol
       }
       if (enablePruningGate) pruningGate.active = true;
     }
-  });
+  }, searchOrder);
 
   return { bestWithinTolerance, bestAttainable, sourcesInAnyWithinToleranceCandidate, diagnostics };
 }
@@ -899,6 +1059,34 @@ function operationalCandidateSpaceSize(perContractorAllocations) {
 function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount) {
   if (candidateCount === 0) {
     return { ok: false, error: 'NO_FEASIBLE_CANDIDATE' };
+  }
+
+  // V3.0 Phase 4D EXACTNESS CONTRACT: MAX_SEARCH_NODES was spent before
+  // forEachCandidatePruned() finished the traversal (see its own
+  // diagnostics.incomplete comment) -- checked BEFORE bestWithinTolerance
+  // below, and unconditionally, so an incumbent found before the budget
+  // ran out is NEVER returned as an exact 'OK'/'TARGET_NOT_ACHIEVABLE':
+  // pruning bounds and the exhaustive bestAttainable rule alike both
+  // depend on having actually visited (or provably ruled out) every
+  // remaining branch, which an early-terminated traversal cannot claim.
+  // No approximation is returned as if it were exact -- 'diagnostics' here
+  // is explicitly for internal/diagnostic use (visitedNodes/
+  // completedCandidates), never a `candidate` field a caller could mistake
+  // for a real recommendation.
+  if (search.diagnostics.incomplete) {
+    return {
+      ok: false,
+      error: 'SEARCH_INCOMPLETE',
+      targetNi: targetNiValue,
+      tolerance: toleranceValue,
+      candidateCount,
+      diagnostics: {
+        visitedNodes: search.diagnostics.visitedNodes,
+        completedCandidates: search.diagnostics.completedCandidates,
+        prunedByChemistry: search.diagnostics.prunedByChemistry,
+        prunedByRanking: search.diagnostics.prunedByRanking,
+      },
+    };
   }
 
   if (search.bestWithinTolerance) {
@@ -944,7 +1132,15 @@ function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateC
 // Returns one of:
 //   { ok: false, error: 'INVALID_INPUT', targetError, toleranceError,
 //     sourceErrors, fleetError }
-//   { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', ... }        (Section 19)
+//   { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', ... }        (Section 19;
+//     V3.0 Phase 4D: a single Contractor group's own operational
+//     allocation count alone exceeds MAX_ALLOCATIONS_PER_CONTRACTOR --
+//     generation-time only, never the removed cross-Contractor product gate)
+//   { ok: false, error: 'SEARCH_INCOMPLETE', candidateCount, diagnostics }
+//     (V3.0 Phase 4D: MAX_SEARCH_NODES was spent before the traversal could
+//     prove an exact OK/TARGET_NOT_ACHIEVABLE result -- NEVER an
+//     approximation of one; no `candidate` field, see buildResultFromSearch()'s
+//     own comment)
 //   { ok: false, error: 'NO_FEASIBLE_CANDIDATE' }               (defensive;
 //     unreachable once validation requires totalFleet > 0, since that
 //     guarantees at least one non-all-zero allocation exists)
@@ -967,9 +1163,9 @@ function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateC
 export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
   if (!prepared.ok) return prepared.result;
-  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder } = prepared;
 
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   return buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
 }
@@ -994,11 +1190,16 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   const numericSources = sources.map(toNumericSource);
   const groups = groupSourcesByContractor(numericSources);
 
-  // ---- Bound the search BEFORE generating anything (Section 19) --------
-  // V3.0 Phase 2 (Owner-approved, this task's Section 0): an active
-  // loading point is only operationally feasible at 0 or >=
-  // MIN_UNITS_PER_ACTIVE_LOADING_POINT DT, so both the safety-bound count
-  // and the actual generation below use fleet-allocation.js's
+  // ---- Bound GENERATION (never traversal) BEFORE generating anything ---
+  // (Section 19; V3.0 Phase 4D narrows this to per-Contractor only -- see
+  // fleet-allocation.js's own MAX_ALLOCATIONS_PER_CONTRACTOR comment for
+  // why this specific check survives Phase 4D unchanged: it protects
+  // enumerateOperationalAllocations()'s EAGER array materialization for a
+  // single group, a cost Branch-and-Bound pruning/the node budget below
+  // can never see or bound). V3.0 Phase 2 (Owner-approved, this task's
+  // Section 0): an active loading point is only operationally feasible at
+  // 0 or >= MIN_UNITS_PER_ACTIVE_LOADING_POINT DT, so both this count and
+  // the actual generation below use fleet-allocation.js's
   // countOperationalAllocations()/enumerateOperationalAllocations() --
   // the OPERATIONALLY FEASIBLE subset of what the pre-Phase-2
   // countContractorAllocations()/enumerateAllocations() counted/generated
@@ -1007,16 +1208,19 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   // primitives). Count and generation MUST describe the exact same set
   // (this task's Section 7) -- verified by
   // tests/v3-operational-allocation.test.mjs's counting matrix.
-  let globalCount = 1;
+  //
+  // The former GLOBAL (cross-Contractor product) gate is REMOVED here as
+  // of V3.0 Phase 4D -- see MAX_SEARCH_NODES's own comment above for why:
+  // it bounded the THEORETICAL space, not actual traversal work, and
+  // routinely rejected inputs Phase 4C's pruning completes in a tiny
+  // fraction of that space (e.g. the 6-dome/3-Contractor/60-DT case).
+  // forEachCandidatePruned()'s own MAX_SEARCH_NODES budget is what now
+  // protects the traversal that follows this per-group gate.
   for (const group of groups) {
     const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
     const count = countOperationalAllocations(fleet, group.sources.length);
     if (count > MAX_ALLOCATIONS_PER_CONTRACTOR) {
       return { ok: false, result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', contractor: group.contractorKey, allocationCount: count } };
-    }
-    globalCount *= count;
-    if (globalCount > MAX_GLOBAL_CANDIDATES) {
-      return { ok: false, result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', allocationCount: globalCount } };
     }
   }
 
@@ -1030,7 +1234,12 @@ function prepareSearch({ targetNi, tolerance, sources }) {
     return orderAllocationsForSearch(group, allocations, targetNiValue);
   });
 
-  return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue };
+  // V3.0 Phase 6A -- see that section's own comment: this ONLY decides
+  // which Contractor group is visited at which recursion depth, never
+  // candidate identity/candidateCount.
+  const searchOrder = computeContractorSearchOrder(groups, perContractorAllocations);
+
+  return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder };
 }
 
 // Shared leaf-candidate generator (this task's Section 28/29) -- the same
@@ -1058,6 +1267,21 @@ function forEachCandidate(groups, perContractorAllocations, targetNiValue, toler
   combine(0, new Map());
 }
 
+// TEST-SUPPORT-ONLY exhaustive-materialization safety bound. This helper's
+// forEachCandidate() has NO Branch-and-Bound pruning and NO
+// MAX_SEARCH_NODES traversal budget (it is the deliberate full-enumeration
+// ground truth production no longer uses) -- so once V3.0 Phase 4D removed
+// the cross-Contractor MAX_GLOBAL_CANDIDATES pre-gate from prepareSearch(),
+// this is the ONLY thing left standing between a multi-Contractor scenario
+// whose per-group counts each individually clear MAX_ALLOCATIONS_PER_CONTRACTOR
+// (so prepareSearch() itself no longer refuses it) and an out-of-memory
+// crash from actually materializing their full product as real candidate
+// objects. NOT a production safety mechanism (see MAX_SEARCH_NODES for
+// that) -- this exists purely so this test-only exhaustive comparison
+// helper keeps its pre-Phase-4D "safe to call on anything prepareSearch()
+// accepts" contract.
+const MAX_MATERIALIZED_CANDIDATES = 200000;
+
 // ============================================================
 // TEST-SUPPORT ONLY -- Phase 2-style materialized selection (this task's
 // TESTS requirement #1: "streaming winner equals existing ranking winner").
@@ -1078,6 +1302,11 @@ export function findBlendRecommendationsMaterialized({ targetNi, tolerance = DEF
   const prepared = prepareSearch({ targetNi, tolerance, sources });
   if (!prepared.ok) return prepared.result;
   const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+
+  const operationalSize = operationalCandidateSpaceSize(perContractorAllocations);
+  if (operationalSize > MAX_MATERIALIZED_CANDIDATES) {
+    return { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', allocationCount: operationalSize };
+  }
 
   const candidates = [];
   forEachCandidate(groups, perContractorAllocations, targetNiValue, toleranceValue, (candidate) => {
@@ -1152,9 +1381,9 @@ function collectActiveSourceIdentities(candidateList) {
 export function findBlendRecommendationsStreamingUnpruned({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
   if (!prepared.ok) return prepared.result;
-  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder } = prepared;
 
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, false);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, false, true, searchOrder);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   return buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
 }
@@ -1167,20 +1396,24 @@ export function findBlendRecommendationsStreamingUnpruned({ targetNi, tolerance 
 export function findBlendRecommendationsWithDiagnostics({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
   if (!prepared.ok) return { result: prepared.result, diagnostics: null };
-  const { groups, perContractorAllocations, targetNiValue, toleranceValue } = prepared;
+  const { groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder } = prepared;
 
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
 }
 
 // Identical to prepareSearch() (validation, numeric conversion, canonical
 // grouping, per-Contractor operational allocation sets) but WITHOUT the
-// MAX_ALLOCATIONS_PER_CONTRACTOR/MAX_GLOBAL_CANDIDATES safety gate --
-// exists ONLY so a benchmark can exercise the real Phase 4A traversal at
-// sizes production deliberately refuses (this task's PERFORMANCE Scenario
-// B), without raising the production limits themselves. Production code
-// must always go through prepareSearch()'s gated path.
+// MAX_ALLOCATIONS_PER_CONTRACTOR per-group safety gate -- exists ONLY so a
+// benchmark can exercise the real Branch-and-Bound traversal at sizes
+// production's generation-time gate deliberately refuses (this task's
+// PERFORMANCE Scenario B), without raising that limit itself. The
+// traversal it feeds still goes through forEachCandidatePruned()'s own
+// MAX_SEARCH_NODES budget (runSearchDirect() below shares that code path
+// with production), so this bypass is a generation-time-only escape
+// hatch, never an unbounded one. Production code must always go through
+// prepareSearch()'s gated path.
 export function prepareSearchUnbounded({ targetNi, tolerance, sources }) {
   const targetError = validateTargetNi(targetNi);
   const toleranceError = validateTolerance(tolerance);
@@ -1214,8 +1447,16 @@ export function prepareSearchUnbounded({ targetNi, tolerance, sources }) {
 // `enableRankingPruning` (default true) is the V3.0 Phase 4C sub-toggle --
 // pass false (with enablePruning true) to isolate chemistry-only pruning
 // (the Phase 4B production behavior) for a Phase 4B-vs-4C comparison.
-export function runSearchDirect({ groups, perContractorAllocations, targetNiValue, toleranceValue }, enablePruning = true, enableRankingPruning = true) {
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruning, enableRankingPruning);
+// `searchOrder` (V3.0 Phase 6A) -- an explicit array of canonical group
+// indices to traverse in, e.g. from computeSearchOrderForStrategy() below,
+// letting tests/v3-phase6a-search-order.test.mjs benchmark different
+// strategies against the SAME prepared groups/perContractorAllocations.
+// Defaults to computeContractorSearchOrder()'s production strategy when
+// omitted, so every pre-Phase-6A caller of this function (Phase 4A/4B/4C/4D
+// benchmarks) keeps working unchanged, now exercising the chosen strategy.
+export function runSearchDirect({ groups, perContractorAllocations, targetNiValue, toleranceValue }, enablePruning = true, enableRankingPruning = true, searchOrder = null) {
+  const order = searchOrder || computeContractorSearchOrder(groups, perContractorAllocations);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruning, enableRankingPruning, order);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
 }

@@ -24,13 +24,19 @@
 //      lexicographic ranking (recommendation-ranking.js) picks the winner.
 //
 // Before generating anything, blending-recommendation.js computes the
-// EXACT candidate count via the closed-form binomial formula and compares
-// it against MAX_ALLOCATIONS_PER_CONTRACTOR / MAX_GLOBAL_CANDIDATES
-// (fleet-allocation.js) -- so a pathological input returns an explicit
-// SEARCH_SPACE_TOO_LARGE result instead of ever attempting an
-// exponential-time enumeration. No random/heuristic search is used
-// anywhere; the bound only ever REJECTS a search, never truncates one that
-// was already in progress.
+// EXACT per-Contractor candidate count via the closed-form binomial
+// formula and compares it against MAX_ALLOCATIONS_PER_CONTRACTOR
+// (fleet-allocation.js) -- so a single pathologically oversized Contractor
+// group returns an explicit SEARCH_SPACE_TOO_LARGE result instead of ever
+// attempting to materialize its allocation array. No random/heuristic
+// search is used anywhere. V3.0 Phase 4D: the cross-Contractor
+// MAX_GLOBAL_CANDIDATES gate that used to run alongside the check above
+// was removed -- Branch-and-Bound traversal is instead bounded by
+// MAX_SEARCH_NODES, an ACTUAL-work budget checked during traversal itself
+// (see blending-recommendation.js's own comment and
+// tests/v3-phase4d-node-budget.test.mjs), which CAN truncate a search
+// already in progress -- returning the distinct SEARCH_INCOMPLETE result,
+// never a silent approximation, when that budget is spent first.
 //
 // This file reports timings/candidate counts to the console for the
 // Owner/CI to read (this task's Section 38 deliverable item 20) rather
@@ -102,14 +108,20 @@ describe('Recommendation search performance -- realistic synthetic source sets (
     assert.ok(elapsedMs < 5000);
   });
 
-  test('a deliberately oversized scenario is rejected explicitly rather than left to run unbounded', () => {
+  test('a large-search-space scenario now completes exactly (V3.0 Phase 4D: theoretical-size rejection replaced by an actual-work node budget)', () => {
     // Each Contractor: fleet F = 2 sources x 10 DT = 20, n=2 ->
-    // C(22,2) = 231 allocations (under the per-Contractor bound); 3
-    // Contractors -> 231^3 ~= 12.3M global candidates, far over
-    // MAX_GLOBAL_CANDIDATES -- must be rejected before any enumeration.
+    // C(22,2) = 231 raw allocations (operationally-feasible count 76,
+    // under the per-Contractor bound); 3 Contractors -> operational
+    // candidateCount 438,975 -- previously rejected by the now-removed
+    // theoretical MAX_GLOBAL_CANDIDATES gate. Phase 4C's Branch-and-Bound
+    // pruning actually visits only a few thousand nodes for this shape
+    // (see tests/v3-phase4d-node-budget.test.mjs), so it now completes
+    // well within MAX_SEARCH_NODES instead of being rejected outright.
     const sources = buildScenario({ contractorCount: 3, sourcesPerContractor: 2, fleetPerSource: 10 });
-    const { result } = runScenario('oversized (rejected)', sources);
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
+    const { result, elapsedMs } = runScenario('large search space (now completes)', sources);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.candidateCount, 438975);
+    assert.ok(elapsedMs < 5000);
   });
 });

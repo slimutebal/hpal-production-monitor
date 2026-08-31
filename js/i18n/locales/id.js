@@ -175,6 +175,7 @@ export default {
   'calculate.recommendation.gap': 'Selisih',
 
   'calculate.recommendation.searchSpaceTooLarge': 'Kombinasi fleet untuk input ini terlalu besar untuk dihitung. Kurangi jumlah DT atau sumber, lalu coba lagi.',
+  'calculate.recommendation.searchIncomplete': 'Input ini terlalu kompleks untuk diverifikasi sepenuhnya dalam batas pencarian. Tidak ada rekomendasi pasti yang dapat dikonfirmasi. Kurangi jumlah DT atau sumber, lalu coba lagi.',
   'calculate.recommendation.noFeasibleCandidate': 'Tidak ada kombinasi fleet yang dapat dihitung dari input saat ini.',
   // Shown when Hitung Rekomendasi is pressed with zero complete source
   // rows (this task's Section 12) -- Recommendation must not run.

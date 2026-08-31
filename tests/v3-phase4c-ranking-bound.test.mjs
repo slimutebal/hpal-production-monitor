@@ -463,11 +463,17 @@ describe('V3.0 Phase 4C benchmarks -- Phase 4B (chemistry-only) vs Phase 4C (che
     reportComparison('A (4 dome / 2 Contractor / 60 DT)', rawOperationalSize, phase4b, phase4c, elapsed4bMs, elapsed4cMs);
   });
 
-  test('B. 6 domes / 3 Contractors / 60 DT (test-only unbounded)', () => {
+  test('B. 6 domes / 3 Contractors / 60 DT (V3.0 Phase 4D: now runs through the REAL gated production path)', () => {
     const sources = buildScenarioB_6dome3contractor60dt();
+    // V3.0 Phase 4D PRODUCTION UNBLOCK: the removed MAX_GLOBAL_CANDIDATES
+    // pre-gate no longer rejects this scenario outright -- the gated
+    // production entry point itself now completes it exactly, well under
+    // MAX_SEARCH_NODES (see tests/v3-phase4d-node-budget.test.mjs for the
+    // dedicated diagnostics/benchmark coverage of this exact case).
     const gated = findBlendRecommendations({ targetNi: '1.15', tolerance: '0.05', sources });
-    assert.equal(gated.ok, false);
-    assert.equal(gated.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(gated.ok, true);
+    assert.equal(gated.status, 'OK');
+    assert.equal(gated.candidateCount, 438975);
 
     const prepared = prepareSearchUnbounded({ targetNi: '1.15', tolerance: '0.05', sources });
     assert.equal(prepared.ok, true);
@@ -482,7 +488,7 @@ describe('V3.0 Phase 4C benchmarks -- Phase 4B (chemistry-only) vs Phase 4C (che
 
     assert.equal(phase4c.result.ok, true);
     assert.equal(phase4c.result.candidateCount, phase4b.result.candidateCount);
-    reportComparison('B (6 dome / 3 Contractor / 60 DT, gate-bypassed)', rawOperationalSize, phase4b, phase4c, elapsed4bMs, elapsed4cMs);
+    reportComparison('B (6 dome / 3 Contractor / 60 DT)', rawOperationalSize, phase4b, phase4c, elapsed4bMs, elapsed4cMs);
   });
 
   test('C. Phase 4B chemistry-separable case (partitioned Ni bands)', () => {

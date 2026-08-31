@@ -1434,6 +1434,32 @@ describe('Engine error states', () => {
     assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
     assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.searchSpaceTooLarge']);
   });
+
+  // V3.0 Phase 4D -- SEARCH_INCOMPLETE (the Branch-and-Bound node budget
+  // was spent before an exact result could be proven) must render its OWN
+  // distinct inline error, never fall through to the generic
+  // noFeasibleCandidate copy (a different, stronger claim) and never look
+  // like a successful result. Same pathological shape as
+  // tests/v3-phase4d-node-budget.test.mjs's SAFETY TEST: 2 Contractors x 2
+  // domes x 100 DT (each Contractor group individually clears
+  // MAX_ALLOCATIONS_PER_CONTRACTOR, so only the node budget can catch
+  // this), target unreachable so pruning never engages.
+  test('SEARCH_INCOMPLETE renders its own explicit inline error, distinct from SEARCH_SPACE_TOO_LARGE/noFeasibleCandidate', () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'C0-S0', contractor: 'Contractor0', ni: '1.00', units: '100', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'C0-S1', contractor: 'Contractor0', ni: '1.00', units: '100', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[2], { pileId: 'C1-S0', contractor: 'Contractor1', ni: '1.00', units: '100', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[3], { pileId: 'C1-S1', contractor: 'Contractor1', ni: '1.00', units: '100', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.001' });
+
+    clickCalculateRecommendation(pageEl);
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
+    assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.searchIncomplete']);
+    assert.notEqual(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.searchSpaceTooLarge']);
+    assert.notEqual(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.noFeasibleCandidate']);
+  });
 });
 
 /* ============================================================

@@ -71,21 +71,37 @@ export function simplicityKey(unitRatio) {
 }
 
 // ============================================================
-// SEARCH-SPACE SAFETY BOUNDS (this task's Section 19)
-// ============================================================
+// SEARCH-SPACE SAFETY BOUNDS (this task's Section 19; V3.0 Phase 4D
+// redesign, docs/V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md
+// "Replace Legacy Theoretical Candidate Gate").
 //
-// The search enumerates every integer allocation across a Contractor's
-// sources (never a consumable-inventory reduction), so its size grows
-// combinatorially with fleet size/source count. These bounds exist ONLY to
-// turn a pathological input into an explicit, deterministic
-// SEARCH_SPACE_TOO_LARGE result (blending-recommendation.js checks the
-// count BEFORE generating anything -- see countContractorAllocations()
-// below) instead of hanging or silently truncating. Realistic field
-// fleets (single/low-double-digit DT across a handful of sources per
-// Contractor) stay far below these bounds -- see the benchmark suite
-// (tests/recommendation-performance.test.mjs) for representative sizes.
+// MAX_ALLOCATIONS_PER_CONTRACTOR remains a hard GENERATION-TIME pre-gate:
+// enumerateOperationalAllocations() (below) eagerly MATERIALIZES an array
+// of this many tuples for a single Contractor group before Branch-and-
+// Bound ever runs -- Phase 4C's chemistry/ranking-prefix pruning only
+// operates BETWEEN Contractor groups (blending-recommendation.js's
+// suffixBounds/suffixRankBounds), never inside one group's own leaf
+// enumeration, so a single oversized group gets ZERO pruning benefit and
+// blending-recommendation.js's node budget (which only bounds TRAVERSAL,
+// not this prior array-allocation step) cannot protect against it either.
+// This is why Phase 4D keeps this exact pre-gate unchanged rather than
+// replacing it: it protects a cost the node budget structurally cannot
+// see. Realistic field fleets (single/low-double-digit DT across a
+// handful of sources per Contractor) stay far below this bound -- see the
+// benchmark suite (tests/recommendation-performance.test.mjs) for
+// representative sizes.
+//
+// The former MAX_GLOBAL_CANDIDATES (200,000) -- a pre-search gate on the
+// full cross-Contractor product -- is REMOVED as of Phase 4D. It bounded
+// the THEORETICAL search space, not actual Branch-and-Bound traversal
+// work, and Phase 4C's pruning routinely completes spaces many times
+// larger than 200,000 while visiting only a few thousand actual nodes
+// (e.g. the 6-dome/3-Contractor/60-DT case: candidateCount 438,975,
+// ~6,900 nodes actually visited -- see
+// tests/v3-phase4d-node-budget.test.mjs). blending-recommendation.js's
+// MAX_SEARCH_NODES now bounds the search by ACTUAL traversal work
+// (visitedNodes) instead, which the removed gate could never measure.
 export const MAX_ALLOCATIONS_PER_CONTRACTOR = 20000;
-export const MAX_GLOBAL_CANDIDATES = 200000;
 
 // Number of integer tuples (a_1..a_n), each >= 0, with Sum(a_i) <= fleet --
 // i.e. C(fleet + sourceCount, sourceCount) by the standard stars-and-bars

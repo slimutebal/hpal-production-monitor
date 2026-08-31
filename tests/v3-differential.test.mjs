@@ -138,7 +138,7 @@ describe('V3.0 Phase 1/2 legacy SEARCH_SPACE_TOO_LARGE coverage (Phase 1 Section
     assert.equal(reference.error, 'SEARCH_SPACE_TOO_LARGE');
   });
 
-  test('B. realistic-but-rejected 3 Contractors x 2 sources x 10 DT is STILL rejected by both engines under Phase 2 (this task\'s Section 30: raw ~12.3M, operational ~438,976 per audit -- still > MAX_GLOBAL_CANDIDATES=200,000, verified mathematically below, not assumed)', () => {
+  test('B. V3.0 Phase 4D UPDATE: 3 Contractors x 2 sources x 10 DT (operational ~438,976 per audit) is now UNBLOCKED in production, while the frozen legacy reference still rejects it exactly as before -- the ONE approved V3_SCALABLE_SEARCH_SPACE delta (this task\'s Section 8), verified via assertRecommendationEquivalent()', () => {
     const sources = [];
     for (let c = 0; c < 3; c += 1) {
       for (let s = 0; s < 2; s += 1) {
@@ -154,10 +154,22 @@ describe('V3.0 Phase 1/2 legacy SEARCH_SPACE_TOO_LARGE coverage (Phase 1 Section
     const input = { targetNi: 1.15, tolerance: 0.05, sources };
     const production = findBlendRecommendations(input);
     const reference = findBlendRecommendationsReference(input);
-    assert.equal(production.ok, false);
-    assert.equal(production.error, 'SEARCH_SPACE_TOO_LARGE');
+    // The legacy oracle is frozen (tests/reference/v2-exhaustive/ is never
+    // refactored) -- it still carries its own OLD global product gate, so
+    // it still rejects this exact input exactly as it always has.
     assert.equal(reference.ok, false);
     assert.equal(reference.error, 'SEARCH_SPACE_TOO_LARGE');
+    // Production's removed MAX_GLOBAL_CANDIDATES gate no longer rejects it
+    // -- Branch-and-Bound completes it exactly, well under MAX_SEARCH_NODES.
+    assert.equal(production.ok, true);
+    assert.equal(production.status, 'OK');
+    assert.equal(production.candidateCount, 438975);
+
+    // This divergence is EXACTLY the one new approved delta this task
+    // authorizes -- assertRecommendationEquivalent() must accept it via
+    // V3_SCALABLE_SEARCH_SPACE, never via MIN_LOADING_POINT_6 (unrelated
+    // root cause) and never as an unexpected mismatch.
+    assertRecommendationEquivalent(input, { expectedApprovedDelta: 'V3_SCALABLE_SEARCH_SPACE', scenarioName: 'Phase4D production-unblock B' });
   });
 });
 

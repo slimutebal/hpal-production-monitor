@@ -116,6 +116,39 @@ export const APPROVED_DELTAS = {
       diagnostic: 'MIN_LOADING_POINT_6 does not apply: legacy\'s own winning candidate has no active source in [1,5], legacy was not SEARCH_SPACE_TOO_LARGE-now-unblocked, and the two canonical results differ in more than just search-space metadata -- this is an UNEXPECTED mismatch, not an approved delta',
     };
   },
+
+  // V3.0 Phase 4D (docs/V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md
+  // "Replace Legacy Theoretical Candidate Gate", this task's Section 8):
+  // the SECOND (and, per that task, ONLY other) registered approved delta
+  // -- deliberately kept SEPARATE from MIN_LOADING_POINT_6 above, since its
+  // root cause is unrelated (a search-space SAFETY-BOUND redesign, not a
+  // generation-time feasibility rule change). The frozen legacy reference
+  // still carries its own OLD MAX_ALLOCATIONS_PER_CONTRACTOR/
+  // MAX_GLOBAL_CANDIDATES pre-search gate (tests/reference/v2-exhaustive/
+  // is intentionally never touched -- see fleet-allocation-reference.mjs);
+  // production's OWN MAX_GLOBAL_CANDIDATES gate is removed as of Phase 4D,
+  // replaced by MAX_SEARCH_NODES (an ACTUAL-traversal-work budget enforced
+  // DURING the search, not a pre-search theoretical-size rejection). So an
+  // input the legacy engine still rejects outright as SEARCH_SPACE_TOO_LARGE
+  // can now be one production completes exactly (or, for a genuinely
+  // pathological shape, legitimately cannot finish within MAX_SEARCH_NODES
+  // -- SEARCH_INCOMPLETE, still never a silent approximation). Neither
+  // outcome has a legacy winning candidate to compare identity against (the
+  // legacy engine never computed one for this input), so -- like sub-case C
+  // of MIN_LOADING_POINT_6 above -- the whole remaining canonical
+  // difference is accepted without further inspection; the root cause (an
+  // obsolete legacy-only rejection) explains it entirely.
+  V3_SCALABLE_SEARCH_SPACE: (legacyCanonical, productionCanonical) => {
+    if (!legacyCanonical.ok && legacyCanonical.error === 'SEARCH_SPACE_TOO_LARGE') {
+      const productionStillMatchesLegacyRejection = !productionCanonical.ok && productionCanonical.error === 'SEARCH_SPACE_TOO_LARGE';
+      if (!productionStillMatchesLegacyRejection) return { resolved: true, tier: 'winner-changed' };
+    }
+
+    return {
+      resolved: false,
+      diagnostic: 'V3_SCALABLE_SEARCH_SPACE does not apply: legacy was not SEARCH_SPACE_TOO_LARGE, or production is STILL SEARCH_SPACE_TOO_LARGE for the identical input (a genuine per-Contractor-group rejection, not the removed global gate) -- this is an UNEXPECTED mismatch, not an approved delta',
+    };
+  },
 };
 
 // input: findBlendRecommendations()-shaped input.

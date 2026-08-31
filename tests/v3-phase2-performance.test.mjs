@@ -23,8 +23,14 @@ import { findBlendRecommendationsReference } from './reference/v2-exhaustive/ble
 import {
   countContractorAllocations,
   countOperationalAllocations,
-  MAX_GLOBAL_CANDIDATES,
 } from '../js/pages/calculate/fleet-allocation.js';
+
+// V3.0 Phase 4D removed the production MAX_GLOBAL_CANDIDATES gate this file
+// originally audited against (see fleet-allocation.js's own comment) --
+// this historical literal is kept ONLY so the tests below still document
+// the exact Phase 2 audit numbers they were written against; it is no
+// longer read by production code.
+const LEGACY_MAX_GLOBAL_CANDIDATES = 200000;
 
 // 4 domes / 2 Contractors / 60 DT total -- each Contractor's OWN fleet is
 // 30 DT spread across its 2 domes (this task's Section 11's own audited
@@ -61,8 +67,8 @@ describe('V3.0 Phase 2 newly-unblocked performance case (this task\'s Section 11
     assert.equal(rawGlobal, 246016, 'must match the audit doc\'s own re-derived raw count exactly');
     assert.equal(operationalGlobal, 58081, 'must match the audit doc\'s own re-derived operational count exactly');
 
-    assert.ok(rawGlobal > MAX_GLOBAL_CANDIDATES, 'the raw (legacy) count must still exceed the unchanged 200,000 limit');
-    assert.ok(operationalGlobal < MAX_GLOBAL_CANDIDATES, 'the operational (Phase 2) count must clear the SAME unchanged 200,000 limit');
+    assert.ok(rawGlobal > LEGACY_MAX_GLOBAL_CANDIDATES, 'the raw (legacy) count must still exceed the unchanged 200,000 limit');
+    assert.ok(operationalGlobal < LEGACY_MAX_GLOBAL_CANDIDATES, 'the operational (Phase 2) count must clear the SAME unchanged 200,000 limit');
   });
 
   test('legacy frozen reference REJECTS this scenario as SEARCH_SPACE_TOO_LARGE', () => {
@@ -93,12 +99,12 @@ describe('V3.0 Phase 2 newly-unblocked performance case (this task\'s Section 11
     assert.ok(elapsedMs < 5000);
   });
 
-  test('the existing ~12.3M-candidate oversized case (3 Contractors x 2 sources x 10 DT) is STILL rejected under Phase 2 (this task\'s Section 30) -- operational count 438,976 still exceeds 200,000', () => {
+  test('V3.0 Phase 4D UPDATE: the ~12.3M-candidate case (3 Contractors x 2 sources x 10 DT), previously rejected under Phase 2 because operational count 438,976 exceeded the now-removed 200,000 global gate, is now UNBLOCKED -- production completes it exactly (see tests/v3-phase4d-node-budget.test.mjs for the dedicated actual-work diagnostics)', () => {
     const perContractorOperational = countOperationalAllocations(20, 2);
     assert.equal(perContractorOperational, 76);
     const globalOperational = perContractorOperational ** 3;
     assert.equal(globalOperational, 438976, 'must match the audit doc\'s own re-derived Scenario C operational count exactly');
-    assert.ok(globalOperational > MAX_GLOBAL_CANDIDATES);
+    assert.ok(globalOperational > LEGACY_MAX_GLOBAL_CANDIDATES, 'this is exactly the shape the removed theoretical gate used to reject');
 
     const sources = [];
     for (let c = 0; c < 3; c += 1) {
@@ -113,7 +119,8 @@ describe('V3.0 Phase 2 newly-unblocked performance case (this task\'s Section 11
       }
     }
     const result = findBlendRecommendations({ targetNi: 1.15, tolerance: 0.05, sources });
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.candidateCount, 438975);
   });
 });

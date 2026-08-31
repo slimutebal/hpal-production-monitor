@@ -118,6 +118,7 @@ export default {
   'calculate.recommendation.gap': 'Gap',
 
   'calculate.recommendation.searchSpaceTooLarge': 'The fleet combinations for this input are too large to compute. Reduce the DT count or number of sources, then try again.',
+  'calculate.recommendation.searchIncomplete': 'This input is too complex to fully verify within the search limit. No exact recommendation could be confirmed. Reduce the DT count or number of sources, then try again.',
   'calculate.recommendation.noFeasibleCandidate': 'No feasible fleet combination could be computed from the current input.',
   // Shown when Calculate Recommendation is pressed with zero complete
   // source rows -- Recommendation must not run.
