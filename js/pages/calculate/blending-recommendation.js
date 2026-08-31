@@ -47,7 +47,17 @@ import {
 import {
   compareWithinTolerance,
   compareBestAttainable,
+  criticalContractorCount,
+  worstContractorStandbyRatio,
+  contractorsRequiringMitigationCount,
+  fullyUnusedLoadingPointCount,
 } from './recommendation-ranking.js';
+// V3.0 Phase 4C ranking-prefix pruning (see that section below) reuses the
+// SAME critical/mitigation threshold constants recommendation-ranking.js's
+// per-Contractor tier classification is built on (via
+// calculateContractorStandbyMetrics()/classifyStandbyTier() there), rather
+// than inventing a second copy of the 0.05/0.50 boundaries.
+import { CRITICAL_STANDBY_RATIO, MINOR_STANDBY_RATIO } from './operational-continuity.js';
 
 // Gate A decision (architecture doc Section 16.1/41, this task's Section
 // 15): default ±0.010% Ni, user-editable in a future UI (step 0.001,
@@ -153,7 +163,13 @@ export function isWithinTolerance(estimatedNi, targetNi, tolerance) {
 // Returns null for the excluded all-zero allocation (this task's Section
 // 19) or for any candidate that fails a defensive (structurally
 // unreachable once totalActiveUnits > 0) invariant check.
-function buildCandidate(groups, activeBySourceKey, targetNi, tolerance) {
+//
+// Exported (V3.0 Phase 4C) so tests/v3-phase4c-ranking-bound.test.mjs's
+// proof pass can materialize the EXACT SAME candidate shape production
+// uses for an arbitrary (fixed-prefix + independently-enumerated
+// completion) combination, and run it through the REAL compareWithinTolerance
+// comparator -- never a re-implemented copy of candidate construction.
+export function buildCandidate(groups, activeBySourceKey, targetNi, tolerance) {
   let totalActiveUnits = 0;
   activeBySourceKey.forEach((v) => { totalActiveUnits += v; });
   if (totalActiveUnits === 0) return null;
@@ -492,6 +508,209 @@ export function orderAllocationsForSearch(group, allocations, targetNiValue) {
     .map((entry) => entry.allocation);
 }
 
+// ============================================================
+// V3.0 Phase 4C -- EXACT ranking-prefix pruning (docs/
+// V3.0_SCALABLE_RECOMMENDATION_ENGINE_ARCHITECTURE.md Section 20's
+// compareWithinTolerance rule chain).
+//
+// Phase 4A/4B chemistry pruning only discards a branch whose Ni is
+// provably unreachable. Once a within-tolerance incumbent already exists,
+// a second, INDEPENDENT reason to discard a branch is available: even if
+// every remaining open Contractor group is completed in the single most
+// favorable way possible, the resulting candidate still cannot outrank the
+// incumbent under compareWithinTolerance's rule chain (recommendation-
+// ranking.js: 0 invalidLoadingPointCount, A criticalContractorCount, B
+// totalActiveUnits, C worstContractorStandbyRatio, D
+// contractorsRequiringMitigationCount, E fullyUnusedLoadingPointCount,
+// F..J unbounded here).
+//
+// PROOF (multi-key lexicographic domination -- must hold for every
+// partial node, re-verified exhaustively by
+// tests/v3-phase4c-ranking-bound.test.mjs): groups are decided
+// independently of one another (the search is a plain Cartesian product
+// across Contractor groups, and every rule A-E below is either a per-
+// Contractor-group quantity summed/maxed across groups, or additive
+// across groups) -- so for rules A/B/D/E (each a SUM over groups of a
+// per-group quantity) and rule C (a MAX over groups of a per-group
+// quantity), the single best achievable value of that rule ACROSS THE
+// WHOLE BRANCH is obtained by independently optimizing EACH remaining
+// open group for that one rule alone (no group's choice constrains any
+// other group's own optimum for the same rule, since compareContractor
+// Standby metrics are computed per-Contractor and Contractor groups here
+// are exactly fleet-allocation.js's groupSourcesByContractor() groups --
+// one group IS one Contractor). This is what
+// conservativeRankingBound() below computes: the DECIDED (fixed) groups'
+// exact contribution plus, for each rule, the sum/max of each remaining
+// open group's own best-case contribution (independently chosen per rule,
+// not required to share one single completion across rules).
+//
+// This composite "best of all worlds" value is therefore an OPTIMISTIC
+// bound on what ANY single real completion could achieve at each
+// individual rule (a real completion's actual value at rule i can never
+// beat -- only tie or fall short of -- this bound, since the bound already
+// assumes independently-optimal per-group choices). Given that,
+// boundCannotBeatIncumbent() below applies the SAME rule ordering
+// compareWithinTolerance uses: walk rules A..E in order; the first rule
+// where the bound is not tied with the incumbent's actual value decides
+// the outcome -- if the bound is strictly WORSE there, every real
+// completion is provably tied-or-worse at every earlier rule (their
+// actual values can never beat a bound that already ties/loses) and
+// strictly worse at this one, so the branch can never lexicographically
+// beat the incumbent: PRUNE. If the bound is strictly BETTER there, some
+// real completion might still beat the incumbent at this rule (the bound
+// does not prove otherwise): do not prune. If every rule A..E ties at the
+// bound, no conclusion is drawn (rules F..J are intentionally left
+// unbounded, per this task's scope) -- do not prune.
+//
+// Reused ONLY while pruningGate.active is true (an actual within-tolerance
+// incumbent already exists) -- see forEachCandidatePruned()'s own gate
+// check, identical in spirit to the chemistry bound's gate. Before that,
+// TARGET_NOT_ACHIEVABLE's exhaustive bestAttainable traversal is
+// untouched, exactly like Phase 4A/4B (this task's Section 5).
+// ============================================================
+
+// Rule-0 (invalidLoadingPointCount) is deliberately NOT bounded here: V3.0
+// Phase 2 already makes 0-or->=6 a GENERATION-time feasibility rule (see
+// fleet-allocation.js's enumerateOperationalAllocations()), so every
+// candidate this search can ever complete -- branch or incumbent alike --
+// has invalidLoadingPointCount exactly 0. Rule 0 therefore never
+// distinguishes any two candidates this engine produces; adding a bound
+// for it would be dead code, not a stronger prune.
+
+// Per-group, per-allocation rank-relevant metrics (pure). `group` is one
+// Contractor's own { sources } (fleet-allocation.js's groupSourcesByContractor()
+// entry); `allocation` is one of that group's own enumerateOperationalAllocations()
+// tuples (activeUnits per source, same index order as group.sources).
+function allocationRankMetrics(group, allocation, fleet) {
+  let activeUnits = 0;
+  let fullyUnusedCount = 0;
+  allocation.forEach((v, i) => {
+    activeUnits += v;
+    if (group.sources[i].assignedUnits > 0 && v === 0) fullyUnusedCount += 1;
+  });
+  const standbyRatio = fleet > 0 ? (fleet - activeUnits) / fleet : 0;
+  return {
+    activeUnits,
+    standbyRatio,
+    isCritical: standbyRatio >= CRITICAL_STANDBY_RATIO,
+    requiresMitigation: standbyRatio > MINOR_STANDBY_RATIO,
+    fullyUnusedCount,
+  };
+}
+
+// One group's own best-case contribution to each rule, independently
+// optimized PER RULE (see the proof above for why that is sound) --
+// scanned once per group over its own already-enumerated allocation set
+// (perContractorAllocations[i], the EXACT set combine() below iterates
+// over -- never a re-generated or re-filtered copy).
+function computeGroupRankProfile(group, allocations) {
+  const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
+  let maxActiveUnits = 0;
+  let minStandbyRatio = Infinity;
+  let minCriticalCount = 1;
+  let minMitigationCount = 1;
+  let minFullyUnusedCount = Infinity;
+
+  allocations.forEach((allocation) => {
+    const m = allocationRankMetrics(group, allocation, fleet);
+    if (m.activeUnits > maxActiveUnits) maxActiveUnits = m.activeUnits;
+    if (m.standbyRatio < minStandbyRatio) minStandbyRatio = m.standbyRatio;
+    if (!m.isCritical) minCriticalCount = 0;
+    if (!m.requiresMitigation) minMitigationCount = 0;
+    if (m.fullyUnusedCount < minFullyUnusedCount) minFullyUnusedCount = m.fullyUnusedCount;
+  });
+
+  return { maxActiveUnits, minStandbyRatio, minCriticalCount, minMitigationCount, minFullyUnusedCount };
+}
+
+// suffixRankBounds[i] = the pooled best-case contribution of every group
+// NOT YET decided at depth i (groups[i..end)), one aggregate per rule.
+// Computed once per search (never per node), same cost shape/contract as
+// Phase 4B's computeSuffixBounds() above. suffixRankBounds[groups.length]
+// is the empty-contribution identity (no open groups left).
+function computeSuffixRankBounds(groups, perContractorAllocations) {
+  const n = groups.length;
+  const profiles = groups.map((group, i) => computeGroupRankProfile(group, perContractorAllocations[i]));
+  const suffixRankBounds = new Array(n + 1);
+  suffixRankBounds[n] = { minCriticalCount: 0, maxActiveUnits: 0, minWorstRatio: 0, minMitigationCount: 0, minFullyUnusedCount: 0 };
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const p = profiles[i];
+    const rest = suffixRankBounds[i + 1];
+    suffixRankBounds[i] = {
+      minCriticalCount: p.minCriticalCount + rest.minCriticalCount,
+      maxActiveUnits: p.maxActiveUnits + rest.maxActiveUnits,
+      minWorstRatio: Math.max(p.minStandbyRatio, rest.minWorstRatio),
+      minMitigationCount: p.minMitigationCount + rest.minMitigationCount,
+      minFullyUnusedCount: p.minFullyUnusedCount + rest.minFullyUnusedCount,
+    };
+  }
+  return suffixRankBounds;
+}
+
+// Combines the DECIDED groups' exact running totals (`fixed`, threaded
+// through combine() below) with the still-open groups' pooled best case
+// (`openBound`, suffixRankBounds[groupIndex]) into one optimistic
+// composite -- see the proof above for why this composite is a valid
+// per-rule upper/lower bound even though it is not necessarily achieved by
+// any single real completion.
+export function conservativeRankingBound(fixed, openBound) {
+  return {
+    bestCriticalContractorCount: fixed.criticalCount + openBound.minCriticalCount,
+    bestTotalActiveUnits: fixed.activeUnits + openBound.maxActiveUnits,
+    bestWorstContractorStandbyRatio: Math.max(fixed.worstRatio, openBound.minWorstRatio),
+    bestContractorsRequiringMitigationCount: fixed.mitigationCount + openBound.minMitigationCount,
+    bestFullyUnusedLoadingPointCount: fixed.fullyUnusedCount + openBound.minFullyUnusedCount,
+  };
+}
+
+// Exact incumbent-side metrics -- computed ONCE per new incumbent (never
+// per node), reusing recommendation-ranking.js's OWN rule functions
+// (never a re-implemented copy) so the pruning bound is always compared
+// against exactly what compareWithinTolerance would compute for the same
+// candidate.
+export function incumbentRankingMetrics(candidate) {
+  return {
+    criticalContractorCount: criticalContractorCount(candidate),
+    totalActiveUnits: candidate.totalActiveUnits,
+    worstContractorStandbyRatio: worstContractorStandbyRatio(candidate),
+    contractorsRequiringMitigationCount: contractorsRequiringMitigationCount(candidate),
+    fullyUnusedLoadingPointCount: fullyUnusedLoadingPointCount(candidate),
+  };
+}
+
+// See the proof above this section. Walks rules A..E in
+// compareWithinTolerance's own order; returns true only once a rule shows
+// the bound is STRICTLY worse than the incumbent while every earlier rule
+// tied (never on a heuristic "probably worse" signal, and never past a
+// rule where the bound is still strictly better, which means some
+// completion might still win). Ratio comparisons use FLOAT_EPSILON (same
+// constant isWithinTolerance() uses) so representation noise alone can
+// never trigger a prune.
+export function boundCannotBeatIncumbent(bound, incumbent) {
+  // A. fewer critical Contractors (ascending -- lower wins).
+  if (bound.bestCriticalContractorCount > incumbent.criticalContractorCount) return true;
+  if (bound.bestCriticalContractorCount < incumbent.criticalContractorCount) return false;
+
+  // B. maximize total active units (descending -- higher wins).
+  if (bound.bestTotalActiveUnits < incumbent.totalActiveUnits) return true;
+  if (bound.bestTotalActiveUnits > incumbent.totalActiveUnits) return false;
+
+  // C. lower worst Contractor standby ratio (ascending -- lower wins).
+  if (bound.bestWorstContractorStandbyRatio > incumbent.worstContractorStandbyRatio + FLOAT_EPSILON) return true;
+  if (bound.bestWorstContractorStandbyRatio < incumbent.worstContractorStandbyRatio - FLOAT_EPSILON) return false;
+
+  // D. fewer Contractors requiring >5% mitigation (ascending -- lower wins).
+  if (bound.bestContractorsRequiringMitigationCount > incumbent.contractorsRequiringMitigationCount) return true;
+  if (bound.bestContractorsRequiringMitigationCount < incumbent.contractorsRequiringMitigationCount) return false;
+
+  // E. fewer fully-unused loading points (ascending -- lower wins).
+  if (bound.bestFullyUnusedLoadingPointCount > incumbent.fullyUnusedLoadingPointCount) return true;
+
+  // Tied through E, or the bound is strictly better at some rule (already
+  // returned false above) -- rules F..J are unbounded, so no conclusion.
+  return false;
+}
+
 // Explicit branch-and-bound traversal (this task's Section "SEARCH
 // STRUCTURE"/"Refactor... into explicit partial-node traversal"). Replaces
 // the plain recursive Cartesian combine with one that threads running
@@ -515,20 +734,33 @@ export function orderAllocationsForSearch(group, allocations, targetNiValue) {
 // [target-tolerance, target+tolerance], which by the proof above means NO
 // completion in that branch can be within tolerance -- so pruning never
 // discards a source that would have participated in a within-tolerance
-// candidate.
+// candidate. The SAME argument applies to the V3.0 Phase 4C ranking-prefix
+// bound below: it only discards a branch when NO completion could
+// outrank the current bestWithinTolerance, so it can never discard the
+// eventual winner either (proven by tests/v3-phase4c-ranking-bound.test.mjs).
 function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit) {
   const suffixBounds = computeSuffixBounds(groups);
-  const diagnostics = { visitedNodes: 0, prunedByChemistry: 0, completedCandidates: 0 };
+  // V3.0 Phase 4C -- pooled best-case ranking contribution of each
+  // still-open suffix of groups, computed once per search (never per
+  // node), same cost shape as suffixBounds above.
+  const suffixRankBounds = computeSuffixRankBounds(groups, perContractorAllocations);
+  // Each group's own total fleet, computed once per search -- combine()
+  // below reads groupFleets[groupIndex] rather than re-reducing
+  // group.sources on every node reached at that depth.
+  const groupFleets = groups.map((group) => group.sources.reduce((sum, s) => sum + s.assignedUnits, 0));
+  const diagnostics = { visitedNodes: 0, prunedByChemistry: 0, prunedByRanking: 0, completedCandidates: 0 };
 
   // groupIndex: current Contractor depth. fixedNumerator/fixedTonnage:
   // accumulated weighted-Ni numerator/tonnage across DECIDED groups only.
-  // fixedActiveUnits: accumulated active units across decided groups
-  // (diagnostic-only -- no bound in this phase consumes it, per this
-  // task's "do not invent such a bound just to increase pruning").
-  // activeBySourceKey: enough state (every decided group's chosen
-  // allocation) to call buildCandidate() exactly once groupIndex reaches
-  // groups.length.
-  function combine(groupIndex, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits) {
+  // fixedActiveUnits: accumulated active units across decided groups --
+  // now also the EXACT rule-B contribution the Phase 4C ranking bound
+  // below consumes (previously diagnostic-only under Phase 4A/4B).
+  // fixedCriticalCount/fixedWorstRatio/fixedMitigationCount/
+  // fixedFullyUnusedCount: the remaining exact rule-A/C/D/E contributions
+  // of the DECIDED groups only (V3.0 Phase 4C). activeBySourceKey: enough
+  // state (every decided group's chosen allocation) to call
+  // buildCandidate() exactly once groupIndex reaches groups.length.
+  function combine(groupIndex, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits, fixedCriticalCount, fixedWorstRatio, fixedMitigationCount, fixedFullyUnusedCount) {
     diagnostics.visitedNodes += 1;
 
     if (groupIndex === groups.length) {
@@ -546,39 +778,70 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
         diagnostics.prunedByChemistry += 1;
         return;
       }
+
+      if (pruningGate.rankingEnabled) {
+        const rankBound = conservativeRankingBound(
+          { criticalCount: fixedCriticalCount, activeUnits: fixedActiveUnits, worstRatio: fixedWorstRatio, mitigationCount: fixedMitigationCount, fullyUnusedCount: fixedFullyUnusedCount },
+          suffixRankBounds[groupIndex],
+        );
+        if (boundCannotBeatIncumbent(rankBound, pruningGate.rankMetrics)) {
+          diagnostics.prunedByRanking += 1;
+          return;
+        }
+      }
     }
 
     const group = groups[groupIndex];
+    const fleet = groupFleets[groupIndex];
     for (const allocation of perContractorAllocations[groupIndex]) {
       const next = new Map(activeBySourceKey);
       let allocNumerator = 0;
       let allocTonnage = 0;
-      let allocActiveUnits = 0;
       group.sources.forEach((s, i) => {
         next.set(normalizeSourceIdentity(s.pileId, s.contractor), allocation[i]);
         const tonnage = allocation[i] * s.tonnesPerUnit;
         allocTonnage += tonnage;
         allocNumerator += s.ni * tonnage;
-        allocActiveUnits += allocation[i];
       });
-      combine(groupIndex + 1, next, fixedNumerator + allocNumerator, fixedTonnage + allocTonnage, fixedActiveUnits + allocActiveUnits);
+      const allocMetrics = allocationRankMetrics(group, allocation, fleet);
+      combine(
+        groupIndex + 1,
+        next,
+        fixedNumerator + allocNumerator,
+        fixedTonnage + allocTonnage,
+        fixedActiveUnits + allocMetrics.activeUnits,
+        fixedCriticalCount + (allocMetrics.isCritical ? 1 : 0),
+        Math.max(fixedWorstRatio, allocMetrics.standbyRatio),
+        fixedMitigationCount + (allocMetrics.requiresMitigation ? 1 : 0),
+        fixedFullyUnusedCount + allocMetrics.fullyUnusedCount,
+      );
     }
   }
 
-  combine(0, new Map(), 0, 0, 0);
+  combine(0, new Map(), 0, 0, 0, 0, 0, 0, 0);
   return diagnostics;
 }
 
 // Shared streaming-incumbent core (this task's preserved Phase 3
-// contract) -- identical for both the Phase 4A pruned production path and
-// the Phase 3 (gate permanently disabled) test-support reference below, so
-// the ONLY behavioral difference between them is whether `enablePruningGate`
-// ever lets chemistry pruning engage.
-function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate) {
+// contract) -- identical for both the Phase 4A/4B/4C pruned production
+// path and the Phase 3 (gate permanently disabled) test-support reference
+// below, so the ONLY behavioral difference between them is whether
+// `enablePruningGate` ever lets chemistry/ranking-prefix pruning engage.
+// `enableRankingPruning` (default true -- production always leaves it on)
+// is a TEST-SUPPORT-ONLY sub-toggle: when enablePruningGate is true but
+// this is false, chemistry pruning alone runs (the Phase 4B production
+// behavior), letting tests/v3-phase4c-ranking-bound.test.mjs's benchmark
+// compare Phase 4B against Phase 4C on the identical traversal. Production
+// code never passes a third argument here.
+function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate, enableRankingPruning = true) {
   let bestWithinTolerance = null;
   let bestAttainable = null;
   const sourcesInAnyWithinToleranceCandidate = new Set();
-  const pruningGate = { active: false };
+  // rankMetrics: V3.0 Phase 4C -- the CURRENT bestWithinTolerance's exact
+  // rule A/B/C/D/E values, recomputed only when a strictly better
+  // incumbent replaces it (never per node) so forEachCandidatePruned()'s
+  // ranking-bound check always compares against the live incumbent.
+  const pruningGate = { active: false, rankMetrics: null, rankingEnabled: enableRankingPruning };
 
   // Actual visit count lives in diagnostics.completedCandidates (below) --
   // this function never tracks its own separate copy, since that would
@@ -599,6 +862,7 @@ function runStreamingSearch(groups, perContractorAllocations, targetNiValue, tol
       });
       if (bestWithinTolerance === null || compareWithinTolerance(candidate, bestWithinTolerance) < 0) {
         bestWithinTolerance = candidate;
+        if (enablePruningGate) pruningGate.rankMetrics = incumbentRankingMetrics(candidate);
       }
       if (enablePruningGate) pruningGate.active = true;
     }
@@ -939,16 +1203,19 @@ export function prepareSearchUnbounded({ targetNi, tolerance, sources }) {
   return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue };
 }
 
-// Runs the Phase 4A pruned search directly against prepareSearchUnbounded()'s
-// output (or prepareSearch()'s -- either shares the same shape), returning
-// both the result and its diagnostics. Benchmark-only counterpart to
-// findBlendRecommendationsWithDiagnostics() that skips prepareSearch()'s own
-// gate call entirely (the caller already decided to bypass it via
-// prepareSearchUnbounded()). `enablePruning` defaults to true (Phase 4A);
-// pass false to benchmark/diff the same traversal shape with chemistry
-// pruning permanently disabled (the Phase 3 reference behavior).
-export function runSearchDirect({ groups, perContractorAllocations, targetNiValue, toleranceValue }, enablePruning = true) {
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruning);
+// Runs the Phase 4A/4B/4C pruned search directly against
+// prepareSearchUnbounded()'s output (or prepareSearch()'s -- either shares
+// the same shape), returning both the result and its diagnostics.
+// Benchmark-only counterpart to findBlendRecommendationsWithDiagnostics()
+// that skips prepareSearch()'s own gate call entirely (the caller already
+// decided to bypass it via prepareSearchUnbounded()). `enablePruning`
+// defaults to true; pass false to benchmark/diff the same traversal shape
+// with ALL pruning permanently disabled (the Phase 3 reference behavior).
+// `enableRankingPruning` (default true) is the V3.0 Phase 4C sub-toggle --
+// pass false (with enablePruning true) to isolate chemistry-only pruning
+// (the Phase 4B production behavior) for a Phase 4B-vs-4C comparison.
+export function runSearchDirect({ groups, perContractorAllocations, targetNiValue, toleranceValue }, enablePruning = true, enableRankingPruning = true) {
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruning, enableRankingPruning);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
 }

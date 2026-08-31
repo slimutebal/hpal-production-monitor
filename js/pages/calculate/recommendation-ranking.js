@@ -94,15 +94,21 @@ function contractorMetricsFor(candidate) {
   return contractorMetricsCache.get(candidate);
 }
 
-function criticalContractorCount(candidate) {
+// Exported (V3.0 Phase 4C) so blending-recommendation.js's ranking-prefix
+// branch-and-bound pruning can read the SAME incumbent metrics this
+// comparator itself ranks by, rather than re-deriving a second copy of
+// the critical/mitigation/standby-ratio classification (see that module's
+// own "V3.0 Phase 4C" section for how these are used as the EXACT
+// incumbent side of a bound comparison, never re-implemented there).
+export function criticalContractorCount(candidate) {
   return contractorMetricsFor(candidate).filter((m) => m.tier === 'critical').length;
 }
 
-function worstContractorStandbyRatio(candidate) {
+export function worstContractorStandbyRatio(candidate) {
   return contractorMetricsFor(candidate).reduce((worst, m) => Math.max(worst, m.standbyRatio), 0);
 }
 
-function contractorsRequiringMitigationCount(candidate) {
+export function contractorsRequiringMitigationCount(candidate) {
   return contractorMetricsFor(candidate).filter((m) => m.standbyRatio > MINOR_STANDBY_RATIO).length;
 }
 
@@ -139,7 +145,9 @@ function invalidLoadingPointCount(candidate) {
 // have been used instead" analysis is not attempted inside a pairwise
 // comparator -- this count already captures the same directional
 // preference (fewer idle current loading points wins) the rule asks for.
-function fullyUnusedLoadingPointCount(candidate) {
+// Exported (V3.0 Phase 4C) alongside the three functions above -- same
+// reuse rationale.
+export function fullyUnusedLoadingPointCount(candidate) {
   return candidate.sources.filter((s) => s.assignedUnits > 0 && s.activeUnits === 0).length;
 }
 
