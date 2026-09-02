@@ -1423,16 +1423,25 @@ describe('Unit Ratio / Tonnage Ratio display', () => {
    ENGINE ERRORS
 ============================================================ */
 describe('Engine error states', () => {
-  test('SEARCH_SPACE_TOO_LARGE renders an explicit inline error, never a successful-looking result', () => {
+  // V3.0 Phase 7A: a single-source fleet whose own per-Contractor
+  // operational-allocation count exceeds MAX_ALLOCATIONS_PER_CONTRACTOR no
+  // longer surfaces as SEARCH_SPACE_TOO_LARGE -- the hybrid dispatcher
+  // routes it to the hard-case (prefix-lock + MITM) engine instead, which
+  // never needs an eager per-Contractor array and solves this trivially
+  // (this task's own Section 5: "must not globally reject a request that
+  // the hard solver can solve exactly"). This is exactly the production
+  // improvement Phase 7A exists to deliver, verified end-to-end at the UI
+  // layer: the SAME scenario that used to render the inline error now
+  // renders a real, successful Recommendation result instead.
+  test('a fleet that used to trip SEARCH_SPACE_TOO_LARGE now renders a real successful Recommendation result via the hard-case engine', () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'S', ni: '1.2', units: '25000', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.2', tolerance: '0.01' });
 
     clickCalculateRecommendation(pageEl);
 
-    assert.equal(recommendationResultRoot(pageEl).hidden, true);
-    assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
-    assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.searchSpaceTooLarge']);
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
   // V3.0 Phase 4D -- SEARCH_INCOMPLETE (the Branch-and-Bound node budget

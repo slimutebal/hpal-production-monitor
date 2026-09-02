@@ -124,7 +124,18 @@ describe('V3.0 Phase 1 reference self-check (this task\'s Section 35)', () => {
 // eventually improve on.
 // ============================================================
 describe('V3.0 Phase 1/2 legacy SEARCH_SPACE_TOO_LARGE coverage (Phase 1 Section 23, Phase 2 Section 30)', () => {
-  test('A. a genuinely oversized single-source fleet is rejected by both engines (operational count 24,996 for F=25000,n=1 still exceeds MAX_ALLOCATIONS_PER_CONTRACTOR=20,000)', () => {
+  // V3.0 Phase 7A UPDATE: a single-source fleet whose own operational
+  // count (24,996 for F=25000,n=1) exceeds MAX_ALLOCATIONS_PER_CONTRACTOR
+  // is no longer rejected by production -- the hybrid dispatcher routes it
+  // to the hard-case (prefix-lock + MITM) engine, which needs no eager
+  // per-Contractor array and solves it exactly. The frozen legacy
+  // reference (tests/reference/v2-exhaustive/, never touched) still
+  // rejects it exactly as before. This is the SAME already-registered
+  // V3_SCALABLE_SEARCH_SPACE delta Test B below already uses for the
+  // identical root cause (a production-only search-space redesign, not a
+  // generation-time feasibility rule change) -- Phase 7A is simply a
+  // second, independent trigger of that same delta, not a new one.
+  test('A. V3.0 Phase 7A UPDATE: a genuinely oversized single-source fleet (operational count 24,996 for F=25000,n=1) is now solved exactly by the hard-case engine in production, while the frozen legacy reference still rejects it exactly as before', () => {
     const input = {
       targetNi: 1.2,
       tolerance: 0.01,
@@ -132,10 +143,13 @@ describe('V3.0 Phase 1/2 legacy SEARCH_SPACE_TOO_LARGE coverage (Phase 1 Section
     };
     const production = findBlendRecommendations(input);
     const reference = findBlendRecommendationsReference(input);
-    assert.equal(production.ok, false);
-    assert.equal(production.error, 'SEARCH_SPACE_TOO_LARGE');
     assert.equal(reference.ok, false);
     assert.equal(reference.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(production.ok, true);
+    assert.equal(production.status, 'OK');
+    assert.equal(production.solverPath, 'HARDCASE_MITM');
+
+    assertRecommendationEquivalent(input, { expectedApprovedDelta: 'V3_SCALABLE_SEARCH_SPACE', scenarioName: 'Phase7A hard-case-unblock A' });
   });
 
   test('B. V3.0 Phase 4D UPDATE: 3 Contractors x 2 sources x 10 DT (operational ~438,976 per audit) is now UNBLOCKED in production, while the frozen legacy reference still rejects it exactly as before -- the ONE approved V3_SCALABLE_SEARCH_SPACE delta (this task\'s Section 8), verified via assertRecommendationEquivalent()', () => {

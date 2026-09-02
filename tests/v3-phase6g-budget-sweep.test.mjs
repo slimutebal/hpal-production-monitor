@@ -134,16 +134,17 @@ describe('V3.0 Phase 6G -- C budget sweep: 10 dome / 5 Contractor / 100 DT', () 
     assert.equal(run1.diagnostics.prunedByRanking, run2.diagnostics.prunedByRanking);
   });
 
-  // Per this task's Section 4: "where an exact group-level result is
-  // unavailable, do not invent an oracle." Production's own MAX_SEARCH_NODES
-  // is unchanged at 500,000, so it cannot complete C either -- confirmed
-  // here rather than assumed, so no comparison against a completed
-  // production result is attempted for C (would require inventing an
-  // oracle production itself cannot produce).
-  test('production (group-level, unchanged 500k budget) also cannot complete C -- no oracle available, none invented', () => {
+  // V3.0 Phase 7A UPDATE: production's own hybrid dispatcher now resolves C
+  // exactly via the hard-case (prefix-lock + MITM) engine -- the
+  // group-level Branch-and-Bound engine alone still cannot (unchanged, per
+  // this file's own budget-sweep findings above), but it is no longer the
+  // only engine production runs. Kept as the historical "before" baseline
+  // this same production entry point now improves on (this task's own
+  // Section 11).
+  test('production (via the hard-case dispatcher) now completes C exactly, where the group-level engine alone still could not', () => {
     const production = findBlendRecommendationsWithDiagnostics({ targetNi: TARGET_NI, tolerance: TOLERANCE, sources: SCENARIOS.C });
-    assert.equal(statusOf(production.result), 'SEARCH_INCOMPLETE');
-    assert.equal(production.diagnostics.visitedNodes, 500000);
+    assert.equal(statusOf(production.result), 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
   });
 });
 

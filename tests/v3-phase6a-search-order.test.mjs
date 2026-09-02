@@ -204,31 +204,42 @@ function assertIdenticalRuns(name, run1, run2) {
   assert.deepEqual(run1.diagnostics, run2.diagnostics, `${name}: diagnostics changed between runs`);
 }
 
-describe('V3.0 Phase 6A primary targets C/D -- honest result: still SEARCH_INCOMPLETE under the chosen search order, reported truthfully', () => {
-  test('C. 10 dome / 5 Contractor / 100 DT -- still exhausts the node budget (search order cannot help: all 5 groups tie on every metric)', () => {
+// V3.0 Phase 7A UPDATE: at the time this file's search-order investigation
+// ran (Phase 6A), reordering alone could not close the C/D gap -- both
+// still exhausted the group-granularity B&B's own MAX_SEARCH_NODES budget,
+// exactly as this describe block originally documented. The V3.0 program
+// went on (Phase 6H/6I/6J/6K/6L) to prove a DIFFERENT mechanism -- the
+// prefix-lock + Meet-In-The-Middle hard-case solver -- closes this gap
+// exactly, and Phase 7A wires it into findBlendRecommendations() itself as
+// the hybrid dispatcher's second path. C/D now resolve to a real, exact OK
+// result in production; this describe block is kept (not deleted) as the
+// historical "before" baseline this same production entry point now
+// improves on, per this task's own Section 11 audit-trail requirement.
+describe('V3.0 Phase 6A primary targets C/D -- V3.0 Phase 7A UPDATE: now resolve exactly via the hard-case dispatcher', () => {
+  test('C. 10 dome / 5 Contractor / 100 DT -- resolved exactly by the hard-case (prefix-lock + MITM) engine', () => {
     const input = { targetNi: TARGET_NI, tolerance: TOLERANCE, sources: SCENARIOS.C };
     const run1 = findBlendRecommendationsWithDiagnostics(input);
     const run2 = findBlendRecommendationsWithDiagnostics(input);
     assertIdenticalRuns('C', run1, run2);
 
-    assert.equal(run1.result.ok, false);
-    assert.equal(run1.result.error, 'SEARCH_INCOMPLETE');
-    assert.equal(run1.diagnostics.visitedNodes, MAX_SEARCH_NODES);
+    assert.equal(run1.result.ok, true);
+    assert.equal(run1.result.status, 'OK');
+    assert.equal(run1.result.solverPath, 'HARDCASE_MITM');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase6a] HONEST RESULT: C still SEARCH_INCOMPLETE at visitedNodes=${run1.diagnostics.visitedNodes} under the chosen search order -- group-order reordering alone does not close this gap (see file header).`);
+    console.log(`[v3-phase6a] V3.0 Phase 7A: C now resolves OK via solverPath=${run1.result.solverPath} (was: SEARCH_INCOMPLETE under Phase 6A's own group-order-only search).`);
   });
 
-  test('D. 10 dome / 3 Contractor / 100 DT -- still exhausts the node budget (canonical order already decides the one large group first)', () => {
+  test('D. 10 dome / 3 Contractor / 100 DT -- resolved exactly by the hard-case (prefix-lock + MITM) engine', () => {
     const input = { targetNi: TARGET_NI, tolerance: TOLERANCE, sources: SCENARIOS.D };
     const run1 = findBlendRecommendationsWithDiagnostics(input);
     const run2 = findBlendRecommendationsWithDiagnostics(input);
     assertIdenticalRuns('D', run1, run2);
 
-    assert.equal(run1.result.ok, false);
-    assert.equal(run1.result.error, 'SEARCH_INCOMPLETE');
-    assert.equal(run1.diagnostics.visitedNodes, MAX_SEARCH_NODES);
+    assert.equal(run1.result.ok, true);
+    assert.equal(run1.result.status, 'OK');
+    assert.equal(run1.result.solverPath, 'HARDCASE_MITM');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase6a] HONEST RESULT: D still SEARCH_INCOMPLETE at visitedNodes=${run1.diagnostics.visitedNodes} under the chosen search order -- group-order reordering alone does not close this gap (see file header).`);
+    console.log(`[v3-phase6a] V3.0 Phase 7A: D now resolves OK via solverPath=${run1.result.solverPath} (was: SEARCH_INCOMPLETE under Phase 6A's own group-order-only search).`);
   });
 });
 

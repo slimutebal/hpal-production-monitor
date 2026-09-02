@@ -57,6 +57,16 @@ import {
 // calculateContractorStandbyMetrics()/classifyStandbyTier() there), rather
 // than inventing a second copy of the 0.05/0.50 boundaries.
 import { CRITICAL_STANDBY_RATIO, MINOR_STANDBY_RATIO } from './operational-continuity.js';
+// V3.0 Phase 7A -- hard-case (prefix-lock + MITM) exact solver, dispatched
+// to below ONLY when the normal engine's own generation-time gate rejects a
+// Contractor group (SEARCH_SPACE_TOO_LARGE) or its traversal exhausts
+// MAX_SEARCH_NODES (SEARCH_INCOMPLETE) -- see dispatchHardCase() below and
+// exact-hardcase-solver.js's own header for the full fallback contract.
+// Deliberate circular import (that module imports several business-logic
+// functions back from this file) -- safe under ESM live bindings since
+// every use on both sides is deferred to function-call time, never module
+// top-level evaluation.
+import { runHardCaseSearch } from './exact-hardcase-solver.js';
 
 // Gate A decision (architecture doc Section 16.1/41, this task's Section
 // 15): default ±0.010% Ni, user-editable in a future UI (step 0.001,
@@ -842,6 +852,30 @@ export function computeContractorSearchOrder(groups, perContractorAllocations) {
 // which this phase deliberately stops guaranteeing an exact answer.
 export const MAX_SEARCH_NODES = 500000;
 
+// V3.0 Phase 7A -- dispatch-only probe budget (this task's own Section 2:
+// "dispatch affects PERFORMANCE only, never correctness"; Section 10: "do
+// not put fragile millisecond thresholds into normal CI tests" -- this is a
+// NODE COUNT budget, the same deterministic mechanism MAX_SEARCH_NODES
+// itself already is, never a wall-clock timeout). The normal engine's FIRST
+// attempt below (findBlendRecommendations()/findBlendRecommendationsWithDiagnostics())
+// runs capped at this smaller budget rather than the full MAX_SEARCH_NODES:
+// for every shape the normal group-granularity engine can actually resolve,
+// this codebase's own measured evidence (this file's MAX_SEARCH_NODES
+// comment above: 4,800 / 6,900 / ~62,300 nodes for the cited Phase 4D
+// scenarios; V3.0 Phase 5/6's own A/B benchmark scenarios: ~6,900/~6,700
+// nodes) finishes in well under 1/5 of MAX_SEARCH_NODES -- so capping the
+// FIRST attempt here costs a genuinely "normal" shape nothing but redirects
+// a concentrated/symmetric HARD shape (whose pruning provably does not
+// converge by this point -- more nodes only ever re-confirms the same
+// non-convergence, never resolves it) to the hard-case engine immediately,
+// instead of first burning the full 500,000-node budget on a doomed
+// traversal. This can never cost correctness: if the probe is cut short,
+// dispatchHardCase() below runs its OWN full MAX_SEARCH_NODES-budgeted
+// search (a finer, source-level granularity that this codebase's own
+// benchmark evidence shows resolves shapes the group-granularity engine
+// cannot) rather than surfacing a premature SEARCH_INCOMPLETE.
+export const NORMAL_ENGINE_PROBE_NODES = 100000;
+
 // Explicit branch-and-bound traversal (this task's Section "SEARCH
 // STRUCTURE"/"Refactor... into explicit partial-node traversal"). Replaces
 // the plain recursive Cartesian combine with one that threads running
@@ -877,7 +911,7 @@ export const MAX_SEARCH_NODES = 500000;
 // candidate identity: buildCandidate() below always reads the CANONICAL
 // `groups` array, and activeBySourceKey is keyed by source identity, not
 // by traversal position -- see buildCandidate()'s own comment.
-function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit, searchOrder) {
+function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue, toleranceValue, pruningGate, visit, searchOrder, nodeBudget = MAX_SEARCH_NODES) {
   const suffixBounds = computeSuffixBounds(groups, searchOrder);
   // V3.0 Phase 4C -- pooled best-case ranking contribution of each
   // still-open suffix of groups, computed once per search (never per
@@ -912,7 +946,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
   // never asserted as exhaustively optimal.
   function combine(depth, activeBySourceKey, fixedNumerator, fixedTonnage, fixedActiveUnits, fixedCriticalCount, fixedWorstRatio, fixedMitigationCount, fixedFullyUnusedCount) {
     if (diagnostics.incomplete) return;
-    if (diagnostics.visitedNodes >= MAX_SEARCH_NODES) {
+    if (diagnostics.visitedNodes >= nodeBudget) {
       diagnostics.incomplete = true;
       return;
     }
@@ -993,7 +1027,7 @@ function forEachCandidatePruned(groups, perContractorAllocations, targetNiValue,
 // behavior), letting tests/v3-phase4c-ranking-bound.test.mjs's benchmark
 // compare Phase 4B against Phase 4C on the identical traversal. Production
 // code never passes a third argument here.
-function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate, enableRankingPruning = true, searchOrder) {
+function runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, enablePruningGate, enableRankingPruning = true, searchOrder, nodeBudget = MAX_SEARCH_NODES) {
   let bestWithinTolerance = null;
   let bestAttainable = null;
   const sourcesInAnyWithinToleranceCandidate = new Set();
@@ -1026,7 +1060,7 @@ function runStreamingSearch(groups, perContractorAllocations, targetNiValue, tol
       }
       if (enablePruningGate) pruningGate.active = true;
     }
-  }, searchOrder);
+  }, searchOrder, nodeBudget);
 
   return { bestWithinTolerance, bestAttainable, sourcesInAnyWithinToleranceCandidate, diagnostics };
 }
@@ -1160,23 +1194,48 @@ function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateC
 // prunedByChemistry (findBlendRecommendationsWithDiagnostics()) to observe
 // actual traversal work; the WINNING candidate itself is unaffected either
 // way (proven above: pruning never discards a branch that could still win).
+// V3.0 Phase 7A -- hybrid dispatch (this task's own Sections 2/4/6):
+// PERFORMANCE ONLY, never correctness -- both branches return the exact
+// same public Recommendation contract via buildResultFromSearch()/
+// buildHardCaseResult(). The normal engine always runs first; the hard-case
+// (prefix-lock + MITM) engine only ever activates from the two deterministic
+// trigger points dispatchHardCase() itself documents (SEARCH_SPACE_TOO_LARGE
+// at generation time, or SEARCH_INCOMPLETE after an exhausted traversal) --
+// never a fragile shape-based heuristic ("if N domes then MITM").
+// `solverPath` ('NORMAL_BNB' | 'HARDCASE_MITM') is added to every result as
+// an ADDITIONAL diagnostic field -- no existing field changes meaning.
 export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
-  if (!prepared.ok) return prepared.result;
-  const { groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder } = prepared;
+  if (!prepared.ok) {
+    if (prepared.result.error === 'SEARCH_SPACE_TOO_LARGE') return dispatchHardCase(prepared);
+    return prepared.result;
+  }
+  const {
+    groups, groupFleets, perContractorAllocations, targetNiValue, toleranceValue, searchOrder,
+  } = prepared;
 
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder, NORMAL_ENGINE_PROBE_NODES);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
-  return buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
+  const result = buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
+  if (result.error === 'SEARCH_INCOMPLETE') {
+    return dispatchHardCase({
+      groups, groupFleets, targetNiValue, toleranceValue,
+    });
+  }
+  result.solverPath = 'NORMAL_BNB';
+  return result;
 }
 
-// Shared validation + generation-time-feasibility gate + per-Contractor
-// allocation-set setup (this task's Section 19's bound-before-generating
-// gate, unchanged from Phase 2) -- factored out so the Phase 3 streaming
-// production path above and the test-only materialized differential path
-// below (findBlendRecommendationsMaterialized()) run through byte-identical
-// setup and can never silently diverge on validation/gating behavior.
-function prepareSearch({ targetNi, tolerance, sources }) {
+// Shared validation + numeric-conversion + canonical-grouping prefix,
+// factored out (V3.0 Phase 7A) so both the normal engine's own
+// per-Contractor gate below AND the hard-case dispatcher (dispatchHardCase()
+// below) can reach `groups`/`groupFleets` from the SAME single validation
+// pass -- never a second independent copy of it. Deliberately does NOT
+// apply the MAX_ALLOCATIONS_PER_CONTRACTOR gate itself (prepareSearch()
+// below does that on top), since the hard-case path must be reachable even
+// when that gate would have rejected the normal engine (this task's own
+// Section 5).
+function prepareGroups({ targetNi, tolerance, sources }) {
   const targetError = validateTargetNi(targetNi);
   const toleranceError = validateTolerance(tolerance);
   const { sourceErrors, fleetError, valid: sourcesValid } = validateRecommendationSources(sources);
@@ -1189,6 +1248,25 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   const toleranceValue = parseDecimalInput(tolerance);
   const numericSources = sources.map(toNumericSource);
   const groups = groupSourcesByContractor(numericSources);
+  const groupFleets = groups.map((group) => group.sources.reduce((sum, s) => sum + s.assignedUnits, 0));
+
+  return {
+    ok: true, groups, groupFleets, targetNiValue, toleranceValue,
+  };
+}
+
+// Shared validation + generation-time-feasibility gate + per-Contractor
+// allocation-set setup (this task's Section 19's bound-before-generating
+// gate, unchanged from Phase 2) -- factored out so the Phase 3 streaming
+// production path above and the test-only materialized differential path
+// below (findBlendRecommendationsMaterialized()) run through byte-identical
+// setup and can never silently diverge on validation/gating behavior.
+function prepareSearch({ targetNi, tolerance, sources }) {
+  const base = prepareGroups({ targetNi, tolerance, sources });
+  if (!base.ok) return base;
+  const {
+    groups, groupFleets, targetNiValue, toleranceValue,
+  } = base;
 
   // ---- Bound GENERATION (never traversal) BEFORE generating anything ---
   // (Section 19; V3.0 Phase 4D narrows this to per-Contractor only -- see
@@ -1216,11 +1294,24 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   // fraction of that space (e.g. the 6-dome/3-Contractor/60-DT case).
   // forEachCandidatePruned()'s own MAX_SEARCH_NODES budget is what now
   // protects the traversal that follows this per-group gate.
-  for (const group of groups) {
-    const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
-    const count = countOperationalAllocations(fleet, group.sources.length);
+  for (let i = 0; i < groups.length; i += 1) {
+    const count = countOperationalAllocations(groupFleets[i], groups[i].sources.length);
     if (count > MAX_ALLOCATIONS_PER_CONTRACTOR) {
-      return { ok: false, result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', contractor: group.contractorKey, allocationCount: count } };
+      // V3.0 Phase 7A -- `groups`/`groupFleets`/`targetNiValue`/`toleranceValue`
+      // are exposed as SIBLINGS of `result` (never inside it -- `result` stays
+      // exactly the public error contract every existing caller already
+      // reads) so dispatchHardCase() below can reach the hard-case solver
+      // without re-running validation/grouping a second time. This is safe:
+      // prepareSearch() is a private function, and every other caller only
+      // ever reads `.ok`/`.result` on its ok:false branch.
+      return {
+        ok: false,
+        result: { ok: false, error: 'SEARCH_SPACE_TOO_LARGE', contractor: groups[i].contractorKey, allocationCount: count },
+        groups,
+        groupFleets,
+        targetNiValue,
+        toleranceValue,
+      };
     }
   }
 
@@ -1228,9 +1319,8 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   // V3.0 Phase 4B: each group's own allocation set is reordered (never
   // filtered/resized -- see orderAllocationsForSearch()'s own comment) so a
   // strong incumbent tends to stream through earlier in the traversal.
-  const perContractorAllocations = groups.map((group) => {
-    const fleet = group.sources.reduce((sum, s) => sum + s.assignedUnits, 0);
-    const allocations = enumerateOperationalAllocations(fleet, group.sources.length);
+  const perContractorAllocations = groups.map((group, i) => {
+    const allocations = enumerateOperationalAllocations(groupFleets[i], group.sources.length);
     return orderAllocationsForSearch(group, allocations, targetNiValue);
   });
 
@@ -1239,7 +1329,90 @@ function prepareSearch({ targetNi, tolerance, sources }) {
   // candidate identity/candidateCount.
   const searchOrder = computeContractorSearchOrder(groups, perContractorAllocations);
 
-  return { ok: true, groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder };
+  return {
+    ok: true, groups, groupFleets, perContractorAllocations, targetNiValue, toleranceValue, searchOrder,
+  };
+}
+
+// V3.0 Phase 7A -- dispatches to the hard-case (prefix-lock + MITM) exact
+// solver (exact-hardcase-solver.js). Called ONLY from two deterministic,
+// exact-preflight-driven trigger points (never wall-clock timing, per this
+// task's own Section 2):
+//   (a) prepareSearch()'s own per-Contractor MAX_ALLOCATIONS_PER_CONTRACTOR
+//       gate rejected generation (SEARCH_SPACE_TOO_LARGE) -- the normal
+//       engine's eager per-Contractor array would have been too large to
+//       even build; the hard-case path never needs that array at all.
+//   (b) the normal engine's own Branch-and-Bound traversal exhausted
+//       MAX_SEARCH_NODES (SEARCH_INCOMPLETE) -- the search space passed
+//       generation but proved too large to finish exactly within budget.
+// `candidateCount` is computed with the EXACT SAME per-group operational
+// allocation formula the normal engine uses (never a MITM state count --
+// this task's own Section 6 "candidateCount remains the exact original
+// theoretical operational candidate count").
+function dispatchHardCase({
+  groups, groupFleets, targetNiValue, toleranceValue,
+}) {
+  const hard = runHardCaseSearch({
+    groups, groupFleets, targetNiValue, toleranceValue,
+  }, MAX_SEARCH_NODES);
+  const candidateCount = groups.reduce(
+    (product, group, i) => product * countOperationalAllocations(groupFleets[i], group.sources.length),
+    1,
+  ) - 1;
+  return buildHardCaseResult(hard, targetNiValue, toleranceValue, candidateCount);
+}
+
+// Wraps exact-hardcase-solver.js's internal { status, candidate,
+// sourcesInAnyWithinToleranceCandidate, diagnostics } shape into the SAME
+// public Recommendation contract buildResultFromSearch() produces for the
+// normal engine (this task's own Section 6 "no existing UI field should
+// silently change meaning") -- `solverPath`/`diagnostics` are ADDITIONAL
+// fields, never a replacement for any existing one.
+function buildHardCaseResult(hard, targetNiValue, toleranceValue, candidateCount) {
+  if (candidateCount === 0) {
+    return { ok: false, error: 'NO_FEASIBLE_CANDIDATE', solverPath: 'HARDCASE_MITM' };
+  }
+
+  if (hard.status === 'SEARCH_INCOMPLETE' || hard.status === 'NO_FEASIBLE_CANDIDATE') {
+    return {
+      ok: false,
+      error: hard.status,
+      targetNi: targetNiValue,
+      tolerance: toleranceValue,
+      candidateCount,
+      solverPath: 'HARDCASE_MITM',
+      diagnostics: hard.diagnostics,
+    };
+  }
+
+  if (hard.status === 'OK') {
+    return {
+      ok: true,
+      status: 'OK',
+      candidate: hard.candidate,
+      targetNi: targetNiValue,
+      tolerance: toleranceValue,
+      candidateCount,
+      sourcesInAnyWithinToleranceCandidate: hard.sourcesInAnyWithinToleranceCandidate,
+      solverPath: 'HARDCASE_MITM',
+      diagnostics: hard.diagnostics,
+    };
+  }
+
+  // TARGET_NOT_ACHIEVABLE
+  return {
+    ok: true,
+    status: 'TARGET_NOT_ACHIEVABLE',
+    candidate: hard.candidate,
+    targetNi: targetNiValue,
+    tolerance: toleranceValue,
+    bestAttainableNi: hard.candidate.estimatedNi,
+    gap: hard.candidate.deviation,
+    candidateCount,
+    sourcesInAnyWithinToleranceCandidate: new Set(),
+    solverPath: 'HARDCASE_MITM',
+    diagnostics: hard.diagnostics,
+  };
 }
 
 // Shared leaf-candidate generator (this task's Section 28/29) -- the same
@@ -1395,12 +1568,28 @@ export function findBlendRecommendationsStreamingUnpruned({ targetNi, tolerance 
 // task's "isolated to tests/dev use").
 export function findBlendRecommendationsWithDiagnostics({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
-  if (!prepared.ok) return { result: prepared.result, diagnostics: null };
-  const { groups, perContractorAllocations, targetNiValue, toleranceValue, searchOrder } = prepared;
+  if (!prepared.ok) {
+    if (prepared.result.error === 'SEARCH_SPACE_TOO_LARGE') {
+      const hardResult = dispatchHardCase(prepared);
+      return { result: hardResult, diagnostics: hardResult.diagnostics ?? null };
+    }
+    return { result: prepared.result, diagnostics: null };
+  }
+  const {
+    groups, groupFleets, perContractorAllocations, targetNiValue, toleranceValue, searchOrder,
+  } = prepared;
 
-  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder);
+  const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder, NORMAL_ENGINE_PROBE_NODES);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
-  return { result: buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount), diagnostics: search.diagnostics };
+  const result = buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
+  if (result.error === 'SEARCH_INCOMPLETE') {
+    const hardResult = dispatchHardCase({
+      groups, groupFleets, targetNiValue, toleranceValue,
+    });
+    return { result: hardResult, diagnostics: hardResult.diagnostics ?? null };
+  }
+  result.solverPath = 'NORMAL_BNB';
+  return { result, diagnostics: { solverPath: 'NORMAL_BNB', ...search.diagnostics } };
 }
 
 // Identical to prepareSearch() (validation, numeric conversion, canonical

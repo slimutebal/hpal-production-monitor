@@ -211,12 +211,16 @@ describe('V3.0 Phase 6C -- A/B/E regression (canonical/descending defaults)', ()
     assert.equal(diff, null, `B: diverged from production: ${diff}`);
   });
 
-  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- still begins traversal without eager 20k gate', () => {
+  // V3.0 Phase 7A UPDATE: production's own hybrid dispatcher now clears
+  // this gate via the hard-case engine, exactly like the ordered prototype
+  // always could (this task's own Section 5).
+  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- V3.0 Phase 7A: production now clears the 20k per-Contractor gate too', () => {
     const input = { targetNi: TARGET_NI, tolerance: TOLERANCE, sources: SCENARIOS.E };
     const production = findBlendRecommendationsWithDiagnostics(input);
     const ordered = findBlendRecommendationsSourceLazyOrdered(input);
-    assert.equal(production.result.ok, false);
-    assert.equal(production.result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(production.result.ok, true);
+    assert.equal(production.result.status, 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
     assert.notEqual(ordered.result.error, 'SEARCH_SPACE_TOO_LARGE', 'ordered prototype must not apply the eager 20k per-Contractor gate');
     assert.ok(ordered.diagnostics, 'ordered prototype must have actually traversed (diagnostics present)');
   });

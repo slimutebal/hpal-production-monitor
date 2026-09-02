@@ -262,14 +262,27 @@ describe('findBlendRecommendations() -- invalid input', () => {
 });
 
 describe('findBlendRecommendations() -- search-space safety bound (this task\'s Section 19)', () => {
-  test('a pathologically large single-source fleet returns an explicit SEARCH_SPACE_TOO_LARGE status, never a silent truncation', () => {
+  // V3.0 Phase 7A: a pathologically large single-source fleet still trips
+  // fleet-allocation.js's own MAX_ALLOCATIONS_PER_CONTRACTOR generation-time
+  // gate for the normal engine (24,996 operational allocations for a
+  // 25,000 DT single source exceeds the 20,000 ceiling), but the hybrid
+  // dispatcher no longer surfaces that as a hard failure -- it is exactly
+  // the "must not globally reject a request the hard solver can solve
+  // exactly" case this task's own Section 5 requires. The hard-case engine
+  // never materializes an eager per-Contractor array, so it resolves this
+  // trivially (a single source whose own Ni already sits exactly on
+  // target).
+  test('a pathologically large single-source fleet is solved exactly by the hard-case engine, never silently rejected', () => {
     const result = findBlendRecommendations({
       targetNi: 1.2,
       tolerance: 0.01,
       sources: [{ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '25000', tonnesPerUnit: '50' }],
     });
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.solverPath, 'HARDCASE_MITM');
+    assert.equal(result.candidate.totalActiveUnits, 25000);
+    assert.equal(result.candidate.estimatedNi, 1.2);
   });
 });
 

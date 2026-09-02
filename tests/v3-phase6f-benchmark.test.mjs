@@ -192,11 +192,14 @@ describe('V3.0 Phase 6F -- A/B/E regression', () => {
     assert.equal(frontier.result.candidateCount, coupled.result.candidateCount);
   });
 
-  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- still begins traversal without eager 20k gate', () => {
+  // V3.0 Phase 7A UPDATE: production's own hybrid dispatcher now clears
+  // this gate via the hard-case engine too.
+  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- V3.0 Phase 7A: production now clears the 20k per-Contractor gate too', () => {
     const { frontier } = runBoth('E (10 dome / 2 Contractor / 100 DT, concentrated)', SCENARIOS.E);
     const production = findBlendRecommendationsWithDiagnostics({ targetNi: TARGET_NI, tolerance: TOLERANCE, sources: SCENARIOS.E });
-    assert.equal(production.result.ok, false);
-    assert.equal(production.result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(production.result.ok, true);
+    assert.equal(production.result.status, 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
     assert.notEqual(frontier.result.error, 'SEARCH_SPACE_TOO_LARGE', 'frontier prototype must not apply the eager 20k per-Contractor gate');
     assert.ok(frontier.diagnostics, 'frontier prototype must have actually traversed (diagnostics present)');
   });

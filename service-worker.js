@@ -63,6 +63,7 @@ const APP_SHELL = [
   './js/pages/calculate/calculate-validation.js',
   './js/pages/calculate/number-input.js',
   './js/pages/calculate/blending-recommendation.js',
+  './js/pages/calculate/exact-hardcase-solver.js',
   './js/pages/calculate/fleet-allocation.js',
   './js/pages/calculate/recommendation-ranking.js',
   './js/pages/calculate/recommendation-actions.js',

@@ -249,15 +249,24 @@ describe('8. Phase 2 minimum-6 behavior unchanged under streaming (this task\'s 
 // coverage itself is otherwise unchanged.
 // ============================================================
 describe('9. SEARCH_SPACE_TOO_LARGE behavior (this task\'s TESTS 9)', () => {
-  test('a genuinely oversized single-source fleet (F=25000, n=1) is still rejected', () => {
+  // V3.0 Phase 7A UPDATE: the per-Contractor prepareSearch() gate below
+  // still rejects this exact shape at generation time (verified by the
+  // "materialized test-support path" test below, which calls prepareSearch()
+  // directly with no hard-case fallback) -- but findBlendRecommendations()
+  // itself no longer surfaces that rejection to the caller: the hybrid
+  // dispatcher routes it to the hard-case (prefix-lock + MITM) engine
+  // instead, which needs no eager per-Contractor array and solves it
+  // exactly (this task's own Section 5).
+  test('a genuinely oversized single-source fleet (F=25000, n=1) is solved exactly by the hard-case engine, not rejected', () => {
     const input = {
       targetNi: 1.2,
       tolerance: 0.01,
       sources: [{ pileId: 'A', contractor: 'SMA', ni: '1.2', units: '25000', tonnesPerUnit: '50' }],
     };
     const result = findBlendRecommendations(input);
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.solverPath, 'HARDCASE_MITM');
   });
 
   test('V3.0 Phase 4D UPDATE: 3 Contractors x 2 sources x 10 DT (operational count 438,976) is now UNBLOCKED -- the removed MAX_GLOBAL_CANDIDATES gate no longer rejects it; a single oversized Contractor group (test above) still is', () => {
@@ -279,7 +288,17 @@ describe('9. SEARCH_SPACE_TOO_LARGE behavior (this task\'s TESTS 9)', () => {
     assert.equal(result.candidateCount, 438975);
   });
 
-  test('the materialized test-support path is gated identically (proves the shared prepareSearch() gate, not a streaming-only shortcut)', () => {
+  // V3.0 Phase 7A UPDATE: findBlendRecommendationsMaterialized() is
+  // TEST-SUPPORT ONLY and deliberately never gained the hard-case
+  // dispatcher (it calls prepareSearch() directly and returns its raw
+  // ok:false result on the per-Contractor gate, exactly as before) -- so it
+  // still proves the SHARED prepareSearch() gate itself is unchanged, even
+  // though findBlendRecommendations() (production) now resolves the
+  // identical input via the hard-case engine instead of surfacing that
+  // same rejection. This is an intentional divergence between the
+  // production entry point and this benchmark-only helper, not a shared-gate
+  // regression.
+  test('the materialized test-support path still surfaces the raw per-Contractor gate (proves prepareSearch() itself is unchanged), while production resolves the same input via the hard-case engine', () => {
     const input = {
       targetNi: 1.2,
       tolerance: 0.01,
@@ -287,7 +306,13 @@ describe('9. SEARCH_SPACE_TOO_LARGE behavior (this task\'s TESTS 9)', () => {
     };
     const streaming = findBlendRecommendations(input);
     const materialized = findBlendRecommendationsMaterialized(input);
-    assert.deepEqual(streaming, materialized);
+
+    assert.equal(materialized.ok, false);
+    assert.equal(materialized.error, 'SEARCH_SPACE_TOO_LARGE');
+
+    assert.equal(streaming.ok, true);
+    assert.equal(streaming.status, 'OK');
+    assert.equal(streaming.solverPath, 'HARDCASE_MITM');
   });
 });
 

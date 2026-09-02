@@ -175,9 +175,20 @@ describe('V3.0 Phase 4D safety: a pathological concentrated input stops at the n
     assert.notEqual(result.status, 'OK');
     assert.notEqual(result.status, 'TARGET_NOT_ACHIEVABLE');
     assert.equal('candidate' in result, false, 'SEARCH_INCOMPLETE must never carry a `candidate` field a caller could mistake for an exact recommendation');
-    assert.equal(result.diagnostics.visitedNodes, MAX_SEARCH_NODES, 'traversal must stop at EXACTLY the node budget, deterministically');
+    // V3.0 Phase 7A: an unreachable target means pruning never engages (no
+    // within-tolerance incumbent to gate it) in EITHER engine, so the
+    // normal engine's own probe budget (NORMAL_ENGINE_PROBE_NODES) is
+    // exhausted first, dispatching to the hard-case engine, whose own
+    // source-lazy Phase A then exhausts its own full MAX_SEARCH_NODES
+    // budget without ever proving the A+B lock -- the FINAL
+    // SEARCH_INCOMPLETE is therefore the hard-case engine's own
+    // `sourceLazyVisitedNodes`, not the (now internal, superseded)
+    // normal-engine node count.
+    assert.equal(result.solverPath, 'HARDCASE_MITM');
+    assert.equal(result.diagnostics.mitmActivated, false, 'MITM must never activate merely because the traversal is large -- the A+B lock was never proven here');
+    assert.equal(result.diagnostics.sourceLazyVisitedNodes, MAX_SEARCH_NODES, 'the hard-case engine\'s own traversal must stop at EXACTLY its node budget, deterministically');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase4d-node-budget] SAFETY TEST D: SEARCH_INCOMPLETE at visitedNodes=${result.diagnostics.visitedNodes} (candidateCount=${result.candidateCount}, far beyond the budget) in ${elapsedMs.toFixed(2)}ms -- no hang, no crash, no approximation returned as exact.`);
+    console.log(`[v3-phase4d-node-budget] SAFETY TEST D: SEARCH_INCOMPLETE at sourceLazyVisitedNodes=${result.diagnostics.sourceLazyVisitedNodes} (candidateCount=${result.candidateCount}, far beyond the budget) in ${elapsedMs.toFixed(2)}ms -- no hang, no crash, no approximation returned as exact.`);
   });
 });
 

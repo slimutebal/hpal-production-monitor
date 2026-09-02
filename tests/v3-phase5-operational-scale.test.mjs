@@ -202,16 +202,25 @@ describe('V3.0 Phase 5 -- Operational Scale Validation (real findBlendRecommenda
   // domes [5,5], 10 DT/dome. Each group's own operational allocation count
   // (F=50,n=5 -> 263,631) individually EXCEEDS MAX_ALLOCATIONS_PER_CONTRACTOR
   // (20,000) -- this is the scenario this task's "PER-CONTRACTOR 20K GATE"
-  // section asks this file to specifically identify: it fails at
-  // GENERATION time, before Branch-and-Bound traversal ever starts, so
-  // MAX_SEARCH_NODES is never consulted (diagnostics is null).
-  test('E. 10 dome / 2 Contractor / 100 DT -- concentrated, hits the 20k per-Contractor gate', () => {
+  // section originally asked this file to specifically identify as a
+  // GENERATION-time rejection. V3.0 Phase 7A UPDATE: the normal engine's
+  // own per-Contractor gate still rejects it exactly as before (that gate
+  // is unchanged -- fleet-allocation.js's own MAX_ALLOCATIONS_PER_CONTRACTOR
+  // comment), but findBlendRecommendations() no longer surfaces that as a
+  // hard failure -- the hybrid dispatcher routes it to the hard-case
+  // (prefix-lock + MITM) engine instead, which needs no eager
+  // per-Contractor array and solves it exactly (this task's own Section 5:
+  // "Scenario E must reach the MITM path without
+  // MAX_ALLOCATIONS_PER_CONTRACTOR=20000 blocking it").
+  test('E. 10 dome / 2 Contractor / 100 DT -- concentrated, clears the 20k per-Contractor gate via the hard-case engine', () => {
     const sources = buildScenarioSources([5, 5], 10);
     const { result, gatedContractor, diagnostics } = reportBenchmark('E (10 dome / 2 Contractor / 100 DT, concentrated)', sources);
     assert.ok(gatedContractor, 'E is specifically designed so BOTH Contractor groups (F=50,n=5 -> 263,631) individually exceed the 20k gate');
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'SEARCH_SPACE_TOO_LARGE');
-    assert.equal(diagnostics, null, 'gate-rejected before search -- MAX_SEARCH_NODES traversal never starts, so there are no traversal diagnostics');
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 'OK');
+    assert.equal(result.solverPath, 'HARDCASE_MITM');
+    assert.ok(diagnostics, 'the hard-case engine reports its own diagnostics (prefixLockNode/mitmActivated/etc.), never null');
+    assert.equal(diagnostics.mitmActivated, true, 'E requires the MITM funnel (the A+B lock is provably reachable for this shape)');
   });
 
   // F. single-Contractor concentration, deliberately pushed close to (but

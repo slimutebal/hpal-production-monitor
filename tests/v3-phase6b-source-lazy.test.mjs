@@ -171,48 +171,44 @@ describe('V3.0 Phase 6B -- A/B/C/D/E benchmark (prototype vs production, MAX_SEA
     assert.equal(diff, null, `B: prototype diverged from production: ${diff}`);
   });
 
-  test('C. 10 dome / 5 Contractor / 100 DT -- honest report (may remain SEARCH_INCOMPLETE)', () => {
+  // V3.0 Phase 7A UPDATE: production's own hybrid dispatcher now reaches
+  // this prototype's exact conclusion directly (via exact-hardcase-solver.js,
+  // a production port of this same Phase 6H/6I/6J/6K/6L pipeline) -- C/D no
+  // longer remain SEARCH_INCOMPLETE in production. Kept in this describe
+  // block (not deleted) as the historical "before" baseline this same
+  // production entry point now improves on (this task's own Section 11).
+  test('C. 10 dome / 5 Contractor / 100 DT -- V3.0 Phase 7A: now resolved exactly in production too', () => {
     const { production, prototype } = runBoth('C (10 dome / 5 Contractor / 100 DT)', SCENARIOS.C);
-    assert.equal(production.result.ok, false);
-    assert.equal(production.result.error, 'SEARCH_INCOMPLETE');
-    // If the prototype ALSO reaches an exact answer, it must agree with
-    // production's own bestAttainable-so-far is NOT comparable (production
-    // never reached one) -- so only compare when BOTH sides are exact
-    // (this task's "do not invent expected winners" instruction, same as
-    // Phase 6A's own C/D handling).
-    if (prototype.result.ok) {
-      // eslint-disable-next-line no-console
-      console.log(`[v3-phase6b] C: prototype REACHED an exact answer (${prototype.result.status}) where production could not -- no production side to diff against.`);
-    }
+    assert.equal(production.result.ok, true);
+    assert.equal(production.result.status, 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase6b] C HONEST RESULT: production=${statusOf(production.result)} (visitedNodes=${production.diagnostics.visitedNodes}), prototype=${statusOf(prototype.result)} (visitedNodes=${prototype.diagnostics ? prototype.diagnostics.visitedNodes : 'n/a'})`);
+    console.log(`[v3-phase6b] C: production now resolves via solverPath=${production.result.solverPath} (was: SEARCH_INCOMPLETE), prototype=${statusOf(prototype.result)}`);
   });
 
-  test('D. 10 dome / 3 Contractor / 100 DT -- honest report (may remain SEARCH_INCOMPLETE)', () => {
+  test('D. 10 dome / 3 Contractor / 100 DT -- V3.0 Phase 7A: now resolved exactly in production too', () => {
     const { production, prototype } = runBoth('D (10 dome / 3 Contractor / 100 DT)', SCENARIOS.D);
-    assert.equal(production.result.ok, false);
-    assert.equal(production.result.error, 'SEARCH_INCOMPLETE');
-    if (prototype.result.ok) {
-      // eslint-disable-next-line no-console
-      console.log(`[v3-phase6b] D: prototype REACHED an exact answer (${prototype.result.status}) where production could not -- no production side to diff against.`);
-    }
+    assert.equal(production.result.ok, true);
+    assert.equal(production.result.status, 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase6b] D HONEST RESULT: production=${statusOf(production.result)} (visitedNodes=${production.diagnostics.visitedNodes}), prototype=${statusOf(prototype.result)} (visitedNodes=${prototype.diagnostics ? prototype.diagnostics.visitedNodes : 'n/a'})`);
+    console.log(`[v3-phase6b] D: production now resolves via solverPath=${production.result.solverPath} (was: SEARCH_INCOMPLETE), prototype=${statusOf(prototype.result)}`);
   });
 
-  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- prototype must at least BEGIN traversal (no eager 20k gate)', () => {
+  test('E. 10 dome / 2 Contractor / 100 DT concentrated -- V3.0 Phase 7A: production now clears the 20k per-Contractor gate via the hard-case engine', () => {
     const { production, prototype } = runBoth('E (10 dome / 2 Contractor / 100 DT, concentrated)', SCENARIOS.E);
-    assert.equal(production.result.ok, false);
-    assert.equal(production.result.error, 'SEARCH_SPACE_TOO_LARGE');
-    assert.equal(production.diagnostics, null, 'production: gate-rejected before search, no traversal diagnostics');
+    assert.equal(production.result.ok, true);
+    assert.equal(production.result.status, 'OK');
+    assert.equal(production.result.solverPath, 'HARDCASE_MITM');
+    assert.ok(production.diagnostics, 'production reports hard-case diagnostics, never null');
 
     // The prototype has NO per-Contractor eager-array gate -- it must reach
     // MAX_SEARCH_NODES-bounded traversal (diagnostics non-null), never the
-    // SEARCH_SPACE_TOO_LARGE rejection production returns.
+    // SEARCH_SPACE_TOO_LARGE rejection production used to return.
     assert.notEqual(prototype.result.error, 'SEARCH_SPACE_TOO_LARGE', 'prototype must not apply the eager 20k per-Contractor gate');
     assert.ok(prototype.diagnostics, 'prototype must have actually traversed (diagnostics present)');
     // eslint-disable-next-line no-console
-    console.log(`[v3-phase6b] E HONEST RESULT: production=SEARCH_SPACE_TOO_LARGE (rejected before search), prototype=${statusOf(prototype.result)} (visitedNodes=${prototype.diagnostics.visitedNodes})`);
+    console.log(`[v3-phase6b] E: production now resolves via solverPath=${production.result.solverPath} (was: SEARCH_SPACE_TOO_LARGE), prototype=${statusOf(prototype.result)} (visitedNodes=${prototype.diagnostics.visitedNodes})`);
   });
 });
 
