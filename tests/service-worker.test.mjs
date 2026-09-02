@@ -62,12 +62,14 @@ function extractCacheName(source) {
 const appShell = extractAppShell(swSource);
 const cacheName = extractCacheName(swSource);
 
-describe('V2.5.2. Cache version bumped exactly once for the Report Excel Lazy-Load Regression Hotfix', () => {
-  test('CACHE_NAME reflects the V2.5.2 release, not V2.4.1, V2.5.0, or the earlier V2.5.1', () => {
+describe('V3.0.0. Cache version bumped exactly once for the V3.0 release (Phase 7C release finalization)', () => {
+  test('CACHE_NAME reflects the final V3.0.0 release, not V2.4.1, V2.5.0, V2.5.1, V2.5.2, or the interim V2.5.3 Phase 7B identifier', () => {
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.1-mobile-input-sticky');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.0-operational-continuity');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.1-offline-first-startup');
-    assert.match(cacheName, /^hpal-production-monitor-v2\.5\.2/);
+    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.2-report-excel-hotfix');
+    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.3-recommendation-worker');
+    assert.match(cacheName, /^hpal-production-monitor-v3\.0\.0/);
   });
 
   test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
@@ -124,6 +126,11 @@ describe('21. Calculate runtime assets are present in APP_SHELL', () => {
       './js/pages/calculate/blend-calculator.js',
       './js/pages/calculate/calculate-validation.js',
       './js/pages/calculate/blending-recommendation.js',
+      // V3.0 Phase 7B -- Recommendation Worker + main-thread client (this
+      // task's Section 10). See the dedicated "Recommendation Worker"
+      // describe block below for the Worker-specific offline assertions.
+      './js/pages/calculate/recommendation-worker.js',
+      './js/pages/calculate/recommendation-worker-client.js',
       './js/pages/calculate/fleet-allocation.js',
       './js/pages/calculate/recommendation-ranking.js',
       './js/pages/calculate/recommendation-actions.js',
@@ -192,6 +199,87 @@ describe('25. Completeness: no Calculate-reachable local module can be silently 
     }
 
     assert.deepEqual(missing, [], `APP_SHELL is missing files reachable from calculate-page.js: ${missing.join(', ')}`);
+  });
+});
+
+// V3.0 Phase 7B (this task's Sections 2/10) -- static-source proof (no
+// jsdom/real Worker available under Node, same limitation this file's own
+// header comment already documents for service-worker.js itself) that the
+// Worker/client pair is both offline-cacheable AND wired the way this
+// phase requires: no second solver implementation, and subpath-safe
+// (GitHub Pages) URL resolution rather than a hand-built absolute path.
+describe('V3.0 Phase 7B -- Recommendation Worker + client are offline-available and correctly wired', () => {
+  const workerSource = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'recommendation-worker.js'), 'utf8');
+  const clientSource = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'recommendation-worker-client.js'), 'utf8');
+
+  test('recommendation-worker.js and recommendation-worker-client.js are both precached in APP_SHELL', () => {
+    assert.ok(appShell.includes('./js/pages/calculate/recommendation-worker.js'));
+    assert.ok(appShell.includes('./js/pages/calculate/recommendation-worker-client.js'));
+  });
+
+  test('the Worker imports the production findBlendRecommendations() rather than defining a second solver implementation (this task\'s Section 1)', () => {
+    assert.match(workerSource, /import\s*\{\s*findBlendRecommendations\s*\}\s*from\s*'\.\/blending-recommendation\.js'/);
+    assert.doesNotMatch(workerSource, /function\s+findBlendRecommendations/);
+  });
+
+  test('the client resolves the Worker script via new URL(..., import.meta.url) with { type: \'module\' } -- subpath/GitHub-Pages-safe rather than a hand-built absolute path (this task\'s Section 2)', () => {
+    assert.match(clientSource, /new URL\('\.\/recommendation-worker\.js',\s*import\.meta\.url\)/);
+    assert.match(clientSource, /\{\s*type:\s*'module'\s*\}/);
+  });
+});
+
+// V3.0 Phase 7C (release Section 3) -- walks the Worker's OWN transitive
+// import graph starting at recommendation-worker.js itself, independent of
+// whatever calculate-page.js happens to import. Test 25 above already walks
+// from calculate-page.js and today reaches this same graph transitively
+// (calculate-page.js still imports DEFAULT_RECOMMENDATION_TOLERANCE from
+// blending-recommendation.js directly), but that coverage is incidental: if
+// that one constant import were ever removed in favor of a fully
+// Worker-encapsulated Recommendation call, test 25 would stop walking into
+// blending-recommendation.js/exact-hardcase-solver.js and silently lose
+// this coverage. This block makes the Worker's own offline-completeness
+// requirement a first-class, independently-anchored invariant: a cold
+// offline installed PWA must be able to load recommendation-worker.js and
+// every module it imports (directly or transitively) with zero network
+// dependency, for as long as the Worker file exists at all.
+describe('V3.0 Phase 7C -- Worker module graph is fully offline-cacheable, walked from recommendation-worker.js itself', () => {
+  test('every local import reachable from recommendation-worker.js resolves to a file already listed in APP_SHELL', () => {
+    const calculateDir = path.join(ROOT, 'js', 'pages', 'calculate');
+    const visited = new Set();
+    const toVisit = ['recommendation-worker.js'];
+    const missing = [];
+    const graph = [];
+
+    while (toVisit.length > 0) {
+      const relFile = toVisit.pop();
+      if (visited.has(relFile)) continue;
+      visited.add(relFile);
+      graph.push(relFile);
+
+      const absFile = path.join(calculateDir, relFile);
+      const source = stripLineComments(readFileSync(absFile, 'utf8'));
+      const importPaths = [...source.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
+
+      for (const importPath of importPaths) {
+        if (importPath.startsWith('./')) {
+          const localName = importPath.slice(2);
+          const shellPath = `./js/pages/calculate/${localName}`;
+          if (!appShell.includes(shellPath)) missing.push(shellPath);
+          toVisit.push(localName);
+        } else if (importPath.includes('shared/ore-classification.js')) {
+          if (!appShell.includes('./js/shared/ore-classification.js')) missing.push('./js/shared/ore-classification.js');
+        }
+      }
+    }
+
+    assert.deepEqual(missing, [], `APP_SHELL is missing files reachable from recommendation-worker.js: ${missing.join(', ')}`);
+    // Sanity check on the walk itself -- if this ever comes back empty/tiny,
+    // the regex-based import walker silently broke (e.g. a syntax change
+    // it can no longer parse), which would make the assertion above above a
+    // false pass rather than a real one.
+    for (const required of ['blending-recommendation.js', 'exact-hardcase-solver.js', 'fleet-allocation.js', 'recommendation-ranking.js', 'operational-continuity.js', 'calculate-validation.js', 'number-input.js']) {
+      assert.ok(graph.includes(required), `expected the Worker's own import walk to reach ${required}, got: ${graph.join(', ')}`);
+    }
   });
 });
 

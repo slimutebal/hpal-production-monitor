@@ -19,6 +19,12 @@
   margin-bottom: 18px;
 }
 
+#page-settings .settings-app-version {
+  color: var(--muted, #8fa3bd);
+  font-size: 0.72rem;
+  margin: 2px 0 0;
+}
+
 #page-settings .settings-title {
   font-size: 1.2rem;
   font-weight: 800;

@@ -3,7 +3,7 @@
 **HPAL Production Monitor** adalah aplikasi web/PWA untuk monitoring hauling Limonite, perhitungan blending, rekomendasi feeding dan pembuatan laporan produksi harian dari file Excel timbangan.
 
 **Live App:** https://slimutebal.github.io/hpal-production-monitor/  
-**Current Release:** `v2.5.0 — Operational Blending & Contractor Continuity`
+**Current Release:** `v3.0.0 — Scalable Exact Recommendation Engine`
 
 Aplikasi dapat digunakan langsung dari browser atau dipasang ke Home Screen/Desktop. Perhitungan utama dilakukan langsung di perangkat.
 
@@ -259,6 +259,14 @@ Recommendation menampilkan:
 - Fleet Actions.
 - Material Actions.
 - Operational Continuity Plan jika diperlukan.
+
+Rekomendasi dihitung dengan mesin exact (bukan heuristik/approksimasi):
+skenario umum diselesaikan oleh solver exact biasa, sementara skenario padat
+(dome/fleet terkonsentrasi pada sedikit contractor) otomatis dialihkan ke
+solver exact lanjutan agar tetap dapat diselesaikan tanpa mengorbankan
+ketepatan hasil. Perhitungan berjalan di background (Web Worker) sehingga
+tampilan Calculate tetap responsif dan dapat dibatalkan (**Cancel**) selama
+proses berlangsung.
 
 ---
 
@@ -752,6 +760,20 @@ Dokumen keputusan teknis dan domain tersedia di folder `docs/`.
 ---
 
 ## Changelog
+
+### v3.0.0
+
+- Scalable exact Recommendation engine: skenario umum tetap diselesaikan
+  solver exact biasa, skenario padat (dome/fleet terkonsentrasi pada sedikit
+  contractor) otomatis dialihkan ke solver exact lanjutan -- hasil tetap
+  exact pada kedua jalur, tidak ada heuristik/approksimasi.
+- Recommendation kini dihitung di Web Worker (background thread) sehingga
+  Calculate tetap responsif selama perhitungan berjalan, dengan **Cancel**
+  dan retry.
+- Minimum 6 DT per active loading point (operational baseline, diteruskan
+  dari v2.5.0).
+- Offline/PWA: seluruh alur Recommendation, termasuk Worker-nya, tetap dapat
+  dijalankan tanpa koneksi setelah aplikasi ter-cache.
 
 ### v2.5.0
 

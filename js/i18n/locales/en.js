@@ -87,6 +87,9 @@ export default {
   'calculate.recommendation.targetNi': 'Target Ni',
   'calculate.recommendation.tolerance': 'Tolerance (±)',
   'calculate.recommendation.calculate': 'Calculate Recommendation',
+  // V3.0 Phase 7B -- see locales/id.js's own header comment.
+  'calculate.recommendation.calculating': 'Calculating recommendation…',
+  'calculate.recommendation.cancel': 'Cancel',
 
   'calculate.recommendation.hopperPattern': 'Hopper Pattern',
   'calculate.recommendation.repeat': 'REPEAT',
@@ -120,6 +123,8 @@ export default {
   'calculate.recommendation.searchSpaceTooLarge': 'The fleet combinations for this input are too large to compute. Reduce the DT count or number of sources, then try again.',
   'calculate.recommendation.searchIncomplete': 'This input is too complex to fully verify within the search limit. No exact recommendation could be confirmed. Reduce the DT count or number of sources, then try again.',
   'calculate.recommendation.noFeasibleCandidate': 'No feasible fleet combination could be computed from the current input.',
+  // V3.0 Phase 7B -- see locales/id.js's own header comment.
+  'calculate.recommendation.workerError': 'The calculation could not complete due to a technical error. Please try again.',
   // Shown when Calculate Recommendation is pressed with zero complete
   // source rows -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'No complete sources are available to calculate yet. Complete at least one source row (Pile ID, Contractor, Ni, DT, t/DT).',

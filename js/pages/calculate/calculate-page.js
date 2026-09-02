@@ -53,7 +53,14 @@ import { fmtTon, fmtRit } from '../report/report-utils.js';
 import { classifyOre } from '../../shared/ore-classification.js';
 import { calculatePileTonnage, calculateWeightedBlend } from './blend-calculator.js';
 import { validatePiles, toNumericPile, isRowBlank, normalizeContractorForComparison } from './calculate-validation.js';
-import { findBlendRecommendations, DEFAULT_RECOMMENDATION_TOLERANCE } from './blending-recommendation.js';
+import { DEFAULT_RECOMMENDATION_TOLERANCE } from './blending-recommendation.js';
+// V3.0 Phase 7B -- Recommendation now runs off the main thread via a
+// dedicated Worker; calculate-page.js never imports findBlendRecommendations()
+// directly any more (see recommendation-worker-client.js's own header
+// comment). findBlendRecommendationsWithDiagnostics()/findBlendRecommendations()
+// themselves stay untouched and fully synchronous for tests/internal use
+// (this task's Section 8) -- this page simply isn't one of those callers.
+import { calculateRecommendationAsync, cancelRecommendationCalculation } from './recommendation-worker-client.js';
 import { deriveOperationalHopperPattern } from './hopper-pattern.js';
 import { deriveRecommendationActions, MATERIAL_ACTION_USE, MATERIAL_ACTION_LIMIT } from './recommendation-actions.js';
 import { calculateRequiredNewDomeNi, findQualifyingSources } from './planned-blend-recovery.js';
@@ -102,8 +109,19 @@ let rowSeq = 0;
 let targetNiRaw = '';
 let toleranceRaw = '';
 let recommendationFieldErrors = null; // null, or { targetNi, tolerance, fleet } i18n keys
-let recommendationEngineErrorKey = null; // null, or an i18n key (SEARCH_SPACE_TOO_LARGE / SEARCH_INCOMPLETE / NO_FEASIBLE_CANDIDATE / no complete sources)
+let recommendationEngineErrorKey = null; // null, or an i18n key (SEARCH_SPACE_TOO_LARGE / SEARCH_INCOMPLETE / NO_FEASIBLE_CANDIDATE / WORKER infra error / no complete sources)
 let lastRecommendationResult = null; // null, or the ok:true result from findBlendRecommendations()
+
+// V3.0 Phase 7B -- Worker execution state (this task's Section 6). `true`
+// for exactly as long as a CALCULATE request is in flight through
+// recommendation-worker-client.js; drives the busy button label/disabled
+// state and the Cancel action's visibility. `pendingRecommendationCalculation`
+// is the in-flight handleCalculateRecommendation() Promise itself (Promise.resolve()
+// when idle) -- exposed to tests via _waitForRecommendationCalculationForTests()
+// below so a click can be awaited to full completion (result committed AND
+// re-rendered) without relying on real timing (this task's Section 12).
+let recommendationCalculating = false;
+let pendingRecommendationCalculation = Promise.resolve();
 
 // Planned Blend Recovery (V2.4 Phase 6) -- only ever meaningful while
 // lastRecommendationResult.status === 'TARGET_NOT_ACHIEVABLE' (this
@@ -146,6 +164,8 @@ export function initCalculatePage() {
   recommendationFieldErrors = null;
   recommendationEngineErrorKey = null;
   lastRecommendationResult = null;
+  recommendationCalculating = false;
+  pendingRecommendationCalculation = Promise.resolve();
 
   els = buildShell();
   page.replaceChildren(els.shell);
@@ -327,8 +347,20 @@ function buildShell() {
   const recommendationCalculateBtn = document.createElement('button');
   recommendationCalculateBtn.type = 'button';
   recommendationCalculateBtn.className = 'calculate-btn calculate-btn-primary calculate-calculate-recommendation-btn';
-  recommendationCalculateBtn.addEventListener('click', handleCalculateRecommendation);
+  recommendationCalculateBtn.addEventListener('click', handleCalculateRecommendationClick);
   recCalcBtnRow.appendChild(recommendationCalculateBtn);
+
+  // V3.0 Phase 7B -- Cancel (this task's Section 6), hidden except while
+  // recommendationCalculating is true (renderRecommendationBusyState()).
+  // The solver is CPU-bound, so cancelling actually terminates the active
+  // Worker (this task's Section 4) rather than merely ignoring its reply.
+  const recommendationCancelBtn = document.createElement('button');
+  recommendationCancelBtn.type = 'button';
+  recommendationCancelBtn.className = 'calculate-btn calculate-btn-secondary calculate-recommendation-cancel-btn';
+  recommendationCancelBtn.hidden = true;
+  recommendationCancelBtn.addEventListener('click', handleCancelRecommendationCalculation);
+  recCalcBtnRow.appendChild(recommendationCancelBtn);
+
   stickyControls.appendChild(recCalcBtnRow);
 
   shell.appendChild(stickyControls);
@@ -379,6 +411,7 @@ function buildShell() {
     toleranceLabel: toleranceField.label,
     recommendationFieldError,
     recommendationCalculateBtn,
+    recommendationCancelBtn,
     recommendationEngineError,
     recommendationStaleNotice,
     staleNoticePrimary,
@@ -467,7 +500,8 @@ function updateStaticLabels() {
   els.toleranceLabel.textContent = t('calculate.recommendation.tolerance');
   els.targetNiInput.setAttribute('aria-label', t('calculate.recommendation.targetNi'));
   els.toleranceInput.setAttribute('aria-label', t('calculate.recommendation.tolerance'));
-  els.recommendationCalculateBtn.textContent = t('calculate.recommendation.calculate');
+  els.recommendationCancelBtn.textContent = t('calculate.recommendation.cancel');
+  renderRecommendationBusyState();
 }
 
 /* ============================================================
@@ -932,20 +966,44 @@ function buildMetaSpan(text) {
    selection the live Blend summary uses (this task's Section 12) -- so a
    still-incomplete row never blocks calculating from the other complete
    sources. If ZERO complete rows exist, Recommendation does not run.
-============================================================ */
-function handleCalculateRecommendation() {
-  if (!requireFullAccessForCalculateAction()) return;
 
-  // Every fresh Recommendation calculation starts Recovery from a clean
-  // slate (this task's Section 20 "no stale baseline") -- whatever was
-  // typed/computed for a previous, now-irrelevant Recommendation must
-  // never silently carry over, even if the new one also turns out to be
-  // TARGET_NOT_ACHIEVABLE.
-  resetRecoveryState();
+   V3.0 Phase 7B -- the actual solver call now runs in a Worker via
+   calculateRecommendationAsync() (this task's Sections 2/11) instead of
+   the synchronous findBlendRecommendations() import calculate-page.js used
+   before this phase, so the CPU-bound search (up to ~1.9s for the hardest
+   measured HARDCASE_MITM shape) never blocks the main thread. The click
+   handler itself is split in two: handleCalculateRecommendationClick()
+   (the actual event listener) captures the async handleCalculateRecommendation()
+   Promise into `pendingRecommendationCalculation` purely so tests can
+   await full completion (result committed AND re-rendered) deterministically
+   -- see _waitForRecommendationCalculationForTests() below. Production
+   code never awaits it; a DOM click handler's return value is always
+   discarded by the browser regardless.
+============================================================ */
+function handleCalculateRecommendationClick() {
+  // Duplicate-execution guard (this task's Section 6/12), checked HERE
+  // (not only inside handleCalculateRecommendation()) so a guarded no-op
+  // click never overwrites pendingRecommendationCalculation with an
+  // already-resolved Promise -- that would discard the ability to await
+  // the REAL in-flight request to full completion (used by
+  // _waitForRecommendationCalculationForTests() below), even though the
+  // duplicate click itself was correctly ignored. The button's own
+  // `disabled` state (renderRecommendationBusyState()) is the first line
+  // of defense; this is the second.
+  if (recommendationCalculating) return;
+  pendingRecommendationCalculation = handleCalculateRecommendation();
+}
+
+async function handleCalculateRecommendation() {
+  if (!requireFullAccessForCalculateAction()) return;
 
   const completeRows = getCompleteRows();
 
   if (completeRows.length === 0) {
+    // No Worker round-trip needed -- there is nothing to send it. Every
+    // fresh Recommendation ATTEMPT starts Recovery from a clean slate
+    // (this task's Section 20 "no stale baseline"); this counts as one.
+    resetRecoveryState();
     lastRecommendationResult = null;
     recommendationFieldErrors = null;
     recommendationEngineErrorKey = 'calculate.recommendation.noCompleteSources';
@@ -955,11 +1013,61 @@ function handleCalculateRecommendation() {
     return;
   }
 
-  const result = findBlendRecommendations({
-    targetNi: targetNiRaw,
-    tolerance: toleranceRaw,
-    sources: completeRows,
-  });
+  recommendationCalculating = true;
+  renderRecommendationBusyState();
+
+  let outcome;
+  try {
+    const result = await calculateRecommendationAsync({
+      targetNi: targetNiRaw,
+      tolerance: toleranceRaw,
+      sources: completeRows,
+    });
+    outcome = { kind: 'RESULT', result };
+  } catch (err) {
+    // calculateRecommendationAsync() only ever rejects with an
+    // infrastructure outcome (this task's Section 9) -- { type: 'CANCELLED' }
+    // from Cancel/a superseding request, or { type: 'WORKER_ERROR' } from a
+    // genuine Worker runtime failure/unavailability. It never rejects to
+    // represent a Recommendation status (SEARCH_INCOMPLETE etc. arrive
+    // inside a normal, resolved `result` above, exactly as before).
+    outcome = { kind: err && err.type === 'CANCELLED' ? 'CANCELLED' : 'WORKER_ERROR' };
+  }
+
+  recommendationCalculating = false;
+  renderRecommendationBusyState();
+
+  if (outcome.kind === 'CANCELLED') {
+    // This task's Section 7: cancellation is not a failure -- do not show
+    // an error, do not touch lastRecommendationResult/Recovery at all.
+    // Whatever was on screen (valid, stale, or nothing) before Calculate
+    // was pressed stays exactly as it was; the operator simply leaves
+    // calculation mode.
+    return;
+  }
+
+  // A real attempt reached a conclusion (success, an engine status, or a
+  // Worker infrastructure error) -- Recovery starts fresh for it (this
+  // task's Section 20), same timing guarantee the old synchronous handler
+  // gave every completed attempt.
+  resetRecoveryState();
+
+  if (outcome.kind === 'WORKER_ERROR') {
+    // This task's Section 9: an explicit, localized, distinct-from-solver-
+    // status error -- never a fabricated recommendation, never a silent
+    // synchronous re-run. Like the engine-failure branch below, the
+    // existing lastRecommendationResult is preserved as stale context
+    // rather than cleared (same V2.5 Preserve Recommendation View
+    // reasoning).
+    recommendationFieldErrors = null;
+    recommendationEngineErrorKey = 'calculate.recommendation.workerError';
+    renderRecommendationFieldError();
+    renderRecommendationEngineError();
+    renderRecommendationResult();
+    return;
+  }
+
+  const result = outcome.result;
 
   if (!result.ok) {
     // V2.5 (Preserve Recommendation View, this task's Sections 1/10/28):
@@ -1012,6 +1120,44 @@ function handleCalculateRecommendation() {
   renderRecommendationFieldError();
   renderRecommendationEngineError();
   renderRecommendationResult();
+}
+
+// This task's Section 6 -- only reachable while the Cancel button is
+// visible, which renderRecommendationBusyState() only shows while
+// recommendationCalculating is true, but guarded again here directly
+// since it is also the natural place to make that invariant explicit.
+// cancelRecommendationCalculation() terminates the active Worker
+// synchronously (this task's Section 4); the in-flight
+// handleCalculateRecommendation() above observes this as its awaited
+// Promise rejecting with { type: 'CANCELLED' } and takes care of leaving
+// calculation mode itself.
+function handleCancelRecommendationCalculation() {
+  if (!recommendationCalculating) return;
+  cancelRecommendationCalculation();
+}
+
+// Cheap, idempotent visual sync for the Calculate/Cancel button pair (this
+// task's Section 6) -- toggles the Calculate button's disabled state and
+// busy label, and the Cancel button's visibility, from CURRENT
+// recommendationCalculating state. No percentage/progress value exists or
+// is invented (this task's Section 6) -- a busy label plus Cancel is the
+// entire "calculation in progress" signal.
+function renderRecommendationBusyState() {
+  els.recommendationCalculateBtn.disabled = recommendationCalculating;
+  els.recommendationCalculateBtn.textContent = recommendationCalculating
+    ? t('calculate.recommendation.calculating')
+    : t('calculate.recommendation.calculate');
+  els.recommendationCancelBtn.hidden = !recommendationCalculating;
+}
+
+// Test-only (this task's Section 12): lets tests await a just-fired
+// Calculate/Cancel click to FULL completion (result committed and
+// re-rendered, or cancellation fully unwound) without depending on real
+// Worker/browser timing -- see recommendation-worker-client.js's own
+// _setWorkerFactoryForTests() for the matching fake-Worker injection
+// point tests use to make that completion deterministic.
+export function _waitForRecommendationCalculationForTests() {
+  return pendingRecommendationCalculation;
 }
 
 // Clears any existing Recommendation result/error state COMPLETELY (this

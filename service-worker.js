@@ -1,10 +1,16 @@
-// V2.5.2: bumped once for the Report Excel Lazy-Load Regression Hotfix
-// (report-page.js now awaits the same SheetJS loader Monitor uses --
-// no APP_SHELL entries changed, xlsx.min.js/chart.umd.min.js were already
-// precached by V2.5.1) -- evicts every older cache via the existing
+// V3.0.0: the V3.0 release version bump (Phase 7C release finalization),
+// superseding the interim v2.5.3-recommendation-worker identifier Phase 7B
+// used while the Worker boundary was being built. The executable Calculate
+// app shell changed across Phase 7A-7C -- recommendation-worker.js and
+// recommendation-worker-client.js are new, and calculate-page.js's own
+// import graph changed (findBlendRecommendations() is no longer imported
+// there directly; the Worker client is) -- so an already-installed PWA
+// must never keep serving a mixed old/new cache: an old cached
+// calculate-page.js talking to a Worker file that was never precached
+// would fail offline. Evicts every older cache via the existing
 // activate-time cleanup (no second version source; this is the ONE place
 // a release's cache identity is declared).
-const CACHE_NAME = 'hpal-production-monitor-v2.5.2-report-excel-hotfix';
+const CACHE_NAME = 'hpal-production-monitor-v3.0.0-scalable-recommendation-engine';
 const APP_SHELL = [
   './',
   './index.html',
@@ -37,6 +43,7 @@ const APP_SHELL = [
   './js/i18n/locales/id.js',
   './js/i18n/locales/en.js',
   './js/shared/ore-classification.js',
+  './js/shared/app-version.js',
   './js/pages/report/report-page.js',
   './js/pages/report/report-state.js',
   './js/pages/report/report-utils.js',
@@ -64,6 +71,14 @@ const APP_SHELL = [
   './js/pages/calculate/number-input.js',
   './js/pages/calculate/blending-recommendation.js',
   './js/pages/calculate/exact-hardcase-solver.js',
+  // V3.0 Phase 7B -- the Recommendation Worker and its main-thread client
+  // (this task's Section 10). recommendation-worker.js is referenced only
+  // via `new URL(...)` inside recommendation-worker-client.js, never a
+  // static `import ... from`, so it is NOT auto-discovered by the
+  // import-graph completeness test in tests/service-worker.test.mjs --
+  // listed here explicitly instead.
+  './js/pages/calculate/recommendation-worker.js',
+  './js/pages/calculate/recommendation-worker-client.js',
   './js/pages/calculate/fleet-allocation.js',
   './js/pages/calculate/recommendation-ranking.js',
   './js/pages/calculate/recommendation-actions.js',

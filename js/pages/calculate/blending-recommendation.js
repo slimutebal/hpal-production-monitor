@@ -1204,6 +1204,41 @@ function buildResultFromSearch(search, targetNiValue, toleranceValue, candidateC
 // never a fragile shape-based heuristic ("if N domes then MITM").
 // `solverPath` ('NORMAL_BNB' | 'HARDCASE_MITM') is added to every result as
 // an ADDITIONAL diagnostic field -- no existing field changes meaning.
+// V3.0 Phase 7A.1 -- cheap PRE-DISPATCH metadata check (this task's own
+// Section 1), evaluated on `perContractorAllocations` that prepareSearch()
+// already built (no extra enumeration/search work). Two deterministic,
+// already-exact signals, both required together:
+//
+//   - HARD_CASE_MIN_GROUP_COUNT_FLOOR: every Contractor group's own
+//     operational allocation count exceeds this floor. This codebase's own
+//     A-F measured matrix (this task's Section 2) shows the normal engine's
+//     Branch-and-Bound prunes fast whenever ANY group is small (A/B: a
+//     smallest-group count of 6, finishing in ~120-150ms) -- a small group
+//     gives the traversal an early, cheap incumbent/bound. Once EVERY group
+//     is large (C/D: smallest-group counts of 76/1101), that cheap anchor
+//     never exists and the probe burns its full budget without converging.
+//   - HARD_CASE_CANDIDATE_COUNT_THRESHOLD: the theoretical global Cartesian
+//     candidateCount (same measured matrix: A=1.58e7, B=5.69e8 vs.
+//     C=2.54e9, D=2.04e10) is large enough that the probe's fixed node
+//     budget is negligible against it.
+//
+// Deliberately NOT a domeCount/ContractorCount/scenario-name special case
+// (this task's Section 1/6's own explicit prohibition) -- both signals are
+// generic properties of any input's already-computed allocation counts.
+// PERFORMANCE ONLY: see the call sites below for the exactness-preserving
+// fallback when this predicts "hard" but the hard-case engine itself can't
+// establish its A+B precondition within budget (Section 3/4).
+const HARD_CASE_MIN_GROUP_COUNT_FLOOR = 50;
+const HARD_CASE_CANDIDATE_COUNT_THRESHOLD = 1000000000;
+
+function shouldDispatchHardCaseDirectly(perContractorAllocations) {
+  const perGroupCounts = perContractorAllocations.map((allocations) => allocations.length);
+  const minPerGroup = Math.min(...perGroupCounts);
+  if (minPerGroup <= HARD_CASE_MIN_GROUP_COUNT_FLOOR) return false;
+  const globalCandidateCount = perGroupCounts.reduce((product, count) => product * count, 1) - 1;
+  return globalCandidateCount > HARD_CASE_CANDIDATE_COUNT_THRESHOLD;
+}
+
 export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMMENDATION_TOLERANCE, sources }) {
   const prepared = prepareSearch({ targetNi, tolerance, sources });
   if (!prepared.ok) {
@@ -1214,11 +1249,29 @@ export function findBlendRecommendations({ targetNi, tolerance = DEFAULT_RECOMME
     groups, groupFleets, perContractorAllocations, targetNiValue, toleranceValue, searchOrder,
   } = prepared;
 
+  let directHardCaseAttempt = null;
+  if (shouldDispatchHardCaseDirectly(perContractorAllocations)) {
+    directHardCaseAttempt = dispatchHardCase({
+      groups, groupFleets, targetNiValue, toleranceValue,
+    });
+    if (directHardCaseAttempt.error !== 'SEARCH_INCOMPLETE') return directHardCaseAttempt;
+    // Preflight predicted an obviously-hard shape, but even the hard-case
+    // engine's own full MAX_SEARCH_NODES budget could not establish its
+    // A+B precondition (Section 3/4's fallback contract) -- give the
+    // existing NORMAL_BNB probe below its own (different traversal order)
+    // chance, byte-identical to pre-Phase-7A.1 behavior.
+  }
+
   const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder, NORMAL_ENGINE_PROBE_NODES);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   const result = buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
   if (result.error === 'SEARCH_INCOMPLETE') {
-    return dispatchHardCase({
+    // dispatchHardCase() is a pure function of (groups, groupFleets,
+    // targetNiValue, toleranceValue) at a fixed MAX_SEARCH_NODES budget --
+    // if the direct attempt above already ran it on this exact input, a
+    // second call would recompute the identical SEARCH_INCOMPLETE and pay
+    // for that full traversal twice. Reuse it instead.
+    return directHardCaseAttempt ?? dispatchHardCase({
       groups, groupFleets, targetNiValue, toleranceValue,
     });
   }
@@ -1579,11 +1632,24 @@ export function findBlendRecommendationsWithDiagnostics({ targetNi, tolerance = 
     groups, groupFleets, perContractorAllocations, targetNiValue, toleranceValue, searchOrder,
   } = prepared;
 
+  let directHardCaseAttempt = null;
+  if (shouldDispatchHardCaseDirectly(perContractorAllocations)) {
+    directHardCaseAttempt = dispatchHardCase({
+      groups, groupFleets, targetNiValue, toleranceValue,
+    });
+    if (directHardCaseAttempt.error !== 'SEARCH_INCOMPLETE') {
+      return { result: directHardCaseAttempt, diagnostics: directHardCaseAttempt.diagnostics ?? null };
+    }
+    // See findBlendRecommendations()'s own comment on this same fallback.
+  }
+
   const search = runStreamingSearch(groups, perContractorAllocations, targetNiValue, toleranceValue, true, true, searchOrder, NORMAL_ENGINE_PROBE_NODES);
   const candidateCount = operationalCandidateSpaceSize(perContractorAllocations) - 1;
   const result = buildResultFromSearch(search, targetNiValue, toleranceValue, candidateCount);
   if (result.error === 'SEARCH_INCOMPLETE') {
-    const hardResult = dispatchHardCase({
+    // See findBlendRecommendations()'s own comment: avoid recomputing an
+    // already-known-identical SEARCH_INCOMPLETE a second time.
+    const hardResult = directHardCaseAttempt ?? dispatchHardCase({
       groups, groupFleets, targetNiValue, toleranceValue,
     });
     return { result: hardResult, diagnostics: hardResult.diagnostics ?? null };

@@ -147,6 +147,11 @@ export default {
   'calculate.recommendation.targetNi': 'Target Ni',
   'calculate.recommendation.tolerance': 'Toleransi (±)',
   'calculate.recommendation.calculate': 'Hitung Rekomendasi',
+  // V3.0 Phase 7B -- Calculate button label while a Worker calculation is
+  // in flight, and its accompanying Cancel action. No percentage/progress
+  // value -- see recommendation-worker-client.js's own header comment.
+  'calculate.recommendation.calculating': 'Menghitung rekomendasi…',
+  'calculate.recommendation.cancel': 'Batalkan',
 
   'calculate.recommendation.hopperPattern': 'Pola Hopper',
   'calculate.recommendation.repeat': 'ULANGI',
@@ -177,6 +182,11 @@ export default {
   'calculate.recommendation.searchSpaceTooLarge': 'Kombinasi fleet untuk input ini terlalu besar untuk dihitung. Kurangi jumlah DT atau sumber, lalu coba lagi.',
   'calculate.recommendation.searchIncomplete': 'Input ini terlalu kompleks untuk diverifikasi sepenuhnya dalam batas pencarian. Tidak ada rekomendasi pasti yang dapat dikonfirmasi. Kurangi jumlah DT atau sumber, lalu coba lagi.',
   'calculate.recommendation.noFeasibleCandidate': 'Tidak ada kombinasi fleet yang dapat dihitung dari input saat ini.',
+  // V3.0 Phase 7B -- Worker infrastructure failure (this task's Section
+  // 9), deliberately distinct from the three engine-status messages above:
+  // it means the calculation itself never completed, not that it
+  // completed and found no/too-large/unverifiable result.
+  'calculate.recommendation.workerError': 'Perhitungan tidak dapat diselesaikan karena kendala teknis. Coba lagi.',
   // Shown when Hitung Rekomendasi is pressed with zero complete source
   // rows (this task's Section 12) -- Recommendation must not run.
   'calculate.recommendation.noCompleteSources': 'Belum ada sumber lengkap untuk dihitung. Lengkapi minimal satu baris sumber (Pile ID, Kontraktor, Ni, DT, t/DT).',

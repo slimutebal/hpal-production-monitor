@@ -41,8 +41,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { initCalculatePage, requireFullAccessForCalculateAction } from '../js/pages/calculate/calculate-page.js';
-import { DEFAULT_RECOMMENDATION_TOLERANCE } from '../js/pages/calculate/blending-recommendation.js';
+import {
+  initCalculatePage,
+  requireFullAccessForCalculateAction,
+  _waitForRecommendationCalculationForTests,
+} from '../js/pages/calculate/calculate-page.js';
+import { DEFAULT_RECOMMENDATION_TOLERANCE, findBlendRecommendations } from '../js/pages/calculate/blending-recommendation.js';
+import { _setWorkerFactoryForTests } from '../js/pages/calculate/recommendation-worker-client.js';
 import { parseDecimalInput } from '../js/pages/calculate/number-input.js';
 import { setLocale, DEFAULT_LOCALE } from '../js/i18n/i18n.js';
 import {
@@ -252,9 +257,52 @@ function mountFullAccess() {
   return pageEl;
 }
 
+/* ============================================================
+   V3.0 Phase 7B -- FAKE RECOMMENDATION WORKER. Node has no global Worker,
+   so recommendation-worker-client.js's default Worker factory is
+   overridden for every test in this file (see beforeEach() below) with
+   this fake, which computes the exact SAME production
+   findBlendRecommendations() the real recommendation-worker.js itself
+   imports -- so every existing Recommendation-result assertion in this
+   file keeps observing the exact real engine result, just delivered one
+   microtask later (via queueMicrotask(), never a real timer/thread) --
+   deterministic, no browser timing required (this task's Section 12/13).
+   terminate() actually suppresses a still-pending delivery, mirroring a
+   real Worker.terminate(): once terminated, no message is ever delivered,
+   matching production's cancellation guarantee (this task's Section 4).
+============================================================ */
+class FakeRecommendationWorker {
+  constructor() {
+    this.onmessage = null;
+    this.onerror = null;
+    this._terminated = false;
+  }
+
+  postMessage(msg) {
+    if (!msg || msg.type !== 'CALCULATE') return;
+    const { requestId, input } = msg;
+    queueMicrotask(() => {
+      if (this._terminated) return;
+      let payload;
+      try {
+        const result = findBlendRecommendations(input);
+        payload = { type: 'RESULT', requestId, result };
+      } catch (err) {
+        payload = { type: 'ERROR', requestId, error: String((err && err.message) || err) };
+      }
+      if (this.onmessage) this.onmessage({ data: payload });
+    });
+  }
+
+  terminate() {
+    this._terminated = true;
+  }
+}
+
 beforeEach(() => {
   globalThis.localStorage = createMockStorage();
   setLocale(DEFAULT_LOCALE);
+  _setWorkerFactoryForTests(() => new FakeRecommendationWorker());
 });
 
 /* ============================================================
@@ -268,8 +316,30 @@ function fillRecommendationControls(pageEl, { targetNi, tolerance } = {}) {
   if (tolerance !== undefined) typeIntoField(pageEl, 'tolerance', tolerance);
 }
 
-function clickCalculateRecommendation(pageEl) {
+// V3.0 Phase 7B -- Calculate is now async (the solver runs in a Worker,
+// faked here -- see FakeRecommendationWorker above). Awaits
+// _waitForRecommendationCalculationForTests() so every existing assertion
+// that follows a click still observes the FULLY committed/re-rendered
+// state, exactly as it did when this was synchronous.
+async function clickCalculateRecommendation(pageEl) {
   findOne(pageEl, hasClass('calculate-calculate-recommendation-btn')).fire('click');
+  await _waitForRecommendationCalculationForTests();
+}
+
+// V3.0 Phase 7B -- fires the Cancel button and waits for the in-flight
+// handleCalculateRecommendation() to fully unwind the cancellation (busy
+// state cleared, no result/error mutation -- this task's Section 7).
+async function clickCancelRecommendation(pageEl) {
+  findOne(pageEl, hasClass('calculate-recommendation-cancel-btn')).fire('click');
+  await _waitForRecommendationCalculationForTests();
+}
+
+function recommendationCalculateBtn(pageEl) {
+  return findOne(pageEl, hasClass('calculate-calculate-recommendation-btn'));
+}
+
+function recommendationCancelBtn(pageEl) {
+  return findOne(pageEl, hasClass('calculate-recommendation-cancel-btn'));
 }
 
 function recommendationResultRoot(pageEl) {
@@ -446,7 +516,7 @@ function mountRecommendationReadyOn(pageEl) {
    ACTION-BOUNDARY GUARD (unchanged, still exercised here)
 ============================================================ */
 describe('requireFullAccessForCalculateAction() -- action-boundary guard', () => {
-  test('FULL_ACCESS: returns true, never navigates, never requests attention', () => {
+  test('FULL_ACCESS: returns true, never navigates, never requests attention', async () => {
     goFullAccess();
     const win = installMockWindow('#/calculate');
     let attentionCalls = 0;
@@ -460,7 +530,7 @@ describe('requireFullAccessForCalculateAction() -- action-boundary guard', () =>
     assert.equal(attentionCalls, 0);
   });
 
-  test('MONITOR_ONLY: returns false, redirects to #/settings, requests attention with the "calculate-action" context', () => {
+  test('MONITOR_ONLY: returns false, redirects to #/settings, requests attention with the "calculate-action" context', async () => {
     goMonitorOnly();
     const win = installMockWindow('#/calculate');
     let receivedContext;
@@ -479,14 +549,14 @@ describe('requireFullAccessForCalculateAction() -- action-boundary guard', () =>
    1. INITIAL MOUNT
 ============================================================ */
 describe('initCalculatePage() -- initial mount', () => {
-  test('mounts exactly one blank row', () => {
+  test('mounts exactly one blank row', async () => {
     const pageEl = mountFullAccess();
     assert.equal(gridRows(pageEl).length, 1);
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').value, '');
   });
 
-  test('the initial row contains a Contractor input', () => {
+  test('the initial row contains a Contractor input', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     const contractorInput = findFieldInput(row, 'contractor');
@@ -495,32 +565,32 @@ describe('initCalculatePage() -- initial mount', () => {
     assert.equal(contractorInput.type, 'text');
   });
 
-  test('the trailing blank row has no remove control', () => {
+  test('the trailing blank row has no remove control', async () => {
     const pageEl = mountFullAccess();
     assert.equal(clickRemove(gridRows(pageEl)[0]), false);
   });
 
-  test('the live Blend summary is hidden until a complete row exists', () => {
+  test('the live Blend summary is hidden until a complete row exists', async () => {
     const pageEl = mountFullAccess();
     assert.equal(blendSummaryRoot(pageEl).hidden, true);
   });
 
-  test('the partial-row info message is hidden initially', () => {
+  test('the partial-row info message is hidden initially', async () => {
     const pageEl = mountFullAccess();
     assert.equal(partialRowInfo(pageEl).hidden, true);
   });
 
-  test('the class breakdown detail is hidden until a complete row exists', () => {
+  test('the class breakdown detail is hidden until a complete row exists', async () => {
     const pageEl = mountFullAccess();
     assert.equal(classBreakdownDetails(pageEl).hidden, true);
   });
 
-  test('does nothing (no throw) when #page-calculate is not present in the document', () => {
+  test('does nothing (no throw) when #page-calculate is not present in the document', async () => {
     globalThis.document = { getElementById: () => null };
     assert.doesNotThrow(() => initCalculatePage());
   });
 
-  test('mounting under MONITOR_ONLY never redirects or requests License attention on its own', () => {
+  test('mounting under MONITOR_ONLY never redirects or requests License attention on its own', async () => {
     goMonitorOnly();
     const win = installMockWindow('#/calculate');
     installMockDocument();
@@ -555,21 +625,21 @@ describe('V2.4.1 Bug A -- device-locale default Tolerance display', () => {
     }
   }
 
-  test('id-ID device locale prefills Tolerance as "0,010" (comma decimal)', () => {
+  test('id-ID device locale prefills Tolerance as "0,010" (comma decimal)', async () => {
     withDeviceLocale('id-ID', () => {
       const pageEl = mountFullAccess();
       assert.equal(findFieldInput(pageEl, 'tolerance').value, '0,010');
     });
   });
 
-  test('en-US device locale prefills Tolerance as "0.010" (dot decimal)', () => {
+  test('en-US device locale prefills Tolerance as "0.010" (dot decimal)', async () => {
     withDeviceLocale('en-US', () => {
       const pageEl = mountFullAccess();
       assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.010');
     });
   });
 
-  test('the device locale is independent of the app\'s own Indonesian/English UI language -- an English UI on an id-ID phone still shows "0,010"', () => {
+  test('the device locale is independent of the app\'s own Indonesian/English UI language -- an English UI on an id-ID phone still shows "0,010"', async () => {
     withDeviceLocale('id-ID', () => {
       setLocale('en');
       const pageEl = mountFullAccess();
@@ -578,7 +648,7 @@ describe('V2.4.1 Bug A -- device-locale default Tolerance display', () => {
     });
   });
 
-  test('both locale forms parse back to the exact business default DEFAULT_RECOMMENDATION_TOLERANCE (0.010) -- the underlying constant never changes', () => {
+  test('both locale forms parse back to the exact business default DEFAULT_RECOMMENDATION_TOLERANCE (0.010) -- the underlying constant never changes', async () => {
     withDeviceLocale('id-ID', () => {
       const pageEl = mountFullAccess();
       assert.equal(parseDecimalInput(findFieldInput(pageEl, 'tolerance').value), DEFAULT_RECOMMENDATION_TOLERANCE);
@@ -594,24 +664,24 @@ describe('V2.4.1 Bug A -- device-locale default Tolerance display', () => {
    18.1/18.2. NO MODE TABS, NO HITUNG BLEND BUTTON, ONE SHARED GRID
 ============================================================ */
 describe('1/2/3. No mode tabs, no explicit Calculate Blend button, one shared grid', () => {
-  test('1. there is no BLEND/RECOMMENDATION mode switch anywhere on the page', () => {
+  test('1. there is no BLEND/RECOMMENDATION mode switch anywhere on the page', async () => {
     const pageEl = mountFullAccess();
     assert.equal(findOne(pageEl, hasClass('calculate-mode-switch')), null);
     assert.equal(findOne(pageEl, hasClass('calculate-mode-tab')), null);
   });
 
-  test('2. there is no explicit "Hitung Blend"/Calculate Blend button', () => {
+  test('2. there is no explicit "Hitung Blend"/Calculate Blend button', async () => {
     const pageEl = mountFullAccess();
     assert.equal(findOne(pageEl, hasClass('calculate-calculate-btn')), null);
   });
 
-  test('3. exactly one shared source grid exists (never duplicated per section)', () => {
+  test('3. exactly one shared source grid exists (never duplicated per section)', async () => {
     const pageEl = mountFullAccess();
     const grids = findAll(pageEl, hasClass('calculate-grid'));
     assert.equal(grids.length, 1);
   });
 
-  test('the Recommendation action button IS present (only the Blend button was removed)', () => {
+  test('the Recommendation action button IS present (only the Blend button was removed)', async () => {
     const pageEl = mountFullAccess();
     assert.ok(findOne(pageEl, hasClass('calculate-calculate-recommendation-btn')));
   });
@@ -621,7 +691,7 @@ describe('1/2/3. No mode tabs, no explicit Calculate Blend button, one shared gr
    2/3. TRAILING-ROW AUTO-APPEND (unaffected by this task's revision)
 ============================================================ */
 describe('Trailing blank row auto-append', () => {
-  test('typing into the trailing blank row appends exactly one new blank row', () => {
+  test('typing into the trailing blank row appends exactly one new blank row', async () => {
     const pageEl = mountFullAccess();
     typeIntoField(gridRows(pageEl)[0], 'pileId', 'A');
 
@@ -630,7 +700,7 @@ describe('Trailing blank row auto-append', () => {
     assert.equal(findFieldInput(rows[1], 'pileId').value, '');
   });
 
-  test('typing Contractor FIRST into the trailing row appends exactly one new blank row', () => {
+  test('typing Contractor FIRST into the trailing row appends exactly one new blank row', async () => {
     const pageEl = mountFullAccess();
     typeIntoField(gridRows(pageEl)[0], 'contractor', 'SMA');
 
@@ -639,7 +709,7 @@ describe('Trailing blank row auto-append', () => {
     assert.equal(findFieldInput(rows[1], 'pileId').value, '');
   });
 
-  test('typing additional fields into the same now-active row does not append extra blanks', () => {
+  test('typing additional fields into the same now-active row does not append extra blanks', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     typeIntoField(row, 'pileId', 'A');
@@ -653,7 +723,7 @@ describe('Trailing blank row auto-append', () => {
     assert.equal(gridRows(pageEl).length, 2, 'no extra blank rows from editing an already-active row');
   });
 
-  test('typing into the trailing row does not disturb an already-active row\'s DOM/focus (targeted append, not a full rebuild)', () => {
+  test('typing into the trailing row does not disturb an already-active row\'s DOM/focus (targeted append, not a full rebuild)', async () => {
     const pageEl = mountFullAccess();
     let rows = gridRows(pageEl);
     typeIntoField(rows[0], 'pileId', 'A');
@@ -666,7 +736,7 @@ describe('Trailing blank row auto-append', () => {
     assert.equal(rows[0], firstRowElBefore, 'row 0\'s element identity must be preserved (no full rebuild)');
   });
 
-  test('filling several rows always leaves exactly one trailing blank row', () => {
+  test('filling several rows always leaves exactly one trailing blank row', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.3', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -682,7 +752,7 @@ describe('Trailing blank row auto-append', () => {
    4-9 (Section 30/18 renumbered). LIVE BLEND SUMMARY
 ============================================================ */
 describe('Live Blend summary -- complete rows only, no explicit action', () => {
-  test('4. a single complete row updates the live summary automatically, no explicit action', () => {
+  test('4. a single complete row updates the live summary automatically, no explicit action', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
 
@@ -692,7 +762,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.match(summaryValue(pageEl, 'calculate-total-tonnage'), /500,00 t|500.00 t/);
   });
 
-  test('known worked example (Pile A 1.30/10x50 + Pile B 0.95/20x45) -> Final Ni 1.075%, Total DT 30, Total Tonnage 1,400 t, live', () => {
+  test('known worked example (Pile A 1.30/10x50 + Pile B 0.95/20x45) -> Final Ni 1.075%, Total DT 30, Total Tonnage 1,400 t, live', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -707,7 +777,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
   // iPhone's decimal keyboard actually produces) instead of a dot, must
   // produce the IDENTICAL live Blend result -- never NaN, never a
   // "Ni harus berupa angka yang valid." validation error.
-  test('the same known worked example entered with comma decimals (id-ID keyboard) produces the IDENTICAL live Blend result', () => {
+  test('the same known worked example entered with comma decimals (id-ID keyboard) produces the IDENTICAL live Blend result', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Pile A', contractor: 'SMA', ni: '1,30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Pile B', contractor: 'TII', ni: '0,95', units: '20', tonnesPerUnit: '45' });
@@ -718,7 +788,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.match(summaryValue(pageEl, 'calculate-total-tonnage'), /1\.400,00 t|1,400.00 t/);
   });
 
-  test('a comma-decimal Tonnes/DT ("45,5") is accepted end-to-end and drives the correct live tonnage/summary, matching its dot-decimal equivalent', () => {
+  test('a comma-decimal Tonnes/DT ("45,5") is accepted end-to-end and drives the correct live tonnage/summary, matching its dot-decimal equivalent', async () => {
     const dotPageEl = mountFullAccess();
     fillRow(gridRows(dotPageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '45.5' });
     const dotTonnage = summaryValue(dotPageEl, 'calculate-total-tonnage');
@@ -729,7 +799,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(commaPageEl, 'calculate-total-tonnage'), dotTonnage);
   });
 
-  test('5. a partial (nonblank but incomplete) row is excluded from the live summary -- Row A included, Row C excluded', () => {
+  test('5. a partial (nonblank but incomplete) row is excluded from the live summary -- Row A included, Row C excluded', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     // Row C: nonblank but missing units/tonnesPerUnit -- must not crash and
@@ -741,7 +811,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-total-units'), '10');
   });
 
-  test('the live summary never disappears merely because another row is still being edited', () => {
+  test('the live summary never disappears merely because another row is still being edited', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -752,7 +822,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%', 'A + B must still be reflected despite C being mid-edit');
   });
 
-  test('6. a completely blank trailing row is excluded from the live summary', () => {
+  test('6. a completely blank trailing row is excluded from the live summary', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     assert.equal(gridRows(pageEl).length, 2, 'a trailing blank row must exist at this point');
@@ -760,7 +830,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-total-units'), '10', 'the blank trailing row must not contribute 0 DT or otherwise affect the total');
   });
 
-  test('7. completing a previously partial row immediately changes the Blend summary', () => {
+  test('7. completing a previously partial row immediately changes the Blend summary', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20' }); // missing tonnesPerUnit
@@ -771,7 +841,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%', 'B just became complete -- the summary must update immediately');
   });
 
-  test('8. removing a row immediately changes the Blend summary', () => {
+  test('8. removing a row immediately changes the Blend summary', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -782,7 +852,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.300%', 'removing B must revert the summary to A alone immediately');
   });
 
-  test('every complete row missing (e.g. all rows removed) hides the summary again', () => {
+  test('every complete row missing (e.g. all rows removed) hides the summary again', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     assert.equal(blendSummaryRoot(pageEl).hidden, false);
@@ -797,7 +867,7 @@ describe('Live Blend summary -- complete rows only, no explicit action', () => {
    9. INCOMPLETE-ROW INFORMATIONAL COUNT
 ============================================================ */
 describe('9. Partial-row informational count (non-blocking, no large banner)', () => {
-  test('one incomplete row shows the singular message with the count', () => {
+  test('one incomplete row shows the singular message with the count', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30' }); // missing units/tonnesPerUnit
 
@@ -805,7 +875,7 @@ describe('9. Partial-row informational count (non-blocking, no large banner)', (
     assert.equal(partialRowInfo(pageEl).textContent, idCatalog['calculate.blend.incompleteRowsOne'].replace('{count}', '1'));
   });
 
-  test('two incomplete rows pluralize naturally in English', () => {
+  test('two incomplete rows pluralize naturally in English', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA' }); // missing ni/units/tonnesPerUnit
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII' });
@@ -814,7 +884,7 @@ describe('9. Partial-row informational count (non-blocking, no large banner)', (
     assert.equal(partialRowInfo(pageEl).textContent, enCatalog['calculate.blend.incompleteRowsOther'].replace('{count}', '2'));
   });
 
-  test('the info message disappears once every nonblank row becomes complete', () => {
+  test('the info message disappears once every nonblank row becomes complete', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30' });
     assert.equal(partialRowInfo(pageEl).hidden, false);
@@ -824,7 +894,7 @@ describe('9. Partial-row informational count (non-blocking, no large banner)', (
     assert.equal(partialRowInfo(pageEl).hidden, true);
   });
 
-  test('never a large blocking banner -- the info line is a <p>, not an alert-styled element with the blend-error class', () => {
+  test('never a large blocking banner -- the info line is a <p>, not an alert-styled element with the blend-error class', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA' });
     const info = partialRowInfo(pageEl);
@@ -837,7 +907,7 @@ describe('9. Partial-row informational count (non-blocking, no large banner)', (
    10-13 (this task's Section 9/18). COMPOSITE DUPLICATE IDENTITY
 ============================================================ */
 describe('Composite Pile ID + Contractor duplicate identity', () => {
-  test('10. the same Pile ID with a DIFFERENT Contractor is valid -- both rows included in the live summary', () => {
+  test('10. the same Pile ID with a DIFFERENT Contractor is valid -- both rows included in the live summary', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'MRP', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'L30', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -847,7 +917,7 @@ describe('Composite Pile ID + Contractor duplicate identity', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.075%', 'both L30/MRP and L30/TII must be included');
   });
 
-  test('11. the same Pile ID with the SAME Contractor is rejected as a duplicate', () => {
+  test('11. the same Pile ID with the SAME Contractor is rejected as a duplicate', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'MRP', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'L30', contractor: 'MRP', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -857,7 +927,7 @@ describe('Composite Pile ID + Contractor duplicate identity', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.300%', 'the duplicate row must be excluded, not silently double-counted');
   });
 
-  test('12. duplicate detection is case-insensitive and trims outer whitespace on both Pile ID and Contractor', () => {
+  test('12. duplicate detection is case-insensitive and trims outer whitespace on both Pile ID and Contractor', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'MRP', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: '  l30  ', contractor: '  mrp  ', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -865,7 +935,7 @@ describe('Composite Pile ID + Contractor duplicate identity', () => {
     assert.match(findRowError(gridRows(pageEl)[1]).textContent, new RegExp(idCatalog['calculate.validation.pileIdDuplicate']));
   });
 
-  test('case-insensitive Contractor still distinguishes correctly -- "MRP" vs "mrp " on a DIFFERENT Pile ID stays independently valid', () => {
+  test('case-insensitive Contractor still distinguishes correctly -- "MRP" vs "mrp " on a DIFFERENT Pile ID stays independently valid', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'MRP', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: ' mrp ', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -879,7 +949,7 @@ describe('Composite Pile ID + Contractor duplicate identity', () => {
    ACCESS CONTROL FOR RECOMMENDATION
 ============================================================ */
 describe('Recommendation action is FULL_ACCESS-guarded; the live Blend recompute is not', () => {
-  test('under MONITOR_ONLY, pressing Calculate Recommendation never computes a result and redirects instead', () => {
+  test('under MONITOR_ONLY, pressing Calculate Recommendation never computes a result and redirects instead', async () => {
     const pageEl = mountFullAccess();
     fillKnownRecommendationExample(pageEl);
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
@@ -889,7 +959,7 @@ describe('Recommendation action is FULL_ACCESS-guarded; the live Blend recompute
     let receivedContext;
     const unsubscribe = subscribeFullAccessAttention((ctx) => { receivedContext = ctx; });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     unsubscribe();
     assert.equal(recommendationResultRoot(pageEl).hidden, true);
@@ -897,7 +967,7 @@ describe('Recommendation action is FULL_ACCESS-guarded; the live Blend recompute
     assert.equal(receivedContext, 'calculate-action');
   });
 
-  test('under MONITOR_ONLY, typing into a source row still updates the live Blend summary (a passive local recompute, never a protected action)', () => {
+  test('under MONITOR_ONLY, typing into a source row still updates the live Blend summary (a passive local recompute, never a protected action)', async () => {
     const pageEl = mountFullAccess();
     goMonitorOnly();
     const win = installMockWindow('#/calculate');
@@ -920,10 +990,10 @@ describe('Recommendation action is FULL_ACCESS-guarded; the live Blend recompute
    -- still 1:2
 ============================================================ */
 describe('Known fleet example (7 HG DT / 12 LGLO DT) -- unaffected by mode-tab removal', () => {
-  test('17. Hopper Pattern 1:2, Estimated Ni 1.120%, Fleet 18/19, Higher active 6, LGLO active 12, Surplus 1', () => {
+  test('17. Hopper Pattern 1:2, Estimated Ni 1.120%, Fleet 18/19, Higher active 6, LGLO active 12, Surplus 1', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
@@ -940,10 +1010,10 @@ describe('Known fleet example (7 HG DT / 12 LGLO DT) -- unaffected by mode-tab r
     assert.match(lgloRow.textContent, /12 DT/);
   });
 
-  test('the full-fleet 7:12 (19/19) allocation is NOT what gets shown as selected', () => {
+  test('the full-fleet 7:12 (19/19) allocation is NOT what gets shown as selected', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '19 / 19 DT');
   });
@@ -954,13 +1024,13 @@ describe('Known fleet example (7 HG DT / 12 LGLO DT) -- unaffected by mode-tab r
   // here via a parseDecimalInput() round-trip instead, which is correct
   // regardless of which locale format the current test host's own
   // navigator.language happens to produce (never assume a CI host locale).
-  test('16. default Tolerance value comes from the engine-exported DEFAULT_RECOMMENDATION_TOLERANCE constant', () => {
+  test('16. default Tolerance value comes from the engine-exported DEFAULT_RECOMMENDATION_TOLERANCE constant', async () => {
     const pageEl = mountFullAccess();
     const raw = findFieldInput(pageEl, 'tolerance').value;
     assert.equal(parseDecimalInput(raw), DEFAULT_RECOMMENDATION_TOLERANCE);
   });
 
-  test('16. Target Ni starts empty (required, no invented default)', () => {
+  test('16. Target Ni starts empty (required, no invented default)', async () => {
     const pageEl = mountFullAccess();
     assert.equal(findFieldInput(pageEl, 'targetNi').value, '');
   });
@@ -970,14 +1040,14 @@ describe('Known fleet example (7 HG DT / 12 LGLO DT) -- unaffected by mode-tab r
    14. RECOMMENDATION IGNORES PARTIAL ROWS
 ============================================================ */
 describe('14. Recommendation ignores partial rows, using only complete sources', () => {
-  test('a partial row does not block calculating from the other complete sources', () => {
+  test('a partial row does not block calculating from the other complete sources', async () => {
     const pageEl = mountFullAccess();
     // units=6 (V3.0 Phase 2 -- was 4, below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.150', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '1.0' }); // partial -- missing units/tonnesPerUnit
     fillRecommendationControls(pageEl, { targetNi: '1.150', tolerance: '0.010' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
@@ -990,23 +1060,23 @@ describe('14. Recommendation ignores partial rows, using only complete sources',
    15. ZERO COMPLETE SOURCES BLOCKS RECOMMENDATION
 ============================================================ */
 describe('15. Zero complete source rows blocks Recommendation with a localized message', () => {
-  test('pressing Hitung Rekomendasi with only a partial row shows a validation message and computes nothing', () => {
+  test('pressing Hitung Rekomendasi with only a partial row shows a validation message and computes nothing', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA' }); // missing ni/units/tonnesPerUnit
     fillRecommendationControls(pageEl, { targetNi: '1.150', tolerance: '0.010' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, true);
     assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
     assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.noCompleteSources']);
   });
 
-  test('pressing Hitung Rekomendasi with only the blank trailing row present also blocks with the same message', () => {
+  test('pressing Hitung Rekomendasi with only the blank trailing row present also blocks with the same message', async () => {
     const pageEl = mountFullAccess();
     fillRecommendationControls(pageEl, { targetNi: '1.150', tolerance: '0.010' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, true);
     assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.noCompleteSources']);
@@ -1020,13 +1090,13 @@ describe('15. Zero complete source rows blocks Recommendation with a localized m
 // verified against tests/blending-recommendation.test.mjs's own "25.
 // Same-Contractor relocation".
 describe('Same-Contractor relocation (Higher 7 DT / LGLO 11 DT, both SMA)', () => {
-  test('active 6/12, fleet 18/18 (100%), relocation 1 DT Higher -> LGLO shown', () => {
+  test('active 6/12, fleet 18/18 (100%), relocation 1 DT Higher -> LGLO shown', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '18 / 18 DT');
     const utilizationPct = findOne(pageEl, hasClass('calculate-recommendation-utilization-pct')).textContent;
@@ -1044,13 +1114,13 @@ describe('Same-Contractor relocation (Higher 7 DT / LGLO 11 DT, both SMA)', () =
 // -- verified against tests/blending-recommendation.test.mjs's own "26.
 // Cross-Contractor negative test".
 describe('Cross-Contractor negative case (Higher SMA / LGLO TII, assigned 11)', () => {
-  test('no relocation section is rendered -- cross-Contractor relocation is never displayed', () => {
+  test('no relocation section is rendered -- cross-Contractor relocation is never displayed', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '11', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(relocationRows(pageEl).length, 0);
@@ -1061,13 +1131,13 @@ describe('Cross-Contractor negative case (Higher SMA / LGLO TII, assigned 11)', 
 // V3.0 Phase 2 rescale, same numbers as "24. Known fleet example" (7/12,
 // tolerance 0.009) with both sources sharing Pile ID "L30".
 describe('Recommendation still accepts the same Pile ID across different Contractors as distinct sources (this task\'s Section 10)', () => {
-  test('13. L30/SMA (Higher) and L30/TII (LGLO) both contribute to the recommendation without collapsing', () => {
+  test('13. L30/SMA (Higher) and L30/TII (LGLO) both contribute to the recommendation without collapsing', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'L30', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'L30', contractor: 'TII', ni: '1.03', units: '12', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
@@ -1083,14 +1153,14 @@ describe('Recommendation still accepts the same Pile ID across different Contrac
    TARGET NOT ACHIEVABLE (unaffected by mode-tab removal)
 ============================================================ */
 describe('Target Not Achievable', () => {
-  test('explicit not-achievable status, Best Attainable Ni shown, never labeled Within Tolerance', () => {
+  test('explicit not-achievable status, Best Attainable Ni shown, never labeled Within Tolerance', async () => {
     const pageEl = mountFullAccess();
     // Higher units=6 (V3.0 Phase 2 -- was 5, below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.targetNotAchievable']));
@@ -1103,10 +1173,10 @@ describe('Target Not Achievable', () => {
    18/19/20 (this task's Section 15/18). STALE RECOMMENDATION INVALIDATION
 ============================================================ */
 describe('Stale Recommendation invalidation -- an old result is never left looking like it matches new inputs', () => {
-  test('18. editing a source value clears the existing Recommendation result', () => {
+  test('18. editing a source value clears the existing Recommendation result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
 
     typeIntoField(gridRows(pageEl)[0], 'ni', '1.35');
@@ -1122,10 +1192,10 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
   // coverage of the new behavior lives in the dedicated
   // "V2.5 -- stale Recommendation while editing Target/Tolerance" block
   // below; this test now only re-confirms the result is NOT hidden.
-  test('19. editing Target Ni no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', () => {
+  test('19. editing Target Ni no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
@@ -1133,10 +1203,10 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
-  test('20. editing Tolerance no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', () => {
+  test('20. editing Tolerance no longer hides the existing Recommendation result -- it becomes stale instead (V2.5)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
@@ -1144,10 +1214,10 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
-  test('removing a source row clears the existing Recommendation result', () => {
+  test('removing a source row clears the existing Recommendation result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
 
     clickRemove(gridRows(pageEl)[0]);
@@ -1197,58 +1267,58 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
   // which is not a reproducible expectation under the approved ranking
   // rule above; recalculating with an ACTUALLY-CURRENT, valid set of
   // inputs (matching the reference scenario) is.
-  test('after being cleared by a source edit, restoring the known-valid source and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
+  test('after being cleared by a source edit, restoring the known-valid source and pressing Hitung Rekomendasi again reproduces the exact known result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(gridRows(pageEl)[0], 'ni', '1.35');
     assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the stale result must be cleared immediately');
 
     typeIntoField(gridRows(pageEl)[0], 'ni', '1.30'); // restore the known-valid Higher Ni
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('V2.5: after a Target Ni edit marks the result stale, restoring the known-valid Target and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
+  test('V2.5: after a Target Ni edit marks the result stale, restoring the known-valid Target and pressing Hitung Rekomendasi again reproduces the exact known result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
     assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the stale result must remain visible, never hidden, this task Section 1');
 
     typeIntoField(pageEl, 'targetNi', '1.120'); // restore the known-valid Target Ni
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('V2.5: after a Tolerance edit marks the result stale, restoring the known-valid Tolerance and pressing Hitung Rekomendasi again reproduces the exact known result', () => {
+  test('V2.5: after a Tolerance edit marks the result stale, restoring the known-valid Tolerance and pressing Hitung Rekomendasi again reproduces the exact known result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
     assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the stale result must remain visible, never hidden, this task Section 1');
 
     typeIntoField(pageEl, 'tolerance', '0.009'); // restore the known-valid Tolerance (this fixture's reference tolerance -- see fillKnownRecommendationExample()'s own comment; the engine's DEFAULT_RECOMMENDATION_TOLERANCE is a UI prefill default, not a per-scenario constant)
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
   });
 
-  test('a genuinely WIDER Tolerance, once recalculated, is still a fresh, non-stale, CORRECT result -- just not necessarily the same candidate', () => {
+  test('a genuinely WIDER Tolerance, once recalculated, is still a fresh, non-stale, CORRECT result -- just not necessarily the same candidate', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assertKnownRecommendationResult(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
     assert.equal(recommendationResultRoot(pageEl).hidden, false, 'stale, not hidden');
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     // Widening Tolerance legitimately admits the full PHYSICAL 7:12
     // (19/19 DT, 100% utilization) candidate, which now correctly outranks
@@ -1279,10 +1349,10 @@ describe('Stale Recommendation invalidation -- an old result is never left looki
    (this task's Sections 24-30)
 ============================================================ */
 describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task Sections 24-30)', () => {
-  test('24. editing Target Ni: result stays visible+unchanged (old Target 1.120 still shown), marked stale, notice shown, and the sticky input reflects the NEW value -- no fresh engine run', () => {
+  test('24. editing Target Ni: result stays visible+unchanged (old Target 1.120 still shown), marked stale, notice shown, and the sticky input reflects the NEW value -- no fresh engine run', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(isResultStale(pageEl), false);
     assert.equal(staleNoticeRoot(pageEl).hidden, true);
@@ -1297,10 +1367,10 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.equal(findFieldInput(pageEl, 'targetNi').value, '1.130', 'the sticky input itself always reflects what the user actually typed');
   });
 
-  test('25. Tolerance has the exact same stale-preserving behavior as Target Ni', () => {
+  test('25. Tolerance has the exact same stale-preserving behavior as Target Ni', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
 
@@ -1310,15 +1380,15 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.equal(findFieldInput(pageEl, 'tolerance').value, '0.020');
   });
 
-  test('26. pressing Hitung Rekomendasi after a stale edit produces a fresh result: stale=false, notice hidden, result reflects the NEW Target', () => {
+  test('26. pressing Hitung Rekomendasi after a stale edit produces a fresh result: stale=false, notice hidden, result reflects the NEW Target', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
     assert.equal(isResultStale(pageEl), true);
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.equal(isResultStale(pageEl), false, 'a fresh calculation always clears staleness');
@@ -1326,10 +1396,10 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.match(recommendationResultRoot(pageEl).textContent, /1\.130/);
   });
 
-  test('27. a source-grid edit still fully clears the result immediately, unlike Target/Tolerance (regression lock)', () => {
+  test('27. a source-grid edit still fully clears the result immediately, unlike Target/Tolerance (regression lock)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(gridRows(pageEl)[0], 'ni', '1.35');
 
@@ -1337,10 +1407,10 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.equal(staleNoticeRoot(pageEl).hidden, true, 'no stale notice for a fully-cleared result');
   });
 
-  test('28. a temporarily invalid Target (field cleared) leaves the old result visible and stale, never collapsed', () => {
+  test('28. a temporarily invalid Target (field cleared) leaves the old result visible and stale, never collapsed', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '');
 
@@ -1349,10 +1419,10 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'still echoing the last valid calculated Target');
   });
 
-  test('29. changing Target back to the exact original value (semantic match, comma/dot locale parity) restores a fresh, non-stale result WITHOUT re-running the engine', () => {
+  test('29. changing Target back to the exact original value (semantic match, comma/dot locale parity) restores a fresh, non-stale result WITHOUT re-running the engine', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     const ratioBefore = hopperPatternRatioText(pageEl);
     const utilizationBefore = summaryValue(pageEl, 'calculate-recommendation-fleet-utilization');
 
@@ -1372,10 +1442,10 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), utilizationBefore);
   });
 
-  test('30. TARGET_NOT_ACHIEVABLE with Recovery visible: editing Target/Tolerance marks the Recommendation stale and disables Recovery execution, without hiding Recovery', () => {
+  test('30. TARGET_NOT_ACHIEVABLE with Recovery visible: editing Target/Tolerance marks the Recommendation stale and disables Recovery execution, without hiding Recovery', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.notEqual(recoverySectionRoot(pageEl), null);
 
     typeIntoField(pageEl, 'targetNi', '6.00');
@@ -1392,17 +1462,17 @@ describe('V2.5 -- stale Recommendation while editing Target/Tolerance (this task
    RATIO DISPLAY (unaffected by mode-tab removal)
 ============================================================ */
 describe('Unit Ratio / Tonnage Ratio display', () => {
-  test('Unit Ratio matches the engine-simplified pattern (Known example: 1:2)', () => {
+  test('Unit Ratio matches the engine-simplified pattern (Known example: 1:2)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const ratioItems = findAll(pageEl, hasClass('calculate-recommendation-ratio-item'));
     const unitRatioItem = ratioItems.find((i) => i.textContent.includes(idCatalog['calculate.recommendation.unitRatio']));
     assert.match(unitRatioItem.textContent, /1 : 2/);
   });
 
-  test('Tonnage Ratio is computed from actual tonnage, not the Unit Ratio (architecture doc Section 13/19 example)', () => {
+  test('Tonnage Ratio is computed from actual tonnage, not the Unit Ratio (architecture doc Section 13/19 example)', async () => {
     const pageEl = mountFullAccess();
     // units 6/12 (V3.0 Phase 2 -- was 1/2, both below the generation-time
     // minimum; same 1:2 physical ratio and percentages, scaled x6).
@@ -1410,7 +1480,7 @@ describe('Unit Ratio / Tonnage Ratio display', () => {
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'LgloCo', ni: '1.00', units: '12', tonnesPerUnit: '45' });
     fillRecommendationControls(pageEl, { targetNi: '1.15', tolerance: '0.1' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const ratioItems = findAll(pageEl, hasClass('calculate-recommendation-ratio-item'));
     const tonnageRatioItem = ratioItems.find((i) => i.textContent.includes(idCatalog['calculate.recommendation.tonnageRatio']));
@@ -1433,12 +1503,12 @@ describe('Engine error states', () => {
   // improvement Phase 7A exists to deliver, verified end-to-end at the UI
   // layer: the SAME scenario that used to render the inline error now
   // renders a real, successful Recommendation result instead.
-  test('a fleet that used to trip SEARCH_SPACE_TOO_LARGE now renders a real successful Recommendation result via the hard-case engine', () => {
+  test('a fleet that used to trip SEARCH_SPACE_TOO_LARGE now renders a real successful Recommendation result via the hard-case engine', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'S', ni: '1.2', units: '25000', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.2', tolerance: '0.01' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
@@ -1453,7 +1523,7 @@ describe('Engine error states', () => {
   // domes x 100 DT (each Contractor group individually clears
   // MAX_ALLOCATIONS_PER_CONTRACTOR, so only the node budget can catch
   // this), target unreachable so pruning never engages.
-  test('SEARCH_INCOMPLETE renders its own explicit inline error, distinct from SEARCH_SPACE_TOO_LARGE/noFeasibleCandidate', () => {
+  test('SEARCH_INCOMPLETE renders its own explicit inline error, distinct from SEARCH_SPACE_TOO_LARGE/noFeasibleCandidate', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'C0-S0', contractor: 'Contractor0', ni: '1.00', units: '100', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'C0-S1', contractor: 'Contractor0', ni: '1.00', units: '100', tonnesPerUnit: '50' });
@@ -1461,7 +1531,7 @@ describe('Engine error states', () => {
     fillRow(gridRows(pageEl)[3], { pileId: 'C1-S1', contractor: 'Contractor1', ni: '1.00', units: '100', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.001' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(recommendationResultRoot(pageEl).hidden, true);
     assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
@@ -1506,12 +1576,12 @@ describe('22. Non-goals -- Planned Blend Recovery is now IN scope (V2.4 Phase 6)
   // sampling history, closed-loop actual FPP correction, hardcoded
   // recovery-tonnage presets, and stockpile/backend coupling.
 
-  test('34. calculate-page.js references the real Recovery API, never a placeholder/New-Dome-only name', () => {
+  test('34. calculate-page.js references the real Recovery API, never a placeholder/New-Dome-only name', async () => {
     assert.match(source, /calculateRequiredNewDomeNi/, 'calculate-page.js must call the real pure Recovery function');
     assert.match(source, /findQualifyingSources/, 'calculate-page.js must call the real pure matching function');
   });
 
-  test('29. no sampling history / closed-loop actual FPP correction / hardcoded recovery presets / stockpile inventory / backend coupling anywhere in the Recovery code', () => {
+  test('29. no sampling history / closed-loop actual FPP correction / hardcoded recovery presets / stockpile inventory / backend coupling anywhere in the Recovery code', async () => {
     for (const file of [
       path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'),
       path.join(ROOT, 'js', 'pages', 'calculate', 'planned-blend-recovery.js'),
@@ -1527,28 +1597,28 @@ describe('22. Non-goals -- Planned Blend Recovery is now IN scope (V2.4 Phase 6)
     }
   });
 
-  test('no localStorage usage anywhere in the Calculate modules\' actual code', () => {
+  test('no localStorage usage anywhere in the Calculate modules\' actual code', async () => {
     for (const file of ['calculate-page.js', 'blend-calculator.js', 'calculate-validation.js', 'blending-recommendation.js', 'recommendation-ranking.js', 'fleet-allocation.js', 'recommendation-actions.js', 'planned-blend-recovery.js']) {
       const fileSource = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', file), 'utf8'));
       assert.doesNotMatch(fileSource, /localStorage/, `${file} must not use localStorage`);
     }
   });
 
-  test('planned-blend-recovery.js is a pure module -- no DOM/i18n/router/license/network references', () => {
+  test('planned-blend-recovery.js is a pure module -- no DOM/i18n/router/license/network references', async () => {
     for (const forbidden of ['document\\.', '\\bt\\(', 'navigateTo', 'hasFullAccess', 'fetch\\(', 'XMLHttpRequest']) {
       assert.doesNotMatch(pureRecoverySource, new RegExp(forbidden), `planned-blend-recovery.js must not reference ${forbidden}`);
     }
   });
 
-  test('22. no Planned Blend Recovery UI renders while the Recommendation is within tolerance', () => {
+  test('22. no Planned Blend Recovery UI renders while the Recommendation is within tolerance', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.doesNotMatch(pageEl.textContent, /recovery/i);
   });
 
-  test('no Recommendation result section exists in the rendered DOM before Recommendation has been calculated', () => {
+  test('no Recommendation result section exists in the rendered DOM before Recommendation has been calculated', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
@@ -1560,7 +1630,7 @@ describe('22. Non-goals -- Planned Blend Recovery is now IN scope (V2.4 Phase 6)
    REMOVE PILE -- values survive, invariant preserved
 ============================================================ */
 describe('Remove Pile', () => {
-  test('removing a populated row preserves exactly one trailing blank row, other rows\' values (including Contractor) survive', () => {
+  test('removing a populated row preserves exactly one trailing blank row, other rows\' values (including Contractor) survive', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.3', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -1577,7 +1647,7 @@ describe('Remove Pile', () => {
     assert.equal(clickRemove(rows[1]), false, 'the surviving trailing row must have no remove control');
   });
 
-  test('removing every active row leaves exactly one blank row -- never zero rows', () => {
+  test('removing every active row leaves exactly one blank row -- never zero rows', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
@@ -1593,7 +1663,7 @@ describe('Remove Pile', () => {
    CONTRACTOR VALIDATION (unaffected by this task's revision)
 ============================================================ */
 describe('Contractor validation', () => {
-  test('an active row with a missing Contractor is excluded from the live summary and shows an error', () => {
+  test('an active row with a missing Contractor is excluded from the live summary and shows an error', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
@@ -1601,14 +1671,14 @@ describe('Contractor validation', () => {
     assert.match(findRowError(gridRows(pageEl)[0]).textContent, new RegExp(idCatalog['calculate.validation.contractorRequired']));
   });
 
-  test('a whitespace-only Contractor fails validation', () => {
+  test('a whitespace-only Contractor fails validation', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: '   ', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
     assert.match(findRowError(gridRows(pageEl)[0]).textContent, new RegExp(idCatalog['calculate.validation.contractorRequired']));
   });
 
-  test('a valid Contractor is included normally', () => {
+  test('a valid Contractor is included normally', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'Contractor A', ni: '1.2', units: '10', tonnesPerUnit: '50' });
 
@@ -1616,7 +1686,7 @@ describe('Contractor validation', () => {
     assert.equal(findRowError(gridRows(pageEl)[0]).hidden, true);
   });
 
-  test('Contractor value is never auto-uppercased or otherwise rewritten beyond outer-whitespace trim', () => {
+  test('Contractor value is never auto-uppercased or otherwise rewritten beyond outer-whitespace trim', async () => {
     const pageEl = mountFullAccess();
     typeIntoField(gridRows(pageEl)[0], 'contractor', 'sma lowercase');
     assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').value, 'sma lowercase');
@@ -1627,7 +1697,7 @@ describe('Contractor validation', () => {
    SESSION STATE AND LOCALIZATION
 ============================================================ */
 describe('Calculate -> Monitor -> Calculate preserves rows and the current live summary', () => {
-  test('module-level state survives independently of route changes (the page is never rebuilt on remount)', () => {
+  test('module-level state survives independently of route changes (the page is never rebuilt on remount)', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'B', contractor: 'TII', ni: '0.95', units: '20', tonnesPerUnit: '45' });
@@ -1642,7 +1712,7 @@ describe('Calculate -> Monitor -> Calculate preserves rows and the current live 
 });
 
 describe('Locale switch preserves entered values (source + Target/Tolerance) and the current result numbers', () => {
-  test('switching id -> en keeps row inputs and the live Blend summary numbers unchanged', () => {
+  test('switching id -> en keeps row inputs and the live Blend summary numbers unchanged', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     const finalNiBefore = summaryValue(pageEl, 'calculate-final-ni');
@@ -1657,7 +1727,7 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), finalNiBefore);
   });
 
-  test('short grid headers actually change text between locales, while stable terms (PILE/NI/DT) stay identical', () => {
+  test('short grid headers actually change text between locales, while stable terms (PILE/NI/DT) stay identical', async () => {
     const pageEl = mountFullAccess();
 
     setLocale('id');
@@ -1670,7 +1740,7 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     assert.notEqual(idHeaderTitle, enHeaderTitle);
   });
 
-  test('Contractor aria-label localizes with the rest of the field wording', () => {
+  test('Contractor aria-label localizes with the rest of the field wording', async () => {
     const pageEl = mountFullAccess();
     setLocale('id');
     assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').attributes['aria-label'], idCatalog['calculate.fields.contractor']);
@@ -1678,10 +1748,10 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     assert.equal(findFieldInput(gridRows(pageEl)[0], 'contractor').attributes['aria-label'], enCatalog['calculate.fields.contractor']);
   });
 
-  test('locale switch preserves Target Ni/Tolerance and a current Recommendation result', () => {
+  test('locale switch preserves Target Ni/Tolerance and a current Recommendation result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     const ratioBefore = hopperPatternRatioText(pageEl);
 
     setLocale('en');
@@ -1693,10 +1763,10 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
     assert.match(statusBadgeText(pageEl), new RegExp(enCatalog['calculate.recommendation.withinTolerance']));
   });
 
-  test('V2.5: a locale switch while the result is stale re-translates the stale notice without recomputing it (still stale, sticky input unchanged, old result numbers untouched)', () => {
+  test('V2.5: a locale switch while the result is stale re-translates the stale notice without recomputing it (still stale, sticky input unchanged, old result numbers untouched)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     typeIntoField(pageEl, 'targetNi', '1.130');
     assert.equal(isResultStale(pageEl), true);
     assert.equal(staleNoticeRoot(pageEl).textContent.includes(idCatalog['calculate.recommendation.staleNotice']), true);
@@ -1716,7 +1786,7 @@ describe('Locale switch preserves entered values (source + Target/Tolerance) and
    MOBILE INPUT ATTRIBUTES (unaffected by this task's revision)
 ============================================================ */
 describe('Mobile keyboard input modes', () => {
-  test('Ni and t/DT use inputmode="decimal", DT uses inputmode="numeric", Pile ID and Contractor are plain text', () => {
+  test('Ni and t/DT use inputmode="decimal", DT uses inputmode="numeric", Pile ID and Contractor are plain text', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').type, 'text');
@@ -1726,13 +1796,13 @@ describe('Mobile keyboard input modes', () => {
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes.inputmode, 'decimal');
   });
 
-  test('Contractor carries autocomplete="off"', () => {
+  test('Contractor carries autocomplete="off"', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'contractor').attributes.autocomplete, 'off');
   });
 
-  test('every field carries its FULL localized wording as an aria-label, never the short grid header text', () => {
+  test('every field carries its FULL localized wording as an aria-label, never the short grid header text', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').attributes['aria-label'], idCatalog['calculate.fields.pileId']);
@@ -1742,7 +1812,7 @@ describe('Mobile keyboard input modes', () => {
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes['aria-label'], idCatalog['calculate.fields.tonnesPerUnit']);
   });
 
-  test('enterkeyhint moves Pile -> Contractor -> Ni -> DT -> t/DT, ending in "done"', () => {
+  test('enterkeyhint moves Pile -> Contractor -> Ni -> DT -> t/DT, ending in "done"', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').attributes.enterkeyhint, 'next');
@@ -1752,7 +1822,7 @@ describe('Mobile keyboard input modes', () => {
     assert.equal(findFieldInput(row, 'tonnesPerUnit').attributes.enterkeyhint, 'done');
   });
 
-  test('the compact remove control carries a full localized aria-label, not the bare "x" glyph', () => {
+  test('the compact remove control carries a full localized aria-label, not the bare "x" glyph', async () => {
     const pageEl = mountFullAccess();
     typeIntoField(gridRows(pageEl)[0], 'pileId', 'A');
     const removeBtn = findOne(gridRows(pageEl)[0], hasClass('calculate-remove-pile-btn'));
@@ -1760,7 +1830,7 @@ describe('Mobile keyboard input modes', () => {
     assert.equal(removeBtn.textContent, '×');
   });
 
-  test('Pile ID and Contractor carry subtle placeholders (this task\'s Section 8)', () => {
+  test('Pile ID and Contractor carry subtle placeholders (this task\'s Section 8)', async () => {
     const pageEl = mountFullAccess();
     const row = gridRows(pageEl)[0];
     assert.equal(findFieldInput(row, 'pileId').attributes.placeholder, idCatalog['calculate.fields.pileId']);
@@ -1772,7 +1842,7 @@ describe('Mobile keyboard input modes', () => {
    COMPACT GRID HEADER -- unchanged column layout (Section 8)
 ============================================================ */
 describe('Compact grid header', () => {
-  test('uses short PILE/NI/DT/t-DT headers, never the long field names, and gains no new column', () => {
+  test('uses short PILE/NI/DT/t-DT headers, never the long field names, and gains no new column', async () => {
     const pageEl = mountFullAccess();
     const headerCells = findAll(pageEl, (el) => hasClass('calculate-grid-cell')(el) && !('rowIndex' in (el.parentNode?.dataset || {})));
     const headerText = findOne(pageEl, hasClass('calculate-grid-row--header')).textContent;
@@ -1790,7 +1860,7 @@ describe('Compact grid header', () => {
    LOCALIZATION KEYS
 ============================================================ */
 describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
-  test('every calculate.* key exists in both locales, non-empty', () => {
+  test('every calculate.* key exists in both locales, non-empty', async () => {
     const keys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.'));
     assert.ok(keys.length > 10, 'expected a substantial calculate.* catalog');
     for (const key of keys) {
@@ -1799,28 +1869,28 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
     }
   });
 
-  test('calculate.tabs.* and calculate.blend.calculate no longer exist (mode tabs/explicit Blend button removed)', () => {
+  test('calculate.tabs.* and calculate.blend.calculate no longer exist (mode tabs/explicit Blend button removed)', async () => {
     for (const key of ['calculate.tabs.blend', 'calculate.tabs.recommendation', 'calculate.blend.calculate']) {
       assert.equal(key in idCatalog, false, `id.js must not carry the removed key ${key}`);
       assert.equal(key in enCatalog, false, `en.js must not carry the removed key ${key}`);
     }
   });
 
-  test('calculate.result.title/pileBreakdown/tonnageShare and calculate.fields.calculatedTonnage/oreClass no longer exist (old duplicated result section removed)', () => {
+  test('calculate.result.title/pileBreakdown/tonnageShare and calculate.fields.calculatedTonnage/oreClass no longer exist (old duplicated result section removed)', async () => {
     for (const key of ['calculate.result.title', 'calculate.result.pileBreakdown', 'calculate.result.tonnageShare', 'calculate.fields.calculatedTonnage', 'calculate.fields.oreClass']) {
       assert.equal(key in idCatalog, false, `id.js must not carry the removed key ${key}`);
       assert.equal(key in enCatalog, false, `en.js must not carry the removed key ${key}`);
     }
   });
 
-  test('the new partial-row-info and noCompleteSources keys exist in both locales', () => {
+  test('the new partial-row-info and noCompleteSources keys exist in both locales', async () => {
     for (const key of ['calculate.blend.incompleteRowsOne', 'calculate.blend.incompleteRowsOther', 'calculate.recommendation.noCompleteSources']) {
       assert.ok(idCatalog[key], `id.js missing ${key}`);
       assert.ok(enCatalog[key], `en.js missing ${key}`);
     }
   });
 
-  test('calculate.recommendation.* keys exist (Gate A closed, Recommendation always visible)', () => {
+  test('calculate.recommendation.* keys exist (Gate A closed, Recommendation always visible)', async () => {
     for (const key of [
       'calculate.recommendation.title', 'calculate.recommendation.hopperPattern',
       'calculate.recommendation.targetNi', 'calculate.recommendation.tolerance',
@@ -1831,7 +1901,7 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
     }
   });
 
-  test('short grid header keys exist and are identical across locales (stable terms, like nav.calculate)', () => {
+  test('short grid header keys exist and are identical across locales (stable terms, like nav.calculate)', async () => {
     for (const key of ['calculate.grid.headerPile', 'calculate.grid.headerNi', 'calculate.grid.headerDt', 'calculate.grid.headerTonnesPerUnit']) {
       assert.ok(idCatalog[key]);
       assert.equal(idCatalog[key], enCatalog[key]);
@@ -1845,7 +1915,7 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
   // SUPERSEDED (was: "no Planned Blend Recovery i18n key family exists yet
   // (Phase 6)"). Phase 6 (this task) intentionally adds calculate.recovery.*
   // -- verified below instead.
-  test('calculate.recovery.* i18n key family exists in both locales with matching key sets (Phase 6)', () => {
+  test('calculate.recovery.* i18n key family exists in both locales with matching key sets (Phase 6)', async () => {
     const idKeys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.recovery') || k.startsWith('calculate.validation.recovery')).sort();
     const enKeys = Object.keys(enCatalog).filter((k) => k.startsWith('calculate.recovery') || k.startsWith('calculate.validation.recovery')).sort();
     assert.ok(idKeys.length > 0, 'id.js must carry calculate.recovery.*/calculate.validation.recovery* keys');
@@ -1859,16 +1929,16 @@ describe('Localization keys (Phase 4.1 continuous-flow revision)', () => {
 describe('app.js wiring regression (re-verified)', () => {
   const appJs = readFileSync(path.join(ROOT, 'js', 'app.js'), 'utf8');
 
-  test('still imports and calls initCalculatePage()', () => {
+  test('still imports and calls initCalculatePage()', async () => {
     assert.match(appJs, /import\s*\{\s*initCalculatePage\s*\}\s*from\s*'\.\/pages\/calculate\/calculate-page\.js'/);
     assert.match(appJs, /initCalculatePage\(\);/);
   });
 
-  test('still registers a FULL_ACCESS-only route guard for "calculate"', () => {
+  test('still registers a FULL_ACCESS-only route guard for "calculate"', async () => {
     assert.match(appJs, /registerRouteGuard\(\s*\n?\s*'calculate',\s*\n?\s*\(\)\s*=>\s*hasFullAccess\(\)/);
   });
 
-  test('license removal while on Calculate is still handled by the one shared subscription', () => {
+  test('license removal while on Calculate is still handled by the one shared subscription', async () => {
     const subscribeCalls = appJs.match(/subscribeAccessChange\(/g) || [];
     assert.equal(subscribeCalls.length, 1);
     const subscribeBlock = appJs.slice(appJs.indexOf('subscribeAccessChange('));
@@ -1885,7 +1955,7 @@ describe('app.js wiring regression (re-verified)', () => {
    below asserts the label AND the unchanged numeric value together.
 ============================================================ */
 describe('23. Blend summary label -- "NI SUMPRODUCT" / "SUMPRODUCT NI"', () => {
-  test('Indonesian (default locale): label reads NI SUMPRODUCT, value unchanged', () => {
+  test('Indonesian (default locale): label reads NI SUMPRODUCT, value unchanged', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
 
@@ -1894,7 +1964,7 @@ describe('23. Blend summary label -- "NI SUMPRODUCT" / "SUMPRODUCT NI"', () => {
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.300%');
   });
 
-  test('English: label reads SUMPRODUCT NI, value unchanged', () => {
+  test('English: label reads SUMPRODUCT NI, value unchanged', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.30', units: '10', tonnesPerUnit: '50' });
     setLocale('en');
@@ -1906,17 +1976,17 @@ describe('23. Blend summary label -- "NI SUMPRODUCT" / "SUMPRODUCT NI"', () => {
     setLocale(DEFAULT_LOCALE);
   });
 
-  test('the old "Ni Akhir" / "Final Ni" wording no longer appears anywhere in either catalog', () => {
+  test('the old "Ni Akhir" / "Final Ni" wording no longer appears anywhere in either catalog', async () => {
     assert.doesNotMatch(idCatalog['calculate.result.finalNi'], /^Ni Akhir$/);
     assert.doesNotMatch(enCatalog['calculate.result.finalNi'], /^Final Ni$/);
   });
 });
 
 describe('24. Recommendation label -- "ESTIMASI AKHIR NI" / "ESTIMATED FINAL NI"', () => {
-  test('Indonesian: both the summary strip and the status-card row use the new label, estimatedNi value unchanged', () => {
+  test('Indonesian: both the summary strip and the status-card row use the new label, estimatedNi value unchanged', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(summaryLabel(pageEl, 'calculate-recommendation-estimated-ni'), 'ESTIMASI AKHIR NI');
     assert.equal(summaryLabel(pageEl, 'calculate-recommendation-estimated-ni'), idCatalog['calculate.recommendation.estimatedNi']);
@@ -1929,11 +1999,11 @@ describe('24. Recommendation label -- "ESTIMASI AKHIR NI" / "ESTIMATED FINAL NI"
     assert.ok(statusRowLabels(pageEl).includes('ESTIMASI AKHIR NI'));
   });
 
-  test('English: both the summary strip and the status-card row use the new label, estimatedNi value unchanged', () => {
+  test('English: both the summary strip and the status-card row use the new label, estimatedNi value unchanged', async () => {
     const pageEl = mountFullAccess();
     setLocale('en');
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(summaryLabel(pageEl, 'calculate-recommendation-estimated-ni'), 'ESTIMATED FINAL NI');
     assert.equal(summaryLabel(pageEl, 'calculate-recommendation-estimated-ni'), enCatalog['calculate.recommendation.estimatedNi']);
@@ -1943,11 +2013,11 @@ describe('24. Recommendation label -- "ESTIMASI AKHIR NI" / "ESTIMATED FINAL NI"
     setLocale(DEFAULT_LOCALE);
   });
 
-  test('candidate.estimatedNi/deviation math and Target Not Achievable wording are untouched by the label change', () => {
+  test('candidate.estimatedNi/deviation math and Target Not Achievable wording are untouched by the label change', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'S', ni: '1.0', units: '10', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.0', tolerance: '0.01' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.targetNotAchievable']));
     // Target Not Achievable never renders the estimatedNi row/label at all
@@ -1955,7 +2025,7 @@ describe('24. Recommendation label -- "ESTIMASI AKHIR NI" / "ESTIMATED FINAL NI"
     assert.equal(statusRowLabels(pageEl).includes(idCatalog['calculate.recommendation.estimatedNi']), false);
   });
 
-  test('the old "Estimasi Ni" / "Estimated Ni" wording no longer appears anywhere in either catalog', () => {
+  test('the old "Estimasi Ni" / "Estimated Ni" wording no longer appears anywhere in either catalog', async () => {
     assert.doesNotMatch(idCatalog['calculate.recommendation.estimatedNi'], /^Estimasi Ni$/);
     assert.doesNotMatch(enCatalog['calculate.recommendation.estimatedNi'], /^Estimated Ni$/);
   });
@@ -1967,7 +2037,7 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
   const blockEnd = cssSource.indexOf('}', blockStart);
   const stickyBlock = cssSource.slice(blockStart, blockEnd);
 
-  test('the rule exists and still uses position: sticky (sticky behavior preserved)', () => {
+  test('the rule exists and still uses position: sticky (sticky behavior preserved)', async () => {
     assert.ok(blockStart >= 0, 'expected a #page-calculate .calculate-blend-summary rule in calculate.css');
     assert.match(stickyBlock, /position:\s*sticky;/);
     // V2.4.1 Bug C: top must be safe-area-aware, not a bare 0 -- a bare 0
@@ -1977,19 +2047,19 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
     assert.match(stickyBlock, /z-index:\s*5;/, 'z-index must be preserved, not just sticky positioning');
   });
 
-  test('the background no longer uses the translucent --table-header-bg token', () => {
+  test('the background no longer uses the translucent --table-header-bg token', async () => {
     assert.doesNotMatch(stickyBlock, /--table-header-bg/);
   });
 
-  test('the background uses --bg-base, an existing fully opaque (alpha-free) theme token, with a fully opaque hex fallback', () => {
+  test('the background uses --bg-base, an existing fully opaque (alpha-free) theme token, with a fully opaque hex fallback', async () => {
     assert.match(stickyBlock, /background:\s*var\(--bg-base,\s*#0a0e1a\);/);
   });
 
-  test('no backdrop-filter/blur is used to achieve the opaque effect', () => {
+  test('no backdrop-filter/blur is used to achieve the opaque effect', async () => {
     assert.doesNotMatch(stickyBlock, /backdrop-filter/);
   });
 
-  test('--bg-base itself is a fully opaque (non-rgba, alpha-free) token in both dark and light theme, defined once in index.html and not redefined here', () => {
+  test('--bg-base itself is a fully opaque (non-rgba, alpha-free) token in both dark and light theme, defined once in index.html and not redefined here', async () => {
     const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     const bgBaseDeclarations = [...indexHtml.matchAll(/--bg-base:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\));/g)].map((m) => m[1]);
     assert.ok(bgBaseDeclarations.length >= 2, 'expected at least a dark and a light --bg-base declaration');
@@ -2002,7 +2072,7 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
     assert.doesNotMatch(cssSource, /--bg-base:\s*(#|rgba?\()/);
   });
 
-  test('no other part of calculate.css introduces a new Calculate-only opaque palette for this fix', () => {
+  test('no other part of calculate.css introduces a new Calculate-only opaque palette for this fix', async () => {
     // The only literal color calculate.css is allowed to add for this fix
     // is the SAME #0a0e1a fallback report-hync.css already uses alongside
     // --bg-base -- not a new, Calculate-specific hardcoded surface color.
@@ -2012,7 +2082,7 @@ describe('25. Sticky Blend summary is a fully opaque solid surface', () => {
     }
   });
 
-  test('the compact item padding/font sizing inside the sticky summary is unchanged (layout preserved)', () => {
+  test('the compact item padding/font sizing inside the sticky summary is unchanged (layout preserved)', async () => {
     const itemRuleStart = cssSource.indexOf('#page-calculate .calculate-blend-summary .calculate-result-summary__item {');
     assert.ok(itemRuleStart >= 0);
     const itemRule = cssSource.slice(itemRuleStart, cssSource.indexOf('}', itemRuleStart));
@@ -2041,28 +2111,28 @@ describe('V2.4.1 Bug C fix -- sticky containing-block/safe-area regression', () 
   const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const styleBlock = indexHtml.slice(indexHtml.indexOf('<style>'), indexHtml.indexOf('</style>'));
 
-  test('.calculate-shell declares no overflow/transform/filter/contain/perspective -- any of these would make it a non-scrolling containing block and break position: sticky on its descendant', () => {
+  test('.calculate-shell declares no overflow/transform/filter/contain/perspective -- any of these would make it a non-scrolling containing block and break position: sticky on its descendant', async () => {
     const shellRuleStart = calculateCss.indexOf('#page-calculate .calculate-shell {');
     assert.ok(shellRuleStart >= 0, 'expected a #page-calculate .calculate-shell rule');
     const shellRule = calculateCss.slice(shellRuleStart, calculateCss.indexOf('}', shellRuleStart));
     assert.doesNotMatch(shellRule, ANCESTOR_BREAKING_PROPS);
   });
 
-  test('the shared page-routing shell (.app-page / #app-pages in app-shell.css) declares no overflow/transform/filter/contain/perspective', () => {
+  test('the shared page-routing shell (.app-page / #app-pages in app-shell.css) declares no overflow/transform/filter/contain/perspective', async () => {
     assert.doesNotMatch(shellCss, ANCESTOR_BREAKING_PROPS);
   });
 
-  test('html/body in index.html\'s own <style> block declare no overflow -- the viewport itself stays the scrolling element (confirmed independently by bottom-navigation.js reading window.scrollY, not an inner scrollTop), which is exactly why sticky\'s `top` must be safe-area-aware instead of relying on body\'s own padding', () => {
+  test('html/body in index.html\'s own <style> block declare no overflow -- the viewport itself stays the scrolling element (confirmed independently by bottom-navigation.js reading window.scrollY, not an inner scrollTop), which is exactly why sticky\'s `top` must be safe-area-aware instead of relying on body\'s own padding', async () => {
     assert.doesNotMatch(styleBlock, /\bhtml\s*\{[^}]*overflow/);
     assert.doesNotMatch(styleBlock, /\bbody\s*\{[^}]*overflow/);
   });
 
-  test('viewport-fit=cover and the black-translucent status bar are both still declared -- these are exactly what make the safe-area-aware top offset necessary; if either is ever removed, this fix should be revisited', () => {
+  test('viewport-fit=cover and the black-translucent status bar are both still declared -- these are exactly what make the safe-area-aware top offset necessary; if either is ever removed, this fix should be revisited', async () => {
     assert.match(indexHtml, /viewport-fit=cover/);
     assert.match(indexHtml, /name="apple-mobile-web-app-status-bar-style" content="black-translucent"/);
   });
 
-  test('the sticky summary is appended into .calculate-shell, the SAME container that also holds the source grid, class breakdown, and the entire Recommendation result (Hopper Pattern/Material Actions/Fleet Actions/Recovery) -- so its containing block spans the full Calculate workflow, not just the source grid (this task\'s Section 19/25 sticky-lifetime requirement)', () => {
+  test('the sticky summary is appended into .calculate-shell, the SAME container that also holds the source grid, class breakdown, and the entire Recommendation result (Hopper Pattern/Material Actions/Fleet Actions/Recovery) -- so its containing block spans the full Calculate workflow, not just the source grid (this task\'s Section 19/25 sticky-lifetime requirement)', async () => {
     const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
     const buildShellStart = source.indexOf('function buildShell()');
     const buildShellEnd = source.indexOf('\nfunction buildRecommendationField', buildShellStart);
@@ -2074,7 +2144,7 @@ describe('V2.4.1 Bug C fix -- sticky containing-block/safe-area regression', () 
     assert.match(buildShellBody, /shell\.appendChild\(recommendationResult\)/);
   });
 
-  test('the sticky summary stays hidden with no children until a complete source row exists (never an empty sticky bar on initial load, this task\'s Section 26)', () => {
+  test('the sticky summary stays hidden with no children until a complete source row exists (never an empty sticky bar on initial load, this task\'s Section 26)', async () => {
     const pageEl = mountFullAccess();
     const summary = blendSummaryRoot(pageEl);
     assert.equal(summary.hidden, true);
@@ -2090,7 +2160,7 @@ describe('V2.4.1 Bug C fix -- sticky containing-block/safe-area regression', () 
    Tolerance/field error/Hitung Rekomendasi) added by this task.
 ============================================================ */
 describe('V2.5 -- sticky-control wrapper DOM structure (this task Section 26)', () => {
-  test('Target/Tolerance controls, the field error, and the Hitung Rekomendasi button all belong to ONE sticky wrapper', () => {
+  test('Target/Tolerance controls, the field error, and the Hitung Rekomendasi button all belong to ONE sticky wrapper', async () => {
     const pageEl = mountFullAccess();
     const wrapper = stickyControlsRoot(pageEl);
     assert.notEqual(wrapper, null, 'expected a .calculate-recommendation-sticky-controls wrapper');
@@ -2100,17 +2170,17 @@ describe('V2.5 -- sticky-control wrapper DOM structure (this task Section 26)', 
     assert.notEqual(findOne(wrapper, hasClass('calculate-calculate-recommendation-btn')), null, 'the Hitung Rekomendasi button must be inside the sticky wrapper');
   });
 
-  test('the recommendation RESULT is never inside the sticky wrapper', () => {
+  test('the recommendation RESULT is never inside the sticky wrapper', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const wrapper = stickyControlsRoot(pageEl);
     assert.equal(findOne(wrapper, hasClass('calculate-recommendation-result')), null);
     assert.equal(findOne(wrapper, hasClass('calculate-hopper-pattern')), null);
   });
 
-  test('the section title (REKOMENDASI BLENDING) and the DT hint are never inside the sticky wrapper', () => {
+  test('the section title (REKOMENDASI BLENDING) and the DT hint are never inside the sticky wrapper', async () => {
     const pageEl = mountFullAccess();
     const wrapper = stickyControlsRoot(pageEl);
     assert.equal(findOne(wrapper, hasClass('calculate-recommendation-hint')), null, 'the DT hint must stay outside the sticky wrapper');
@@ -2120,21 +2190,21 @@ describe('V2.5 -- sticky-control wrapper DOM structure (this task Section 26)', 
     assert.equal(findOne(wrapper, isTag('h2')), null, 'no section heading belongs inside the sticky wrapper');
   });
 
-  test('the engine error (SEARCH_SPACE_TOO_LARGE/NO_FEASIBLE_CANDIDATE) is never inside the sticky wrapper -- only the per-field validation error is', () => {
+  test('the engine error (SEARCH_SPACE_TOO_LARGE/NO_FEASIBLE_CANDIDATE) is never inside the sticky wrapper -- only the per-field validation error is', async () => {
     const pageEl = mountFullAccess();
     const wrapper = stickyControlsRoot(pageEl);
     assert.equal(findOne(wrapper, hasClass('calculate-recommendation-error')), null, 'the engine-level error card belongs outside the sticky wrapper');
     assert.notEqual(findOne(wrapper, hasClass('calculate-recommendation-field-error')), null);
   });
 
-  test('exactly one Target Ni input, one Tolerance input, and one Hitung Rekomendasi button exist on the whole page -- sticky behavior is pure CSS, never a duplicated control', () => {
+  test('exactly one Target Ni input, one Tolerance input, and one Hitung Rekomendasi button exist on the whole page -- sticky behavior is pure CSS, never a duplicated control', async () => {
     const pageEl = mountFullAccess();
     assert.equal(findAll(pageEl, (el) => el.dataset.field === 'targetNi').length, 1);
     assert.equal(findAll(pageEl, (el) => el.dataset.field === 'tolerance').length, 1);
     assert.equal(findAll(pageEl, hasClass('calculate-calculate-recommendation-btn')).length, 1);
   });
 
-  test('the sticky wrapper remains in its natural DOM position -- directly after the DT hint, directly before the engine error -- never moved to the top of the page', () => {
+  test('the sticky wrapper remains in its natural DOM position -- directly after the DT hint, directly before the engine error -- never moved to the top of the page', async () => {
     const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
     const buildShellStart = source.indexOf('function buildShell()');
     const buildShellEnd = source.indexOf('\nfunction buildRecommendationField', buildShellStart);
@@ -2161,18 +2231,18 @@ describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
     return calculateCss.slice(start, calculateCss.indexOf('}', start));
   }
 
-  test('the Blend summary keeps position: sticky (unaffected by this task)', () => {
+  test('the Blend summary keeps position: sticky (unaffected by this task)', async () => {
     const rule = ruleFor('#page-calculate .calculate-blend-summary');
     assert.match(rule, /position:\s*sticky;/);
   });
 
-  test('the Recommendation sticky wrapper uses position: sticky, never position: fixed', () => {
+  test('the Recommendation sticky wrapper uses position: sticky, never position: fixed', async () => {
     const rule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
     assert.match(rule, /position:\s*sticky;/);
     assert.doesNotMatch(rule, /position:\s*fixed/);
   });
 
-  test('the Recommendation sticky wrapper\'s top is explicitly relative to the Blend summary\'s own measured height, not a fixed magic-number offset', () => {
+  test('the Recommendation sticky wrapper\'s top is explicitly relative to the Blend summary\'s own measured height, not a fixed magic-number offset', async () => {
     const rule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
     assert.match(rule, /top:\s*calc\(env\(safe-area-inset-top\)\s*\+\s*var\(--calculate-blend-summary-sticky-height/);
     // Anchored to the start of a declaration line so "border-top: 1px
@@ -2182,19 +2252,19 @@ describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
     assert.doesNotMatch(rule, /^\s*top:\s*\d+px/m, 'must never be a bare fixed-pixel offset');
   });
 
-  test('both sticky levels use the same fully opaque --bg-base background, never transparent glass', () => {
+  test('both sticky levels use the same fully opaque --bg-base background, never transparent glass', async () => {
     const summaryRule = ruleFor('#page-calculate .calculate-blend-summary');
     const stickyRule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
     assert.match(summaryRule, /background:\s*var\(--bg-base,\s*#0a0e1a\);/);
     assert.match(stickyRule, /background:\s*var\(--bg-base,\s*#0a0e1a\);/);
   });
 
-  test('no backdrop-filter is used on either sticky level', () => {
+  test('no backdrop-filter is used on either sticky level', async () => {
     assert.doesNotMatch(ruleFor('#page-calculate .calculate-blend-summary'), /backdrop-filter/);
     assert.doesNotMatch(ruleFor('#page-calculate .calculate-recommendation-sticky-controls'), /backdrop-filter/);
   });
 
-  test('the two sticky levels share the SAME z-index -- no arbitrary new/higher tier introduced', () => {
+  test('the two sticky levels share the SAME z-index -- no arbitrary new/higher tier introduced', async () => {
     const summaryRule = ruleFor('#page-calculate .calculate-blend-summary');
     const stickyRule = ruleFor('#page-calculate .calculate-recommendation-sticky-controls');
     const summaryZ = summaryRule.match(/z-index:\s*(\d+);/)[1];
@@ -2206,7 +2276,7 @@ describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
     assert.ok(Number(stickyZ) < 900);
   });
 
-  test('no scroll-event sticky simulation, no manual position:fixed-via-JS, no viewport-zoom-disabling anywhere in calculate-page.js\'s actual CODE (comments may reference the forbidden terms only to document that they are NOT used)', () => {
+  test('no scroll-event sticky simulation, no manual position:fixed-via-JS, no viewport-zoom-disabling anywhere in calculate-page.js\'s actual CODE (comments may reference the forbidden terms only to document that they are NOT used)', async () => {
     const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
     assert.doesNotMatch(source, /addEventListener\('scroll'/);
     assert.doesNotMatch(source, /addEventListener\("scroll"/);
@@ -2215,7 +2285,7 @@ describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
     assert.doesNotMatch(source, /user-scalable|maximum-scale|minimum-scale/);
   });
 
-  test('ResizeObserver, where used, only ever writes the one CSS custom property -- never sets element.style.position/top/transform itself', () => {
+  test('ResizeObserver, where used, only ever writes the one CSS custom property -- never sets element.style.position/top/transform itself', async () => {
     const source = readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8');
     const observerBlockStart = source.indexOf('function observeBlendSummaryHeight');
     assert.ok(observerBlockStart >= 0, 'expected observeBlendSummaryHeight() to exist');
@@ -2226,7 +2296,7 @@ describe('V2.5 -- sticky CSS contract (this task Section 27)', () => {
 });
 
 describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => {
-  test('Blend summary hidden -> the sticky-height CSS custom property is set to 0px (no reserved gap for a hidden summary)', () => {
+  test('Blend summary hidden -> the sticky-height CSS custom property is set to 0px (no reserved gap for a hidden summary)', async () => {
     const pageEl = mountFullAccess();
     assert.equal(blendSummaryRoot(pageEl).hidden, true);
     // The mini-DOM harness's FakeElement has no `.style` -- the JS
@@ -2238,13 +2308,13 @@ describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => 
     assert.doesNotThrow(() => fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' }));
   });
 
-  test('Blend summary becomes visible -> the height update path runs without throwing, and the summary itself is correctly shown', () => {
+  test('Blend summary becomes visible -> the height update path runs without throwing, and the summary itself is correctly shown', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
     assert.equal(blendSummaryRoot(pageEl).hidden, false);
   });
 
-  test('removing the only complete row hides the summary again without throwing (the sticky-height update runs on every visibility transition, this task Section 7)', () => {
+  test('removing the only complete row hides the summary again without throwing (the sticky-height update runs on every visibility transition, this task Section 7)', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
     assert.equal(blendSummaryRoot(pageEl).hidden, false);
@@ -2252,7 +2322,7 @@ describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => 
     assert.equal(blendSummaryRoot(pageEl).hidden, true);
   });
 
-  test('a locale change (which can change the summary\'s rendered text width) re-renders the summary without throwing', () => {
+  test('a locale change (which can change the summary\'s rendered text width) re-renders the summary without throwing', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.2', units: '10', tonnesPerUnit: '50' });
     assert.doesNotThrow(() => setLocale('en'));
@@ -2260,7 +2330,7 @@ describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => 
     setLocale(DEFAULT_LOCALE);
   });
 
-  test('repeated initCalculatePage() mounts never leak/throw from the height observer (real re-mount safety, not just this test file\'s own repeated mounts)', () => {
+  test('repeated initCalculatePage() mounts never leak/throw from the height observer (real re-mount safety, not just this test file\'s own repeated mounts)', async () => {
     assert.doesNotThrow(() => {
       mountFullAccess();
       mountFullAccess();
@@ -2268,7 +2338,7 @@ describe('V2.5 -- dynamic sticky-height contract (this task Section 28)', () => 
     });
   });
 
-  test('DIRECT BROWSER GEOMETRY LIMITATION (this task Section 29): this project has no jsdom/Playwright/Chromium (confirmed absent in this environment) -- the assertions above verify the JS/CSS/DOM CONTRACT (the update function exists, runs on every visibility/locale transition, never throws under a DOM lacking real layout APIs) rather than actual pixel positions. Real getBoundingClientRect()-based verification at 360/390/430/desktop requires the owner\'s own browser/device testing.', () => {
+  test('DIRECT BROWSER GEOMETRY LIMITATION (this task Section 29): this project has no jsdom/Playwright/Chromium (confirmed absent in this environment) -- the assertions above verify the JS/CSS/DOM CONTRACT (the update function exists, runs on every visibility/locale transition, never throws under a DOM lacking real layout APIs) rather than actual pixel positions. Real getBoundingClientRect()-based verification at 360/390/430/desktop requires the owner\'s own browser/device testing.', async () => {
     assert.ok(true);
   });
 });
@@ -2280,10 +2350,10 @@ describe('V2.5 -- operational use case (this task Section 25)', () => {
   // follow-up task is that it no longer does, so the viewport stays
   // stable while the operator is scrolled deep into the result via the
   // sticky controls.
-  test('editing Target Ni after a Recommendation exists marks it STALE (never hidden); Hitung Rekomendasi with the NEW Target produces a fresh, non-stale result, all without the user ever touching the sticky controls\' DOM position', () => {
+  test('editing Target Ni after a Recommendation exists marks it STALE (never hidden); Hitung Rekomendasi with the NEW Target produces a fresh, non-stale result, all without the user ever touching the sticky controls\' DOM position', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl); // Target 1.120, Tolerance 0.010
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'the Target Ni row must echo the FIRST target, 1.120');
 
@@ -2297,7 +2367,7 @@ describe('V2.5 -- operational use case (this task Section 25)', () => {
     assert.match(recommendationResultRoot(pageEl).textContent, /1\.120/, 'the STALE result must still echo the OLD target 1.120 until recalculated (V2.5 Section 17)');
     assert.match(recommendationResultRoot(pageEl).className, /\bis-stale\b/);
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     assert.doesNotMatch(recommendationResultRoot(pageEl).className, /\bis-stale\b/, 'a fresh recalculation clears the stale modifier');
     // The Target Ni row in the fresh result directly echoes result.targetNi
@@ -2312,10 +2382,10 @@ describe('V2.5 -- operational use case (this task Section 25)', () => {
     assert.equal(wrapperBefore, wrapperAfter, 'the sticky wrapper is never rebuilt/replaced merely by recalculating -- same node throughout');
   });
 
-  test('no automatic Recommendation calculation while typing Target/Tolerance -- Hitung Rekomendasi remains an explicit action (this task Section 13/17)', () => {
+  test('no automatic Recommendation calculation while typing Target/Tolerance -- Hitung Rekomendasi remains an explicit action (this task Section 13/17)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
 
     fillRecommendationControls(pageEl, { targetNi: '1.150' });
@@ -2377,7 +2447,7 @@ describe('V2.4.1 Bug B fix -- Calculate editable controls stay >= 16px on mobile
     });
   });
 
-  test('no @media (max-width: ...) block in calculate.css shrinks an EDITABLE control below 16px (the exact way this bug originally shipped -- non-editable elements like the hopper ratio display or the grid header labels are unaffected by this contract)', () => {
+  test('no @media (max-width: ...) block in calculate.css shrinks an EDITABLE control below 16px (the exact way this bug originally shipped -- non-editable elements like the hopper ratio display or the grid header labels are unaffected by this contract)', async () => {
     const editableSelectors = ['.calculate-cell-input', '.calculate-cell-input--contractor', '.calculate-recommendation-input'];
     const narrowBlocks = [...calculateCss.matchAll(/@media \(max-width:[^)]*\)\s*\{/g)];
     assert.ok(narrowBlocks.length > 0, 'expected at least one narrow-width media query to still exist');
@@ -2397,13 +2467,13 @@ describe('V2.4.1 Bug B fix -- Calculate editable controls stay >= 16px on mobile
     });
   });
 
-  test('desktop (min-width: 640px) restores the original compact typography -- this fix is mobile-only, not a permanent desktop change', () => {
+  test('desktop (min-width: 640px) restores the original compact typography -- this fix is mobile-only, not a permanent desktop change', async () => {
     assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-cell-input \{\s*font-size:\s*0\.78rem;/);
     assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-cell-input--contractor \{[\s\S]*?font-size:\s*0\.68rem;/);
     assert.match(calculateCss, /@media \(min-width: 640px\) \{\s*#page-calculate \.calculate-recommendation-input \{\s*font-size:\s*0\.85rem;/);
   });
 
-  test('the compact grid column proportions (PILE 38 / NI 17 / DT 14 / t/DT 20 / action 11) are unchanged -- only spacing/font-size were touched, never the layout this task explicitly requires preserving', () => {
+  test('the compact grid column proportions (PILE 38 / NI 17 / DT 14 / t/DT 20 / action 11) are unchanged -- only spacing/font-size were touched, never the layout this task explicitly requires preserving', async () => {
     assert.match(calculateCss, /grid-template-columns:\s*38fr 17fr 14fr 20fr 11fr;/);
   });
 });
@@ -2424,7 +2494,7 @@ describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calcu
   const cssSource = cssSourceRaw.replace(/\/\*[\s\S]*?\*\//g, '');
   const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
-  test('no backdrop-filter/blur anywhere in calculate.css\' actual rules', () => {
+  test('no backdrop-filter/blur anywhere in calculate.css\' actual rules', async () => {
     assert.doesNotMatch(cssSource, /backdrop-filter/);
   });
 
@@ -2440,14 +2510,14 @@ describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calcu
   // palette, which is what both tests actually guard against.
   const STICKY_HEIGHT_VAR = '--calculate-blend-summary-sticky-height';
 
-  test('calculate.css defines no new --custom-property THEME token of its own (it only ever CONSUMES var(--x) for colors/design tokens, never declares one) -- except the one documented JS-measured layout variable', () => {
+  test('calculate.css defines no new --custom-property THEME token of its own (it only ever CONSUMES var(--x) for colors/design tokens, never declares one) -- except the one documented JS-measured layout variable', async () => {
     const declarations = [...cssSource.matchAll(/^\s*(--[a-zA-Z0-9-]+):/gm)].map((m) => m[1]);
     const unexpected = declarations.filter((name) => name !== STICKY_HEIGHT_VAR);
     assert.deepEqual(unexpected, [], `unexpected new custom property declaration(s): ${unexpected.join(', ')}`);
     assert.ok(declarations.includes(STICKY_HEIGHT_VAR), 'expected the documented sticky-height layout variable to still be declared');
   });
 
-  test('every var(--token) referenced in calculate.css is one of the app\'s existing shared tokens, defined for BOTH Dark and Light in index.html -- except the one documented JS-measured layout variable', () => {
+  test('every var(--token) referenced in calculate.css is one of the app\'s existing shared tokens, defined for BOTH Dark and Light in index.html -- except the one documented JS-measured layout variable', async () => {
     const usedTokens = [...new Set([...cssSource.matchAll(/var\((--[a-zA-Z0-9-]+)/g)].map((m) => m[1]))]
       .filter((token) => token !== STICKY_HEIGHT_VAR);
     assert.ok(usedTokens.length > 0, 'expected calculate.css to actually use shared tokens');
@@ -2464,7 +2534,7 @@ describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calcu
     }
   });
 
-  test('Calculate never reads/writes localStorage directly for appearance -- it has no theme state of its own', () => {
+  test('Calculate never reads/writes localStorage directly for appearance -- it has no theme state of its own', async () => {
     const source = stripComments(readFileSync(path.join(ROOT, 'js', 'pages', 'calculate', 'calculate-page.js'), 'utf8'));
     assert.doesNotMatch(source, /localStorage|appearance|matchMedia|data-theme/i);
   });
@@ -2474,22 +2544,22 @@ describe('V2.4 Phase 8 -- Calculate uses only shared theme tokens, never a Calcu
    26-30 (this task's Section 18/20-21/25/32). MATERIAL ACTIONS UI
 ============================================================ */
 describe('26. Material Actions section renders after a successful Recommendation, with correct USE/LIMIT/STOP labels', () => {
-  test('appears only once a Recommendation result exists, titled AKSI MATERIAL', () => {
+  test('appears only once a Recommendation result exists, titled AKSI MATERIAL', async () => {
     const pageEl = mountFullAccess();
     assert.equal(materialActionsRoot(pageEl), null, 'no Material Actions section before Recommendation is calculated');
 
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const root = materialActionsRoot(pageEl);
     assert.notEqual(root, null);
     assert.match(root.textContent, new RegExp(idCatalog['calculate.actions.materialTitle']));
   });
 
-  test('17/known 5 HG / 8 LGLO scenario: both Higher and Lglo are Material USE, with the localized GUNAKAN label', () => {
+  test('17/known 5 HG / 8 LGLO scenario: both Higher and Lglo are Material USE, with the localized GUNAKAN label', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherRow = materialActionRowFor(pageEl, 'Higher');
     const lgloRow = materialActionRowFor(pageEl, 'Lglo');
@@ -2500,11 +2570,11 @@ describe('26. Material Actions section renders after a successful Recommendation
     assert.equal(idCatalog['calculate.actions.material.use'], 'GUNAKAN');
   });
 
-  test('English locale: the same known scenario renders the USE label', () => {
+  test('English locale: the same known scenario renders the USE label', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
     setLocale('en');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherRow = materialActionRowFor(pageEl, 'Higher');
     assert.equal(materialActionBadgeText(higherRow), enCatalog['calculate.actions.material.use']);
@@ -2524,13 +2594,13 @@ describe('26. Material Actions section renders after a successful Recommendation
   // internal MATERIAL_ACTION_STOP domain value is still what
   // recommendation-actions.js computes underneath (unchanged, this task's
   // Section 4), only the DISPLAYED label/reason changed.
-  test('V2.5: a genuinely unfavorable third source gets a REPLACE DOME recommendation, never a bare STOP, once a replacement plan can be derived', () => {
+  test('V2.5: a genuinely unfavorable third source gets a REPLACE DOME recommendation, never a bare STOP, once a replacement plan can be derived', async () => {
     const pageEl = mountFullAccess();
     fillKnownRecommendationExample(pageEl);
     fillRow(gridRows(pageEl)[2], { pileId: 'Off', contractor: 'ZZZ', ni: '0.10', units: '3', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const offRow = materialActionRowFor(pageEl, 'Off');
     assert.notEqual(offRow, undefined);
@@ -2554,7 +2624,7 @@ describe('26. Material Actions section renders after a successful Recommendation
 });
 
 describe('27. LIMIT is contextual, never a static LGLO/HGLO rule (this task\'s Section 22)', () => {
-  test('a low-Ni third source that would move the blend TOWARD a lower Target renders LIMIT, not STOP', () => {
+  test('a low-Ni third source that would move the blend TOWARD a lower Target renders LIMIT, not STOP', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '12', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Off', contractor: 'ZZZ', ni: '1.10', units: '3', tonnesPerUnit: '50' });
@@ -2563,7 +2633,7 @@ describe('27. LIMIT is contextual, never a static LGLO/HGLO rule (this task\'s S
     // Target relative to the 1.30 baseline, so it must never be STOP.
     fillRecommendationControls(pageEl, { targetNi: '1.290', tolerance: '0.050' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const offRow = materialActionRowFor(pageEl, 'Off');
     assert.notEqual(materialActionBadgeText(offRow), idCatalog['calculate.actions.material.stop']);
@@ -2574,12 +2644,12 @@ describe('27. LIMIT is contextual, never a static LGLO/HGLO rule (this task\'s S
    31-33 (this task's Section 19-20/32). FLEET ACTIONS UI
 ============================================================ */
 describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE/SEPARATE labels', () => {
-  test('appears only once a Recommendation result exists, titled AKSI FLEET, separate from Material Actions', () => {
+  test('appears only once a Recommendation result exists, titled AKSI FLEET, separate from Material Actions', async () => {
     const pageEl = mountFullAccess();
     assert.equal(fleetActionsRoot(pageEl), null);
 
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const root = fleetActionsRoot(pageEl);
     assert.notEqual(root, null);
@@ -2594,10 +2664,10 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
   // SEPARATE/STANDBY line here. Since 7 DT is too small to SPLIT (needs
   // >= 12), the plan falls back to REPLACE DOME with a feasible Ni range
   // -- verified against the actual engine (deriveContractorContinuityPlan()).
-  test('V2.5: known 7 HG / 12 LGLO scenario -- Higher (~14.3% standby, cross-Contractor) gets REPLACE DOME, never a bare SEPARATE/STANDBY line; Lglo shows ACTIVE 12 DT only', () => {
+  test('V2.5: known 7 HG / 12 LGLO scenario -- Higher (~14.3% standby, cross-Contractor) gets REPLACE DOME, never a bare SEPARATE/STANDBY line; Lglo shows ACTIVE 12 DT only', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherRow = fleetActionRowFor(pageEl, 'Higher');
     const higherLines = fleetActionLineTexts(higherRow);
@@ -2625,13 +2695,13 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
   // V3.0 Phase 2 rescale (was Higher 5 DT / LGLO 7 DT, tolerance 0.010) --
   // verified against tests/blending-recommendation.test.mjs's own "25.
   // Same-Contractor relocation".
-  test('same-Contractor relocation scenario: Higher shows MOVE 1 DT -> Lglo, Lglo shows RECEIVE 1 DT <- Higher', () => {
+  test('same-Contractor relocation scenario: Higher shows MOVE 1 DT -> Lglo, Lglo shows RECEIVE 1 DT <- Higher', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
     assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('1') && l.includes('Lglo')));
@@ -2646,13 +2716,13 @@ describe('31. Fleet Actions section renders separately, with correct ACTIVE/MOVE
     setLocale(DEFAULT_LOCALE);
   });
 
-  test('cross-Contractor case never renders a MOVE or RECEIVE line anywhere on the page', () => {
+  test('cross-Contractor case never renders a MOVE or RECEIVE line anywhere on the page', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'TII', ni: '1.03', units: '7', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     fleetActionRows(pageEl).forEach((row) => {
       const lines = fleetActionLineTexts(row);
@@ -2679,10 +2749,10 @@ describe('V2.5 -- SPLIT LOADING POINT end-to-end UI', () => {
     fillRecommendationControls(pageEl, { targetNi: '1.15', tolerance: '0.01' });
   }
 
-  test('TII gets a PECAH LOADING (SPLIT LOADING) badge, never a bare STANDBY, with the existing/new dome split, Ni range, and excavator-conditional wording', () => {
+  test('TII gets a PECAH LOADING (SPLIT LOADING) badge, never a bare STANDBY, with the existing/new dome split, Ni range, and excavator-conditional wording', async () => {
     const pageEl = mountFullAccess();
     mountSplitScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const tiiRow = fleetActionRowFor(pageEl, 'L30');
     assert.notEqual(tiiRow, undefined);
@@ -2716,10 +2786,10 @@ describe('V2.5 -- SPLIT LOADING POINT end-to-end UI', () => {
     assert.equal(materialActionBadgeText(mrpRow), idCatalog['calculate.actions.fleet.use']);
   });
 
-  test('the rejection note explains why a plain reduction was not offered instead', () => {
+  test('the rejection note explains why a plain reduction was not offered instead', async () => {
     const pageEl = mountFullAccess();
     mountSplitScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const tiiRow = fleetActionRowFor(pageEl, 'L30');
     // 4 DT / 20% -- this task's Section 17 worked example's own wording
@@ -2728,11 +2798,11 @@ describe('V2.5 -- SPLIT LOADING POINT end-to-end UI', () => {
     assert.match(tiiRow.textContent, /20%/);
   });
 
-  test('English locale renders the same scenario with SPLIT LOADING wording', () => {
+  test('English locale renders the same scenario with SPLIT LOADING wording', async () => {
     const pageEl = mountFullAccess();
     mountSplitScenario(pageEl);
     setLocale('en');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const tiiRow = fleetActionRowFor(pageEl, 'L30');
     assert.equal(materialActionBadgeText(tiiRow), 'SPLIT LOADING');
@@ -2758,10 +2828,10 @@ describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this ta
     fillRecommendationControls(pageEl, { targetNi: '1.072', tolerance: '0.006' });
   }
 
-  test('19. the receiver (L20) is classified TERIMA/RECEIVE, never PINDAH/MOVE', () => {
+  test('19. the receiver (L20) is classified TERIMA/RECEIVE, never PINDAH/MOVE', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l20Row = fleetActionRowFor(pageEl, 'L20');
     assert.equal(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.receive']);
@@ -2769,20 +2839,20 @@ describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this ta
     assert.notEqual(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.move']);
   });
 
-  test('20. the donor (L40) is classified PINDAH/MOVE', () => {
+  test('20. the donor (L40) is classified PINDAH/MOVE', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l40Row = fleetActionRowFor(pageEl, 'L40');
     assert.equal(materialActionBadgeText(l40Row), idCatalog['calculate.actions.fleet.move']);
     assert.equal(idCatalog['calculate.actions.fleet.move'], 'PINDAH');
   });
 
-  test('8/21. changed receiver shows AWAL 15 DT / TERIMA 14 DT <- L40 / AKHIR 29 DT (this task Section 11), values sourced from the real candidate', () => {
+  test('8/21. changed receiver shows AWAL 15 DT / TERIMA 14 DT <- L40 / AKHIR 29 DT (this task Section 11), values sourced from the real candidate', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l20Lines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'L20'));
     assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('15')), 'AWAL 15 DT');
@@ -2793,10 +2863,10 @@ describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this ta
     assert.doesNotMatch(l20Lines.join(' '), /\b15\s*DT.*29|29.*15\s*DT/, 'sanity: AWAL and AKHIR are distinct values, not accidentally duplicated');
   });
 
-  test('9/21. changed donor shows AWAL 20 DT / PINDAH 14 DT -> L20 / AKHIR 6 DT (this task Section 12)', () => {
+  test('9/21. changed donor shows AWAL 20 DT / PINDAH 14 DT -> L20 / AKHIR 6 DT (this task Section 12)', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l40Lines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'L40'));
     assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.initial']) && l.includes('20')), 'AWAL 20 DT');
@@ -2804,10 +2874,10 @@ describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this ta
     assert.ok(l40Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('6')), 'AKHIR 6 DT');
   });
 
-  test('the old ambiguous "AKTIF 15 DT / TERIMA 19 DT" style display never appears -- AWAL/AKHIR always frame the total explicitly', () => {
+  test('the old ambiguous "AKTIF 15 DT / TERIMA 19 DT" style display never appears -- AWAL/AKHIR always frame the total explicitly', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l20Row = fleetActionRowFor(pageEl, 'L20');
     // The row must show its own AKHIR line -- the final 29 DT total is
@@ -2816,11 +2886,11 @@ describe('V2.5.1 -- receiver/donor classification, AWAL/change/AKHIR UI (this ta
     assert.doesNotMatch(l20Row.textContent, new RegExp(idCatalog['calculate.actions.fleet.use']), 'a changed row never shows the old bare AKTIF line');
   });
 
-  test('English locale: RECEIVE/MOVE/INITIAL/FINAL wording', () => {
+  test('English locale: RECEIVE/MOVE/INITIAL/FINAL wording', async () => {
     const pageEl = mountFullAccess();
     mountReceiverDonorScenario(pageEl);
     setLocale('en');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l20Row = fleetActionRowFor(pageEl, 'L20');
     assert.equal(materialActionBadgeText(l20Row), 'RECEIVE');
@@ -2846,10 +2916,10 @@ describe('V2.5.1 -- full dome closure UI (TUTUP DOME, this task Section 13/18)',
     fillRecommendationControls(pageEl, { targetNi: '1.054', tolerance: '0.005' });
   }
 
-  test('L40 (fully closed) shows TUTUP DOME badge, AWAL 20 / PINDAH 20 -> L20 / AKHIR 0, and the "fleet stays active elsewhere" reassurance note', () => {
+  test('L40 (fully closed) shows TUTUP DOME badge, AWAL 20 / PINDAH 20 -> L20 / AKHIR 0, and the "fleet stays active elsewhere" reassurance note', async () => {
     const pageEl = mountFullAccess();
     mountFullClosureScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l40Row = fleetActionRowFor(pageEl, 'L40');
     assert.equal(materialActionBadgeText(l40Row), idCatalog['calculate.actions.fleetOperational.closeDomeAndMove']);
@@ -2866,10 +2936,10 @@ describe('V2.5.1 -- full dome closure UI (TUTUP DOME, this task Section 13/18)',
     assert.match(l40Row.textContent, /TII/);
   });
 
-  test('L20 (receives the full fleet) shows TERIMA, AWAL 15 / TERIMA 20 <- L40 / AKHIR 35', () => {
+  test('L20 (receives the full fleet) shows TERIMA, AWAL 15 / TERIMA 20 <- L40 / AKHIR 35', async () => {
     const pageEl = mountFullAccess();
     mountFullClosureScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const l20Row = fleetActionRowFor(pageEl, 'L20');
     assert.equal(materialActionBadgeText(l20Row), idCatalog['calculate.actions.fleet.receive']);
@@ -2879,10 +2949,10 @@ describe('V2.5.1 -- full dome closure UI (TUTUP DOME, this task Section 13/18)',
     assert.ok(l20Lines.some((l) => l.includes(idCatalog['calculate.actions.fleet.final']) && l.includes('35')));
   });
 
-  test('24. Material Action for the closed L40 reflects its real chemical role (LIMIT here), never a bare user-visible STOP (this task Section 24/46)', () => {
+  test('24. Material Action for the closed L40 reflects its real chemical role (LIMIT here), never a bare user-visible STOP (this task Section 24/46)', async () => {
     const pageEl = mountFullAccess();
     mountFullClosureScenario(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     // L40 contributes 0 active DT in THIS candidate (its fleet physically
     // relocated to L20), but its material is still chemically evaluated
@@ -2912,10 +2982,10 @@ describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
   // test above for the full REPLACE DOME/Ni-range assertion) -- this test
   // now only re-confirms the OLD "PISAHKAN" word specifically never
   // reappears, under either vocabulary.
-  test('the rendered Fleet Action row never shows the old PISAHKAN/SEPARATE word, under either the legacy or V2.5 vocabulary', () => {
+  test('the rendered Fleet Action row never shows the old PISAHKAN/SEPARATE word, under either the legacy or V2.5 vocabulary', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherRow = fleetActionRowFor(pageEl, 'Higher');
     assert.doesNotMatch(higherRow.textContent, /PISAHKAN/);
@@ -2928,21 +2998,21 @@ describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
     setLocale(DEFAULT_LOCALE);
   });
 
-  test('the old PISAHKAN/SEPARATE word never appears anywhere on the whole rendered Recommendation result', () => {
+  test('the old PISAHKAN/SEPARATE word never appears anywhere on the whole rendered Recommendation result', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /PISAHKAN/);
   });
 
-  test('ACTIVE/MOVE Fleet Action behavior and cross-Contractor MOVE impossibility are unaffected by the STANDBY rename', () => {
+  test('ACTIVE/MOVE Fleet Action behavior and cross-Contractor MOVE impossibility are unaffected by the STANDBY rename', async () => {
     const pageEl = mountFullAccess();
     // V3.0 Phase 2 rescale (was 5/7, tolerance 0.010).
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherLines = fleetActionLineTexts(fleetActionRowFor(pageEl, 'Higher'));
     assert.ok(higherLines.some((l) => l.includes(idCatalog['calculate.actions.fleet.move']) && l.includes('Lglo')));
@@ -2966,10 +3036,10 @@ describe('26. STANDBY terminology replaces PISAHKAN/SEPARATE in the UI', () => {
    STALE INVALIDATION CLEARS ACTIONS TOO (this task's Section 27)
 ============================================================ */
 describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet Actions along with the Recommendation result', () => {
-  test('a source edit removes both action sections immediately, without pressing Hitung Rekomendasi', () => {
+  test('a source edit removes both action sections immediately, without pressing Hitung Rekomendasi', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.notEqual(materialActionsRoot(pageEl), null);
     assert.notEqual(fleetActionsRoot(pageEl), null);
 
@@ -2985,10 +3055,10 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
   // result subtree (including Material/Fleet Actions, which are
   // display-only and frozen) stays mounted and simply becomes stale,
   // still describing the PREVIOUS scenario, until recalculated.
-  test('a Target Ni edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', () => {
+  test('a Target Ni edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'targetNi', '1.130');
 
@@ -2998,10 +3068,10 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
     assert.notEqual(fleetActionsRoot(pageEl), null, 'Fleet Actions stay mounted, frozen, while stale');
   });
 
-  test('a Tolerance edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', () => {
+  test('a Tolerance edit marks the result stale but leaves both action sections mounted (frozen, describing the previous scenario)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     typeIntoField(pageEl, 'tolerance', '0.020');
 
@@ -3011,14 +3081,14 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
     assert.notEqual(fleetActionsRoot(pageEl), null, 'Fleet Actions stay mounted, frozen, while stale');
   });
 
-  test('recalculating after an edit renders fresh, current actions -- never a leftover from before the edit', () => {
+  test('recalculating after an edit renders fresh, current actions -- never a leftover from before the edit', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     const higherBefore = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
 
     typeIntoField(gridRows(pageEl)[0], 'ni', '1.30'); // no-op edit (same value) still clears+recomputes
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const higherAfter = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
     assert.equal(higherAfter, higherBefore, 'recomputed from the same valid inputs must reproduce the same action');
@@ -3029,14 +3099,14 @@ describe('32. Editing source/Target/Tolerance clears Material Actions and Fleet 
    33 (this task's Section 25). TARGET NOT ACHIEVABLE ACTION BASELINE
 ============================================================ */
 describe('33. Target Not Achievable shows the best-attainable action baseline note', () => {
-  test('the best-attainable note appears above Material Actions, and actions are still rendered', () => {
+  test('the best-attainable note appears above Material Actions, and actions are still rendered', async () => {
     const pageEl = mountFullAccess();
     // Higher units=6 (V3.0 Phase 2 -- was 5, below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '2.00', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'Y', ni: '0.10', units: '5', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.targetNotAchievable']));
     const root = materialActionsRoot(pageEl);
@@ -3049,10 +3119,10 @@ describe('33. Target Not Achievable shows the best-attainable action baseline no
     assert.equal(materialActionBadgeText(higherRow), idCatalog['calculate.actions.material.use']);
   });
 
-  test('the best-attainable note is ABSENT once Target is actually achievable', () => {
+  test('the best-attainable note is ABSENT once Target is actually achievable', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.doesNotMatch(materialActionsRoot(pageEl).textContent, new RegExp(idCatalog['calculate.actions.bestAttainableNote']));
   });
@@ -3070,24 +3140,24 @@ describe('33. Target Not Achievable shows the best-attainable action baseline no
    code would.
 ============================================================ */
 describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () => {
-  test('when the selected candidate\'s physical fleet ratio (7:12) differs from the smallest within-tolerance pattern (1:2), the DOM shows 1:2, never 7:12, while fleet utilization still shows the true 19/19 DT physical count', () => {
+  test('when the selected candidate\'s physical fleet ratio (7:12) differs from the smallest within-tolerance pattern (1:2), the DOM shows 1:2, never 7:12, while fleet utilization still shows the true 19/19 DT physical count', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     typeIntoField(pageEl, 'tolerance', '0.020');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-fleet-utilization'), '19 / 19 DT');
     assert.notEqual(hopperPatternRatioText(pageEl), '7 : 12', 'the physical 7:12 fleet ratio must never be shown as the Hopper Pattern here');
   });
 
-  test('the summary-strip Estimasi Akhir Ni and the status-card Estimasi Akhir Ni both match the DISPLAYED 1:2 Hopper Pattern (1.120%), never a different physical-candidate number', () => {
+  test('the summary-strip Estimasi Akhir Ni and the status-card Estimasi Akhir Ni both match the DISPLAYED 1:2 Hopper Pattern (1.120%), never a different physical-candidate number', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     typeIntoField(pageEl, 'tolerance', '0.020');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
@@ -3096,12 +3166,12 @@ describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () 
     assert.match(estimatedNiRow.textContent, /1\.120%/);
   });
 
-  test('the physical Unit Ratio row (Rasio Unit) still shows the true 7:12 physical active-fleet ratio, simultaneously with the 1:2 Hopper Pattern card', () => {
+  test('the physical Unit Ratio row (Rasio Unit) still shows the true 7:12 physical active-fleet ratio, simultaneously with the 1:2 Hopper Pattern card', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     typeIntoField(pageEl, 'tolerance', '0.020');
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(hopperPatternRatioText(pageEl), '1 : 2');
     const ratioItems = findAll(pageEl, hasClass('calculate-recommendation-ratio-item'));
@@ -3109,10 +3179,10 @@ describe('Hopper Pattern is decoupled from the physical active-fleet ratio', () 
     assert.match(unitRatioItem.textContent, /7 : 12/);
   });
 
-  test('Material Actions/Fleet Actions are unaffected by the Hopper Pattern decoupling -- both Higher and Lglo remain Material USE for the known reference scenario', () => {
+  test('Material Actions/Fleet Actions are unaffected by the Hopper Pattern decoupling -- both Higher and Lglo remain Material USE for the known reference scenario', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Higher')), idCatalog['calculate.actions.material.use']);
     assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Lglo')), idCatalog['calculate.actions.material.use']);
@@ -3139,29 +3209,29 @@ describe('27. Recommendation detail section order: Penyesuaian Fleet -> Aksi Fle
       .filter(Boolean);
   }
 
-  test('with a same-Contractor relocation present: relocation, then Fleet Actions, then Material Actions, in that exact order', () => {
+  test('with a same-Contractor relocation present: relocation, then Fleet Actions, then Material Actions, in that exact order', async () => {
     const pageEl = mountFullAccess();
     // V3.0 Phase 2 rescale (was 5/7, tolerance 0.010).
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.deepEqual(sectionOrder(pageEl), ['relocation', 'fleetActions', 'materialActions']);
   });
 
-  test('without a relocation: Fleet Actions still comes before Material Actions', () => {
+  test('without a relocation: Fleet Actions still comes before Material Actions', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.deepEqual(sectionOrder(pageEl), ['fleetActions', 'materialActions']);
   });
 
-  test('when TARGET_NOT_ACHIEVABLE: Fleet Actions, then Material Actions, then Recovery last', () => {
+  test('when TARGET_NOT_ACHIEVABLE: Fleet Actions, then Material Actions, then Recovery last', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.deepEqual(sectionOrder(pageEl), ['fleetActions', 'materialActions', 'recovery']);
   });
@@ -3183,23 +3253,23 @@ describe('27. Recommendation detail section order: Penyesuaian Fleet -> Aksi Fle
    regression value in tests/planned-blend-recovery.test.mjs).
 ============================================================ */
 describe('34. Recovery visibility -- only rendered while Target is unreachable', () => {
-  test('absent before any Recommendation has been calculated', () => {
+  test('absent before any Recommendation has been calculated', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
     assert.equal(recoverySectionRoot(pageEl), null);
   });
 
-  test('absent when the Recommendation is within tolerance (known example)', () => {
+  test('absent when the Recommendation is within tolerance (known example)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recoverySectionRoot(pageEl), null);
   });
 
-  test('present when the Recommendation is TARGET_NOT_ACHIEVABLE, positioned after Material/Fleet Actions', () => {
+  test('present when the Recommendation is TARGET_NOT_ACHIEVABLE, positioned after Material/Fleet Actions', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const root = recommendationResultRoot(pageEl);
     assert.notEqual(recoverySectionRoot(pageEl), null);
@@ -3211,10 +3281,10 @@ describe('34. Recovery visibility -- only rendered while Target is unreachable',
 });
 
 describe('35. Recovery baseline -- best-attainable candidate, never the sticky live Blend summary', () => {
-  test('baseline shows the best-attainable candidate Ni (2.00%) and tonnage (250 t), not a live-summary value', () => {
+  test('baseline shows the best-attainable candidate Ni (2.00%) and tonnage (250 t), not a live-summary value', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     const text = recoveryBaselineText(pageEl);
     assert.match(text, /2\.000%/);
@@ -3228,19 +3298,19 @@ describe('35. Recovery baseline -- best-attainable candidate, never the sticky l
 });
 
 describe('36. Recovery calculation -- explicit action, reference result, invalid input', () => {
-  test('the required-Ni result is absent until Calculate Recovery is pressed', () => {
+  test('the required-Ni result is absent until Calculate Recovery is pressed', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
 
     assert.equal(recoveryResultBox(pageEl).hidden, true);
   });
 
-  test('reference scenario: Added DT 5, Tonnes/DT 50 -> required Ni >= 8.600% (>= prefix, minimum framing)', () => {
+  test('reference scenario: Added DT 5, Tonnes/DT 50 -> required Ni >= 8.600% (>= prefix, minimum framing)', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
 
     clickCalculateRecovery(pageEl);
@@ -3249,10 +3319,10 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
     assert.equal(recoveryResultValueText(pageEl), '≥ 8.600%');
   });
 
-  test('MONITOR_ONLY: Calculate Recovery is gated by the same FULL_ACCESS action-boundary guard as Calculate Recommendation', () => {
+  test('MONITOR_ONLY: Calculate Recovery is gated by the same FULL_ACCESS action-boundary guard as Calculate Recommendation', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
 
     goMonitorOnly();
@@ -3263,10 +3333,10 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
     assert.equal(recoveryResultBox(pageEl).hidden, true);
   });
 
-  test('Added DT = 0 shows an inline validation error, never a silent Infinity/NaN result', () => {
+  test('Added DT = 0 shows an inline validation error, never a silent Infinity/NaN result', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '0', tonnesPerDt: '50' });
 
     clickCalculateRecovery(pageEl);
@@ -3277,10 +3347,10 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
     assert.match(err.textContent, new RegExp(idCatalog['calculate.validation.recoveryAddedUnitsPositive']));
   });
 
-  test('Tonnes/DT <= 0 shows an inline validation error', () => {
+  test('Tonnes/DT <= 0 shows an inline validation error', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '-1' });
 
     clickCalculateRecovery(pageEl);
@@ -3291,10 +3361,10 @@ describe('36. Recovery calculation -- explicit action, reference result, invalid
 });
 
 describe('37. Available Source Matching -- qualifying sources, deterministic ordering, never highest-Ni-first', () => {
-  test('a source with Ni below the required minimum is shown as NOT qualifying (empty list)', () => {
+  test('a source with Ni below the required minimum is shown as NOT qualifying (empty list)', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     // Required Ni for this scenario is 8.600% -- neither entered source (2.00%/0.10%) qualifies.
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
@@ -3303,7 +3373,7 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
     assert.match(recoveryQualifyingBox(pageEl).textContent, new RegExp(idCatalog['calculate.recovery.noQualifyingSources']));
   });
 
-  test('a source with Ni at/above the required minimum qualifies and is listed', () => {
+  test('a source with Ni at/above the required minimum qualifies and is listed', async () => {
     const pageEl = mountFullAccess();
     // units 6/6 (V3.0 Phase 2 -- was 5/3, both below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'X', ni: '1.00', units: '6', tonnesPerUnit: '50' });
@@ -3315,7 +3385,7 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
     // comfortably below HighSource's own 9.00%, so it qualifies (verified
     // against the real engine, not hand-derived).
     fillRecommendationControls(pageEl, { targetNi: '2.00', tolerance: '0.0001' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
     clickCalculateRecovery(pageEl);
 
@@ -3325,13 +3395,13 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
     assert.ok(ids.some((t) => t.includes('HighSource')));
   });
 
-  test('same Pile ID, different Contractor: each is matched independently, never conflated', () => {
+  test('same Pile ID, different Contractor: each is matched independently, never conflated', async () => {
     const pageEl = mountFullAccess();
     // units 6/6 (V3.0 Phase 2 -- was 5/3, both below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'PILE-1', contractor: 'HighCo', ni: '9.00', units: '6', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'PILE-1', contractor: 'LowCo', ni: '0.10', units: '6', tonnesPerUnit: '20' });
     fillRecommendationControls(pageEl, { targetNi: '2.00', tolerance: '0.0001' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
     clickCalculateRecovery(pageEl);
 
@@ -3341,13 +3411,13 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
     assert.ok(!contractors.some((t) => t.includes('LowCo')), 'the low-Ni Contractor sharing the same Pile ID must not qualify');
   });
 
-  test('qualifying sources are never ordered highest-Ni-first', () => {
+  test('qualifying sources are never ordered highest-Ni-first', async () => {
     const pageEl = mountFullAccess();
     // units 6/6 (V3.0 Phase 2 -- was 2/2, both below the generation-time minimum).
     fillRow(gridRows(pageEl)[0], { pileId: 'VeryHigh', contractor: 'A', ni: '15.00', units: '6', tonnesPerUnit: '10' });
     fillRow(gridRows(pageEl)[1], { pileId: 'AlsoHigh', contractor: 'B', ni: '9.50', units: '6', tonnesPerUnit: '10' });
     fillRecommendationControls(pageEl, { targetNi: '8.00', tolerance: '0.0001' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '1000', tonnesPerDt: '1000' });
     clickCalculateRecovery(pageEl);
 
@@ -3360,10 +3430,10 @@ describe('37. Available Source Matching -- qualifying sources, deterministic ord
 });
 
 describe('38. Recovery invalidation -- source/Target/Tolerance clears everything; Added DT/Tonnes-per-DT clears ONLY the Recovery result', () => {
-  test('editing a source value clears Recovery along with the whole Recommendation result', () => {
+  test('editing a source value clears Recovery along with the whole Recommendation result', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
     assert.notEqual(recoverySectionRoot(pageEl), null);
@@ -3379,10 +3449,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
   // Recovery section -- both stay mounted, and Recovery's inputs/button
   // become disabled (Recovery must not be executable while stale) rather
   // than the section being torn out of the DOM.
-  test('editing Target Ni marks the Recommendation stale and disables Recovery execution, without removing either section', () => {
+  test('editing Target Ni marks the Recommendation stale and disables Recovery execution, without removing either section', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
@@ -3395,10 +3465,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(findOne(root, hasClass('calculate-calculate-recovery-btn')).disabled, true, 'Recovery must not be executable while the Recommendation is stale');
   });
 
-  test('editing Tolerance marks the Recommendation stale and disables Recovery execution, without removing either section', () => {
+  test('editing Tolerance marks the Recommendation stale and disables Recovery execution, without removing either section', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
@@ -3411,10 +3481,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(findOne(root, hasClass('calculate-calculate-recovery-btn')).disabled, true, 'Recovery must not be executable while the Recommendation is stale');
   });
 
-  test('editing Added DT clears ONLY the Recovery result -- Recommendation, Material Actions, Fleet Actions all survive', () => {
+  test('editing Added DT clears ONLY the Recovery result -- Recommendation, Material Actions, Fleet Actions all survive', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
     assert.equal(recoveryResultBox(pageEl).hidden, false);
@@ -3429,10 +3499,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.notEqual(fleetActionsRoot(pageEl), null);
   });
 
-  test('editing Tonnes/DT clears ONLY the Recovery result', () => {
+  test('editing Tonnes/DT clears ONLY the Recovery result', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
@@ -3442,10 +3512,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 
-  test('recalculating after clearing Recovery via an Added DT edit produces a fresh, current result -- never a stale leftover', () => {
+  test('recalculating after clearing Recovery via an Added DT edit produces a fresh, current result -- never a stale leftover', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
     assert.equal(recoveryResultValueText(pageEl), '≥ 8.600%');
@@ -3458,35 +3528,35 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(recoveryResultValueText(pageEl), '≥ 6.800%');
   });
 
-  test('once Recommendation recalculates to within tolerance, Recovery disappears completely', () => {
+  test('once Recommendation recalculates to within tolerance, Recovery disappears completely', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
     assert.notEqual(recoverySectionRoot(pageEl), null);
 
     // Lower Target Ni into the achievable range for this same fleet, then recalculate.
     fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '1.00' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
     assert.equal(recoverySectionRoot(pageEl), null);
   });
 
-  test('if it later becomes TARGET_NOT_ACHIEVABLE again, Recovery shows a FRESH baseline, never a stale one from before', () => {
+  test('if it later becomes TARGET_NOT_ACHIEVABLE again, Recovery shows a FRESH baseline, never a stale one from before', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
     fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '1.00' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recoverySectionRoot(pageEl), null);
 
     fillRecommendationControls(pageEl, { targetNi: '5.00', tolerance: '0.01' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.notEqual(recoverySectionRoot(pageEl), null);
     // A fresh section never carries over the previous Added DT/Tonnes-per-DT typed values or result.
@@ -3495,10 +3565,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(recoveryResultBox(pageEl).hidden, true);
   });
 
-  test('Material Actions and Fleet Actions content is unaffected by Recovery calculation/invalidation', () => {
+  test('Material Actions and Fleet Actions content is unaffected by Recovery calculation/invalidation', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     const higherBadgeBefore = materialActionBadgeText(materialActionRowFor(pageEl, 'Higher'));
 
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
@@ -3508,10 +3578,10 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
     assert.equal(materialActionBadgeText(materialActionRowFor(pageEl, 'Higher')), higherBadgeBefore);
   });
 
-  test('no sampling-history UI appears anywhere in or around the Recovery section', () => {
+  test('no sampling-history UI appears anywhere in or around the Recovery section', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
@@ -3529,7 +3599,7 @@ describe('38. Recovery invalidation -- source/Target/Tolerance clears everything
    history/timestamp/auto-recalculation exists anywhere in this file.
 ============================================================ */
 describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actually uses', () => {
-  test('editing a source Ni updates the live Blend summary immediately (no explicit action needed)', () => {
+  test('editing a source Ni updates the live Blend summary immediately (no explicit action needed)', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.20', units: '10', tonnesPerUnit: '50' });
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.200%');
@@ -3538,10 +3608,10 @@ describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actua
     assert.equal(summaryValue(pageEl, 'calculate-final-ni'), '1.450%');
   });
 
-  test('a new Recommendation calculated after editing Ni uses the FRESH value end-to-end, not the value from when it was first calculated', () => {
+  test('a new Recommendation calculated after editing Ni uses the FRESH value end-to-end, not the value from when it was first calculated', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl); // known scenario: Higher Ni 1.30, Lglo Ni 1.03, Target 1.120
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
 
     // Simulate "a new assay arrives": Higher's Ni is updated (10:00 -> 14:00
@@ -3549,7 +3619,7 @@ describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actua
     typeIntoField(gridRows(pageEl)[0], 'ni', '2.00');
     assert.equal(recommendationResultRoot(pageEl).hidden, true, 'the old (now-stale) Recommendation result must disappear immediately');
 
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
     // A materially different Higher Ni (2.00 instead of 1.30) must produce
     // a materially different Estimated Ni -- proving the fresh calculation
@@ -3557,15 +3627,15 @@ describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actua
     assert.notEqual(summaryValue(pageEl, 'calculate-recommendation-estimated-ni'), '1.120%');
   });
 
-  test('no sampling history, assay timestamp, or "sampling mode" UI exists anywhere on the page', () => {
+  test('no sampling history, assay timestamp, or "sampling mode" UI exists anywhere on the page', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.doesNotMatch(pageEl.textContent, /sampling|assay|timestamp/i);
   });
 
-  test('Recommendation is never calculated automatically while typing -- only Hitung Rekomendasi triggers it', () => {
+  test('Recommendation is never calculated automatically while typing -- only Hitung Rekomendasi triggers it', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'A', contractor: 'SMA', ni: '1.20', units: '10', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.20', tolerance: '0.01' });
@@ -3582,28 +3652,28 @@ describe('V2.4 Phase 8 -- latest entered Ni is what a fresh Recommendation actua
    most i18n-key-dense subtree on the page) for that shape.
 ============================================================ */
 describe('V2.4 Phase 8 -- no raw translation key is ever rendered', () => {
-  test('the rendered Recommendation result (within-tolerance scenario) never contains a raw "calculate.xxx.yyy"-shaped string', () => {
+  test('the rendered Recommendation result (within-tolerance scenario) never contains a raw "calculate.xxx.yyy"-shaped string', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
 
     assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
   });
 
-  test('the rendered Recommendation + Recovery result (TARGET_NOT_ACHIEVABLE scenario) never contains a raw key', () => {
+  test('the rendered Recommendation + Recovery result (TARGET_NOT_ACHIEVABLE scenario) never contains a raw key', async () => {
     const pageEl = mountFullAccess();
     mountRecoveryReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     fillRecoveryControls(pageEl, { addedDt: '5', tonnesPerDt: '50' });
     clickCalculateRecovery(pageEl);
 
     assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
   });
 
-  test('English locale rendering also never contains a raw key (a locale-specific missing translation would otherwise fall through silently)', () => {
+  test('English locale rendering also never contains a raw key (a locale-specific missing translation would otherwise fall through silently)', async () => {
     const pageEl = mountFullAccess();
     mountRecommendationReadyOn(pageEl);
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     setLocale('en');
 
     assert.doesNotMatch(recommendationResultRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
@@ -3617,20 +3687,20 @@ describe('V2.4 Phase 8 -- no raw translation key is ever rendered', () => {
    for Indonesian "Penyesuaian Fleet".
 ============================================================ */
 describe('V2.4 Phase 8 -- terminology audit: Fleet Adjustment / Penyesuaian Fleet', () => {
-  test('Indonesian: Penyesuaian Fleet (unchanged)', () => {
+  test('Indonesian: Penyesuaian Fleet (unchanged)', async () => {
     assert.equal(idCatalog['calculate.recommendation.relocation'], 'Penyesuaian Fleet');
   });
 
-  test('English: Fleet Adjustment (corrected from the old "Fleet Reallocation")', () => {
+  test('English: Fleet Adjustment (corrected from the old "Fleet Reallocation")', async () => {
     assert.equal(enCatalog['calculate.recommendation.relocation'], 'Fleet Adjustment');
   });
 
-  test('the relocation/adjustment section heading actually renders "Fleet Adjustment" in English', () => {
+  test('the relocation/adjustment section heading actually renders "Fleet Adjustment" in English', async () => {
     const pageEl = mountFullAccess();
     fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '5', tonnesPerUnit: '50' });
     fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '7', tonnesPerUnit: '50' });
     fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.010' });
-    clickCalculateRecommendation(pageEl);
+    await clickCalculateRecommendation(pageEl);
     setLocale('en');
 
     assert.match(recommendationResultRoot(pageEl).textContent, /Fleet Adjustment/);
@@ -3643,7 +3713,7 @@ describe('V2.4 Phase 8 -- terminology audit: Fleet Adjustment / Penyesuaian Flee
    i18n key existence for the new calculate.actions.* family
 ============================================================ */
 describe('calculate.actions.* localization keys exist and carry the Owner-specified wording', () => {
-  test('Indonesian wording matches this task\'s Section 20', () => {
+  test('Indonesian wording matches this task\'s Section 20', async () => {
     assert.equal(idCatalog['calculate.actions.material.use'], 'GUNAKAN');
     assert.equal(idCatalog['calculate.actions.material.limit'], 'BATASI');
     assert.equal(idCatalog['calculate.actions.material.stop'], 'STOP');
@@ -3655,7 +3725,7 @@ describe('calculate.actions.* localization keys exist and carry the Owner-specif
     assert.equal(idCatalog['calculate.actions.fleet.separate'], 'STANDBY');
   });
 
-  test('English wording is the plain domain vocabulary', () => {
+  test('English wording is the plain domain vocabulary', async () => {
     assert.equal(enCatalog['calculate.actions.material.use'], 'USE');
     assert.equal(enCatalog['calculate.actions.material.limit'], 'LIMIT');
     assert.equal(enCatalog['calculate.actions.material.stop'], 'STOP');
@@ -3665,10 +3735,181 @@ describe('calculate.actions.* localization keys exist and carry the Owner-specif
     assert.equal(enCatalog['calculate.actions.fleet.separate'], 'STANDBY');
   });
 
-  test('id.js and en.js still carry the exact same calculate.actions.* key set', () => {
+  test('id.js and en.js still carry the exact same calculate.actions.* key set', async () => {
     const idKeys = Object.keys(idCatalog).filter((k) => k.startsWith('calculate.actions.')).sort();
     const enKeys = Object.keys(enCatalog).filter((k) => k.startsWith('calculate.actions.')).sort();
     assert.deepEqual(idKeys, enKeys);
     assert.ok(idKeys.length > 0);
+  });
+});
+
+/* ============================================================
+   V3.0 Phase 7B -- RECOMMENDATION WEB WORKER + UX SAFETY (this task's
+   Section 12, items 6/9/10/11). Uses a MANUALLY-driven fake Worker (never
+   auto-resolving, unlike beforeEach()'s default FakeRecommendationWorker)
+   so each test can inspect the exact in-flight busy state before deciding
+   when the Worker "replies" -- deterministic, no real timers.
+============================================================ */
+class ManualRecommendationWorker {
+  constructor() {
+    this.onmessage = null;
+    this.onerror = null;
+    this.terminated = false;
+    this.posted = [];
+  }
+
+  postMessage(msg) { this.posted.push(msg); }
+  terminate() { this.terminated = true; }
+
+  reply(message) {
+    if (this.terminated) return;
+    if (this.onmessage) this.onmessage({ data: message });
+  }
+}
+
+function installManualWorkerFactory() {
+  const created = [];
+  _setWorkerFactoryForTests(() => {
+    const w = new ManualRecommendationWorker();
+    created.push(w);
+    return w;
+  });
+  return created;
+}
+
+describe('V3.0 Phase 7B -- Calculate busy state / Cancel / duplicate protection', () => {
+  test('9. busy state: Calculate shows the busy label and is disabled, Cancel becomes visible, while a calculation is in flight -- both revert once it resolves', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    const workers = installManualWorkerFactory();
+
+    assert.equal(recommendationCancelBtn(pageEl).hidden, true);
+    assert.equal(recommendationCalculateBtn(pageEl).disabled, false, 'not busy before the first click');
+
+    recommendationCalculateBtn(pageEl).fire('click');
+
+    assert.equal(recommendationCalculateBtn(pageEl).disabled, true);
+    assert.equal(recommendationCalculateBtn(pageEl).textContent, idCatalog['calculate.recommendation.calculating']);
+    assert.equal(recommendationCancelBtn(pageEl).hidden, false);
+    assert.equal(recommendationCancelBtn(pageEl).textContent, idCatalog['calculate.recommendation.cancel']);
+
+    const worker = workers[0];
+    const result = findBlendRecommendations(worker.posted[0].input);
+    worker.reply({ type: 'RESULT', requestId: worker.posted[0].requestId, result });
+    await _waitForRecommendationCalculationForTests();
+
+    assert.equal(recommendationCalculateBtn(pageEl).disabled, false);
+    assert.equal(recommendationCalculateBtn(pageEl).textContent, idCatalog['calculate.recommendation.calculate']);
+    assert.equal(recommendationCancelBtn(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false, 'the resolved result must actually be rendered');
+  });
+
+  test('10. duplicate Calculate protected: a second click while busy starts no second request (button disabled AND the handler-level guard both hold)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    const workers = installManualWorkerFactory();
+
+    recommendationCalculateBtn(pageEl).fire('click');
+    // Fired directly (bypassing the FakeElement harness's lack of a real
+    // `disabled` semantics) to prove the GUARD ITSELF, not just the
+    // button's disabled attribute, prevents a second concurrent request.
+    recommendationCalculateBtn(pageEl).fire('click');
+
+    assert.equal(workers.length, 1, 'no second Worker may be created while one is already active');
+    assert.equal(workers[0].posted.length, 1, 'no second CALCULATE message may be posted while one is already active');
+
+    const worker = workers[0];
+    worker.reply({ type: 'RESULT', requestId: worker.posted[0].requestId, result: findBlendRecommendations(worker.posted[0].input) });
+    await _waitForRecommendationCalculationForTests();
+  });
+
+  test('11a. Cancel terminates the active Worker and preserves the EXISTING result exactly (never shows an error, never fabricates a new result)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl); // real committed result via beforeEach's auto-fake
+    const before = recommendationResultRoot(pageEl).textContent;
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+
+    const workers = installManualWorkerFactory();
+    recommendationCalculateBtn(pageEl).fire('click');
+    assert.equal(workers.length, 1);
+
+    await clickCancelRecommendation(pageEl);
+
+    assert.equal(workers[0].terminated, true, 'Cancel must actually terminate the Worker (CPU-bound work cannot be stopped any other way)');
+    assert.equal(recommendationCalculateBtn(pageEl).disabled, false);
+    assert.equal(recommendationCancelBtn(pageEl).hidden, true);
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, true, 'cancellation must never be shown as a calculation failure');
+    assert.equal(recommendationResultRoot(pageEl).textContent, before, 'the previous result must survive a cancelled recalculation attempt completely unchanged');
+  });
+
+  test('11b. after Cancel, the NEXT Calculate lazily creates a brand-new Worker and can still produce a fresh committed result', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+
+    const workers = installManualWorkerFactory();
+    recommendationCalculateBtn(pageEl).fire('click');
+    await clickCancelRecommendation(pageEl);
+    assert.equal(workers.length, 1);
+
+    recommendationCalculateBtn(pageEl).fire('click');
+    assert.equal(workers.length, 2, 'the next calculation must use a freshly-created Worker, never the terminated one');
+    const worker = workers[1];
+    worker.reply({ type: 'RESULT', requestId: worker.posted[0].requestId, result: findBlendRecommendations(worker.posted[0].input) });
+    await _waitForRecommendationCalculationForTests();
+
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
+    assert.match(statusBadgeText(pageEl), new RegExp(idCatalog['calculate.recommendation.withinTolerance']));
+  });
+
+  test('cancelling with NO prior result leaves the result subtree hidden and shows no error -- never fabricates a recommendation', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    const workers = installManualWorkerFactory();
+
+    recommendationCalculateBtn(pageEl).fire('click');
+    await clickCancelRecommendation(pageEl);
+
+    assert.equal(workers[0].terminated, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, true);
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
+  });
+
+  test('a Worker runtime/infrastructure failure shows a distinct, localized error (never SEARCH_INCOMPLETE/noFeasibleCandidate wording, never a fabricated result), and a subsequent retry can still succeed', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+
+    const workers = installManualWorkerFactory();
+    recommendationCalculateBtn(pageEl).fire('click');
+    const worker = workers[0];
+    worker.reply({ type: 'ERROR', requestId: worker.posted[0].requestId, error: 'simulated worker crash' });
+    await _waitForRecommendationCalculationForTests();
+
+    assert.equal(recommendationCalculateBtn(pageEl).disabled, false, 'busy state must clear even on infrastructure failure');
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, false);
+    assert.equal(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.workerError']);
+    assert.notEqual(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.searchIncomplete']);
+    assert.notEqual(recommendationEngineErrorText(pageEl).textContent, idCatalog['calculate.recommendation.noFeasibleCandidate']);
+    assert.equal(recommendationResultRoot(pageEl).hidden, true, 'no result existed before this attempt, so none may appear now');
+
+    // Retry (this task's Section 9 "allow Retry") -- a plain subsequent
+    // Calculate click, now via a Worker that actually replies, must still
+    // succeed. Still going through the manual factory installed above
+    // (the override persists for the rest of this test), so it is
+    // answered manually rather than via clickCalculateRecommendation()'s
+    // own auto-resolving beforeEach() default. An ERROR protocol message
+    // (findBlendRecommendations() threw, but the Worker itself caught it
+    // and posted a normal reply) does NOT terminate the Worker -- unlike
+    // Cancel/a genuine onerror runtime crash (both covered in
+    // tests/recommendation-worker-client.test.mjs), the Worker process
+    // itself never died here, so it is safely reused for the retry rather
+    // than recreated.
+    recommendationCalculateBtn(pageEl).fire('click');
+    assert.equal(workers.length, 1, 'the still-alive Worker is reused for the retry, not recreated');
+    const retryWorker = workers[0];
+    retryWorker.reply({ type: 'RESULT', requestId: retryWorker.posted[1].requestId, result: findBlendRecommendations(retryWorker.posted[1].input) });
+    await _waitForRecommendationCalculationForTests();
+    assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
+    assert.equal(recommendationResultRoot(pageEl).hidden, false);
   });
 });

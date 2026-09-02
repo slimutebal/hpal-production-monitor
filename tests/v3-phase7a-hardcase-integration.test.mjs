@@ -259,3 +259,50 @@ describe('V3.0 Phase 7A -- MITM precondition / fallback contract', () => {
     assert.equal(hard.diagnostics.mitmActivated, false);
   });
 });
+
+// ============================================================
+// V3.0 Phase 7A.1 -- PREFLIGHT DISPATCH (this task's own Sections 1-4/7).
+// The hybrid now skips the NORMAL_ENGINE_PROBE_NODES probe entirely for
+// shapes whose cheap, already-computed metadata (every Contractor group's
+// operational allocation count, and their theoretical Cartesian product)
+// makes the probe's failure a foregone conclusion -- see
+// shouldDispatchHardCaseDirectly()'s own comment in blending-recommendation.js.
+// These tests cover the SAFETY side of that optimization (this task's
+// Section 7): a preflight "hard" prediction must NEVER fabricate a result
+// when the direct hard-case attempt can't establish its own A+B
+// precondition -- it must fall back to the exact same safety behavior
+// Phase 7A already had (NORMAL_BNB probe, then SEARCH_INCOMPLETE if that
+// also can't resolve it).
+// ============================================================
+describe('V3.0 Phase 7A.1 -- preflight dispatch fallback safety (negative cases)', () => {
+  // 4 Contractor groups x 241 operational allocations each (product
+  // ~3.37e9) -- clears BOTH preflight thresholds (this task's own Section
+  // 1), so the direct hard-case attempt runs FIRST here, never the probe.
+  const HARD_SHAPE = buildScenarioSources([2, 2, 2, 2], 15);
+
+  test('an obviously-hard shape whose direct MITM attempt cannot resolve within budget still returns the exact NORMAL_BNB fallback result (no fabrication)', () => {
+    const result = findBlendRecommendations({ targetNi: '1.02', tolerance: '0.005', sources: HARD_SHAPE });
+    assert.equal(statusOf(result), 'OK');
+    assert.equal(result.solverPath, 'NORMAL_BNB', 'the direct hard-case attempt could not establish its A+B precondition here, so the SAFETY NET (existing NORMAL_BNB probe), never a fabricated MITM answer, must be what produced this result');
+    assert.ok(result.candidate.withinTolerance);
+  });
+
+  test('an obviously-hard shape with a genuinely unreachable target ends in the same honest SEARCH_INCOMPLETE Phase 7A itself would have reached -- never a fabricated OK', () => {
+    const result = findBlendRecommendations({ targetNi: '5.0', tolerance: '0.01', sources: HARD_SHAPE });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'SEARCH_INCOMPLETE');
+    assert.equal(result.solverPath, 'HARDCASE_MITM');
+  });
+
+  test('TARGET_NOT_ACHIEVABLE remains reachable and exact through the production hybrid (this task\'s own Section 6)', () => {
+    // Every source's Ni is on the SAME side of target -- no within-tolerance
+    // candidate can ever exist (same construction as
+    // tests/v3-phase6h-source-prefix-propagation.test.mjs's own
+    // SCENARIO_UNACHIEVABLE).
+    const sources = buildScenarioSources([2, 2], 10, '1.35', '1.32');
+    const result = findBlendRecommendations({ targetNi: TARGET_NI, tolerance: TOLERANCE, sources });
+    assert.equal(statusOf(result), 'TARGET_NOT_ACHIEVABLE');
+    assert.ok(result.candidate);
+    assert.ok(result.gap > 0);
+  });
+});

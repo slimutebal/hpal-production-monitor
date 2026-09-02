@@ -88,6 +88,7 @@ import {
   buildQueueVersionConflictReviewMessage,
 } from './settings-personnel.js';
 import { getPreferences, setAppearance, VALID_LOCALES, VALID_APPEARANCES } from '../../services/app-preferences-service.js';
+import { APP_NAME, APP_VERSION } from '../../shared/app-version.js';
 import { t, setLocale as applyLocale, onLocaleChange, translatePage } from '../../i18n/i18n.js';
 import { onRouteChange } from '../../router.js';
 import {
@@ -299,6 +300,7 @@ function buildMarkup(fullAccess) {
     <div class="settings-shell">
       <header class="settings-header">
         <h1 class="settings-title" data-i18n="settings.pageTitle">Settings</h1>
+        <p class="settings-app-version" id="settings-app-version">${APP_NAME} · ${APP_VERSION}</p>
       </header>
 
       <h2 class="settings-section-label" data-i18n="settings.section.access">Access</h2>

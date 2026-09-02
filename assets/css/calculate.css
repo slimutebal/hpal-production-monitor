@@ -269,6 +269,20 @@
   flex: 1;
 }
 
+/* V3.0 Phase 7B -- Cancel (this task's Section 6): visually secondary to
+   the primary Calculate action, shown only while a Worker calculation is
+   in flight (renderRecommendationBusyState() in calculate-page.js). */
+#page-calculate .calculate-btn-secondary {
+  background: transparent;
+  color: var(--text, #e6edf7);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.18));
+}
+
+#page-calculate .calculate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 #page-calculate .calculate-btn:focus-visible {
   outline: 2px solid var(--accent, #38bdf8);
   outline-offset: 2px;
