@@ -175,6 +175,17 @@ export default {
   'calculate.recommendation.hopperSequence': 'Urutan Hopper',
   'calculate.recommendation.sourceBreakdown': 'Rincian Fleet Sumber',
 
+  // V3.0 UI Polish -- Final Recommendation Summary table (presentation-only,
+  // between Rincian Fleet Sumber and Penyesuaian Fleet). 'source'/'class'/
+  // 'hauler'/'total' are the same literal word in both locales by design.
+  'calculate.recommendation.finalSummary.title': 'Ringkasan Rekomendasi Akhir',
+  'calculate.recommendation.finalSummary.source': 'Source',
+  'calculate.recommendation.finalSummary.class': 'Class',
+  'calculate.recommendation.finalSummary.dtFinal': 'DT Final',
+  'calculate.recommendation.finalSummary.tonnage': 'Tonase (Wmt)',
+  'calculate.recommendation.finalSummary.hauler': 'Hauler',
+  'calculate.recommendation.finalSummary.total': 'TOTAL',
+
   'calculate.recommendation.targetNotAchievable': 'Target Tidak Dapat Dicapai',
   'calculate.recommendation.bestAttainable': 'Terbaik yang Dapat Dicapai',
   'calculate.recommendation.gap': 'Selisih',

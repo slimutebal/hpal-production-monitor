@@ -383,6 +383,27 @@ function relocationRows(pageEl) {
   return findAll(pageEl, hasClass('calculate-recommendation-relocation-row'));
 }
 
+// V3.0 UI Polish -- Final Recommendation Summary table helpers.
+function finalSummaryRoot(pageEl) {
+  return findOne(pageEl, hasClass('calculate-final-summary'));
+}
+
+function finalSummaryDataRows(pageEl) {
+  return findAll(pageEl, hasClass('calculate-final-summary__row'));
+}
+
+function finalSummaryTotalRow(pageEl) {
+  return findOne(pageEl, hasClass('calculate-final-summary__total-row'));
+}
+
+function finalSummaryHeaderTexts(pageEl) {
+  return findAll(finalSummaryRoot(pageEl), isTag('th')).map((th) => th.textContent);
+}
+
+function rowCellTexts(row) {
+  return findAll(row, isTag('td')).map((td) => td.textContent);
+}
+
 /* ============================================================
    MATERIAL ACTIONS / FLEET ACTIONS helpers (V2.4 Phase 5, this task)
 ============================================================ */
@@ -3911,5 +3932,384 @@ describe('V3.0 Phase 7B -- Calculate busy state / Cancel / duplicate protection'
     await _waitForRecommendationCalculationForTests();
     assert.equal(recommendationEngineErrorText(pageEl).hidden, true);
     assert.equal(recommendationResultRoot(pageEl).hidden, false);
+  });
+});
+
+/* ============================================================
+   V3.0 UI POLISH -- Final Recommendation Summary table. Presentation-only:
+   renders directly from the already-selected `candidate`, between Rincian
+   Fleet Sumber (calculate-recommendation-sources-details) and Penyesuaian
+   Fleet (calculate-recommendation-relocations). Column order is fixed:
+   Source, Class, Ni (%), DT Final, Tonase (Wmt), Hauler -- so row-cell
+   assertions below index [0]=Source [1]=Class [2]=Ni [3]=DT Final
+   [4]=Tonase [5]=Hauler. Reference scenario reuses mountRecommendationReadyOn()
+   -- Higher/SMA Ni1.30/7 DT/50 t·DT-1, Lglo/TII Ni1.03/12 DT/50 t·DT-1,
+   Target 1.120%/±0.009 -- already proven elsewhere in this file (see "17.
+   Hopper Pattern...") to select Higher active=6 (surplus 1, so class MGLO
+   since 1.30 is <1.4) / Lglo active=12 (both active, so both rows show;
+   class LGLO since 1.03 <1.2), Estimated Ni 1.120%, 18/19 DT. Tonnage:
+   Higher 6*50=300, Lglo 12*50=600, total 900.
+============================================================ */
+describe('V3.0 UI Polish -- Final Recommendation Summary table', () => {
+  function sectionOrder(pageEl) {
+    const root = recommendationResultRoot(pageEl);
+    return root.children
+      .map((c) => (c.className || ''))
+      .map((cls) => {
+        if (cls.includes('calculate-recommendation-sources-details')) return 'sourceBreakdown';
+        if (cls.includes('calculate-final-summary')) return 'finalSummary';
+        if (cls.includes('calculate-recommendation-relocations')) return 'relocation';
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  test('renders after Rincian Fleet Sumber and before Penyesuaian Fleet when a relocation is present', async () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
+    await clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(sectionOrder(pageEl), ['sourceBreakdown', 'finalSummary', 'relocation']);
+  });
+
+  test('still renders directly after Rincian Fleet Sumber when there is no relocation (Penyesuaian Fleet absent)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(sectionOrder(pageEl), ['sourceBreakdown', 'finalSummary']);
+  });
+
+  test('title renders "Ringkasan Rekomendasi Akhir" (ID)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const title = findOne(finalSummaryRoot(pageEl), hasClass('calculate-subsection-label'));
+    assert.equal(title.textContent, 'Ringkasan Rekomendasi Akhir');
+    assert.equal(title.textContent, idCatalog['calculate.recommendation.finalSummary.title']);
+  });
+
+  test('title renders "Final Recommendation Summary" (EN)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+    setLocale('en');
+
+    const title = findOne(finalSummaryRoot(pageEl), hasClass('calculate-subsection-label'));
+    assert.equal(title.textContent, 'Final Recommendation Summary');
+    assert.equal(title.textContent, enCatalog['calculate.recommendation.finalSummary.title']);
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  test('column headers render Source / Class / Ni (%) / DT Final / Tonase (Wmt) / Hauler (ID)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    assert.deepEqual(finalSummaryHeaderTexts(pageEl), ['Source', 'Class', 'Ni (%)', 'DT Final', 'Tonase (Wmt)', 'Hauler']);
+  });
+
+  test('column headers render Source / Class / Ni (%) / Final DT / Tonnage (Wmt) / Hauler (EN)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+    setLocale('en');
+
+    assert.deepEqual(finalSummaryHeaderTexts(pageEl), ['Source', 'Class', 'Ni (%)', 'Final DT', 'Tonnage (Wmt)', 'Hauler']);
+    setLocale(DEFAULT_LOCALE);
+  });
+
+  test('one row per source: Source/Class/Ni/DT Final/Tonase/Hauler match the selected candidate', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    assert.equal(rows.length, 2);
+
+    // Higher: Ni 1.30 -> MGLO (1.2 <= Ni <= 1.4), assigned 7 / active 6 ->
+    // final < original -> red down-arrow indicator.
+    const higherCells = rowCellTexts(rows.find((r) => r.textContent.includes('Higher')));
+    assert.equal(higherCells[0], 'Higher');
+    assert.equal(higherCells[1], 'MGLO');
+    assert.equal(higherCells[2], '1.300%');
+    assert.equal(higherCells[3], '6 ↓');
+    assert.match(higherCells[4], /^300[,.]00$/);
+    assert.equal(higherCells[5], 'SMA');
+
+    // Lglo: Ni 1.03 -> LGLO (<1.2), assigned 12 / active 12 -> final ==
+    // original -> blue dot indicator.
+    const lgloCells = rowCellTexts(rows.find((r) => r.textContent.includes('Lglo')));
+    assert.equal(lgloCells[0], 'Lglo');
+    assert.equal(lgloCells[1], 'LGLO');
+    assert.equal(lgloCells[2], '1.030%');
+    assert.equal(lgloCells[3], '12 •');
+    assert.match(lgloCells[4], /^600[,.]00$/);
+    assert.equal(lgloCells[5], 'TII');
+  });
+
+  test('Class cell carries the HGLO/MGLO/LGLO color modifier class', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    const higherClassCell = findAll(rows.find((r) => r.textContent.includes('Higher')), isTag('td'))[1];
+    const lgloClassCell = findAll(rows.find((r) => r.textContent.includes('Lglo')), isTag('td'))[1];
+    assert.equal(higherClassCell.className.includes('calculate-final-summary__class--mglo'), true);
+    assert.equal(lgloClassCell.className.includes('calculate-final-summary__class--lglo'), true);
+  });
+
+  test('HGLO source gets its own dedicated color modifier class, distinct from MGLO/LGLO', async () => {
+    const pageEl = mountFullAccess();
+    // Higher/X Ni 2.00 -> HGLO (>1.4) -- same mountRecoveryReadyOn() fixture
+    // used elsewhere in this file.
+    mountRecoveryReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    const higherClassCell = findAll(rows.find((r) => r.textContent.includes('Higher')), isTag('td'))[1];
+    assert.equal(higherClassCell.textContent, 'HGLO');
+    assert.equal(higherClassCell.className.includes('calculate-final-summary__class--hglo'), true);
+    assert.equal(higherClassCell.className.includes('calculate-final-summary__class--mglo'), false);
+    assert.equal(higherClassCell.className.includes('calculate-final-summary__class--lglo'), false);
+  });
+
+  test('DT Final up-arrow: a source relocated ABOVE its own assigned units shows the green up indicator', async () => {
+    const pageEl = mountFullAccess();
+    // Same-Contractor relocation fixture (Higher/Lglo both SMA): Lglo is
+    // assigned 11 but receives 1 relocated DT from Higher, ending active=12
+    // -- final > original.
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    const lgloCells = rowCellTexts(rows.find((r) => r.textContent.includes('Lglo')));
+    assert.equal(lgloCells[3], '12 ↑');
+  });
+
+  test('sources whose final DT is 0 are still shown (Option B: "fleet mati" must remain visible), with the red X indicator', async () => {
+    const pageEl = mountFullAccess();
+    // Best-attainable candidate: Higher/X active=6 alone, Lglo/Y fully idle
+    // (activeUnits=0) -- same fixture as "34-38. PLANNED BLEND RECOVERY"'s
+    // mountRecoveryReadyOn(), confirmed there to select Higher only.
+    mountRecoveryReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    assert.equal(rows.length, 2);
+
+    const higherCells = rowCellTexts(rows.find((r) => r.textContent.includes('Higher')));
+    assert.equal(higherCells[0], 'Higher');
+    assert.equal(higherCells[5], 'X');
+
+    const lgloCells = rowCellTexts(rows.find((r) => r.textContent.includes('Lglo')));
+    assert.equal(lgloCells[0], 'Lglo');
+    assert.equal(lgloCells[3], '0 ✕');
+    assert.match(lgloCells[4], /^0[,.]00$/);
+    assert.equal(lgloCells[5], 'Y');
+  });
+
+  test('TOTAL row: DT Final and Tonase equal the sum of the displayed rows', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = finalSummaryDataRows(pageEl);
+    const totalDt = rows.reduce((sum, r) => sum + parseInt(rowCellTexts(r)[3], 10), 0);
+    const totalCells = rowCellTexts(finalSummaryTotalRow(pageEl));
+
+    assert.equal(totalDt, 18);
+    assert.equal(totalCells[0], idCatalog['calculate.recommendation.finalSummary.total']);
+    assert.equal(totalCells[3], String(totalDt));
+    assert.match(totalCells[4], /^900[,.]00$/);
+  });
+
+  test('TOTAL row Class cell is blank (em dash)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const totalCells = rowCellTexts(finalSummaryTotalRow(pageEl));
+    assert.equal(totalCells[1], '—');
+  });
+
+  test('TOTAL row Ni reuses the selected recommendation\'s final weighted Ni, never an arithmetic mean of the shown sources\' own Ni', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    // Arithmetic mean of 1.300% and 1.030% would be 1.165% -- the engine's
+    // actual tonnage-weighted estimatedNi for this candidate is 1.120%
+    // (already asserted elsewhere in this file, e.g. "17. Hopper
+    // Pattern...").
+    const totalCells = rowCellTexts(finalSummaryTotalRow(pageEl));
+    assert.equal(totalCells[2], '1.120%');
+    assert.notEqual(totalCells[2], '1.165%');
+  });
+
+  test('TOTAL row Hauler cell is blank', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const totalCells = rowCellTexts(finalSummaryTotalRow(pageEl));
+    assert.equal(totalCells[5], '');
+  });
+
+  test('the TOTAL row is visually distinguished from data rows via its own class', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    assert.equal(finalSummaryTotalRow(pageEl).className.includes('calculate-final-summary__total-row'), true);
+  });
+
+  test('Rincian Fleet Sumber is unaffected by this addition -- source breakdown rows still render as before', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const rows = sourceBreakdownRows(pageEl);
+    const higherRow = rows.find((r) => r.textContent.includes('Higher'));
+    assert.match(higherRow.textContent, /6 DT/);
+    assert.match(higherRow.textContent, new RegExp(`${idCatalog['calculate.recommendation.surplus']}: 1 DT`));
+  });
+
+  test('Penyesuaian Fleet is unaffected by this addition -- relocation rows still render as before', async () => {
+    const pageEl = mountFullAccess();
+    fillRow(gridRows(pageEl)[0], { pileId: 'Higher', contractor: 'SMA', ni: '1.30', units: '7', tonnesPerUnit: '50' });
+    fillRow(gridRows(pageEl)[1], { pileId: 'Lglo', contractor: 'SMA', ni: '1.03', units: '11', tonnesPerUnit: '50' });
+    fillRecommendationControls(pageEl, { targetNi: '1.120', tolerance: '0.009' });
+    await clickCalculateRecommendation(pageEl);
+
+    assert.equal(relocationRows(pageEl).length > 0, true);
+  });
+
+  test('the new section never leaks a raw i18n key into the rendered result', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    assert.doesNotMatch(finalSummaryRoot(pageEl).textContent, /\bcalculate\.[a-zA-Z]+\.[a-zA-Z]+\b/);
+  });
+});
+
+/* ============================================================
+   V3.0 UI POLISH -- ore-class colors + DT Final right alignment fix.
+   Presentation-only CSS correction to the Final Recommendation Summary
+   table above: (1) HGLO/MGLO/LGLO each get their own semantic Class-text
+   color rule (never coupled to the unrelated DT-indicator/status colors),
+   readable in both Dark and Light theme; (2) the DT Final column (4th, by
+   the fixed Source/Class/Ni/DT Final/Tonase/Hauler order) is right-aligned
+   instead of centered, for header, body, AND the TOTAL row, with its
+   status glyph staying part of the same cell/value (never a separate
+   column). This project has no jsdom/Playwright/Chromium (see this file's
+   own "V2.5 dynamic sticky-height contract" note), so alignment/color is
+   verified the same way this file's other CSS-contract describes do
+   (V2.5's sticky CSS contract, V2.4 Phase 8's theme-token guard): by
+   reading and pattern-matching the actual calculate.css rules, not
+   computed styles. DOM-level indicator glyph correctness (↑ ↓ • ✕) is
+   proven separately above (untouched by this fix) -- these tests cover
+   only the two things this fix actually changed.
+============================================================ */
+describe('V3.0 UI Polish -- ore-class colors and DT Final right alignment (CSS)', () => {
+  // Line endings normalized to LF -- calculate.css is checked out CRLF on
+  // this platform, and the multi-selector rules below are matched as
+  // literal (newline-containing) strings.
+  const calculateCss = readFileSync(path.join(ROOT, 'assets', 'css', 'calculate.css'), 'utf8').replace(/\r\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  function ruleFor(selector) {
+    const start = calculateCss.indexOf(`${selector} {`);
+    assert.ok(start >= 0, `expected a "${selector}" rule`);
+    return calculateCss.slice(start, calculateCss.indexOf('}', start));
+  }
+
+  test('HGLO gets its own dedicated color rule', async () => {
+    const rule = ruleFor('#page-calculate .calculate-final-summary__class--hglo');
+    assert.match(rule, /color:\s*[^;]+;/);
+  });
+
+  test('MGLO gets its own dedicated color rule', async () => {
+    const rule = ruleFor('#page-calculate .calculate-final-summary__class--mglo');
+    assert.match(rule, /color:\s*[^;]+;/);
+  });
+
+  test('LGLO gets its own dedicated color rule (brown), plus a Light-theme override for contrast', async () => {
+    const rule = ruleFor('#page-calculate .calculate-final-summary__class--lglo');
+    assert.match(rule, /color:\s*#[0-9a-f]{6};/i);
+    const lightRule = ruleFor('html[data-theme="light"] #page-calculate .calculate-final-summary__class--lglo');
+    assert.match(lightRule, /color:\s*#[0-9a-f]{6};/i);
+  });
+
+  test('all three Class color rules are defined in calculate.css, one selector each, with distinct color values', async () => {
+    const hglo = ruleFor('#page-calculate .calculate-final-summary__class--hglo').match(/color:\s*([^;]+);/)[1];
+    const mglo = ruleFor('#page-calculate .calculate-final-summary__class--mglo').match(/color:\s*([^;]+);/)[1];
+    const lglo = ruleFor('#page-calculate .calculate-final-summary__class--lglo').match(/color:\s*([^;]+);/)[1];
+    assert.notEqual(hglo, mglo);
+    assert.notEqual(mglo, lglo);
+    assert.notEqual(hglo, lglo);
+  });
+
+  test('Class color rules never reuse the DT-indicator/status color classes -- no selector couples them together', async () => {
+    assert.doesNotMatch(calculateCss, /\.calculate-final-summary__class--(hglo|mglo|lglo)[^{,]*\.calculate-final-summary__dt-icon/);
+    assert.doesNotMatch(calculateCss, /\.calculate-final-summary__dt-icon[^{,]*\.calculate-final-summary__class--(hglo|mglo|lglo)/);
+  });
+
+  test('Class color rules only ever set `color` -- they color the text, never the whole cell/row (no background/border)', async () => {
+    ['hglo', 'mglo', 'lglo'].forEach((cls) => {
+      const rule = ruleFor(`#page-calculate .calculate-final-summary__class--${cls}`);
+      assert.doesNotMatch(rule, /background|border/);
+    });
+  });
+
+  test('the DT Final column (4th) is right-aligned for both header and body cells', async () => {
+    const rule = ruleFor('#page-calculate .calculate-final-summary__table th:nth-child(4),\n#page-calculate .calculate-final-summary__table td:nth-child(4)');
+    assert.match(rule, /text-align:\s*right;/);
+  });
+
+  test('the other three centered columns (Class/Ni/Tonase) no longer include DT Final\'s nth-child(4) in their group', async () => {
+    const centerGroupStart = calculateCss.indexOf('th:nth-child(2),');
+    const centerGroupEnd = calculateCss.indexOf('}', centerGroupStart);
+    const centerGroup = calculateCss.slice(centerGroupStart, centerGroupEnd);
+    assert.doesNotMatch(centerGroup, /nth-child\(4\)/);
+    assert.match(centerGroup, /text-align:\s*center;/);
+  });
+
+  test('the DT Final right-alignment rule targets th/td generically (no thead-/tbody-/tfoot-only scoping), so the TOTAL row (tfoot) picks it up automatically', async () => {
+    const rule = ruleFor('#page-calculate .calculate-final-summary__table th:nth-child(4),\n#page-calculate .calculate-final-summary__table td:nth-child(4)');
+    assert.doesNotMatch(rule, /\b(thead|tbody|tfoot)\b/);
+    // and no separate TOTAL-row override exists that could fight it back to center/left
+    assert.doesNotMatch(calculateCss, /\.calculate-final-summary__total-row[^{]*nth-child\(4\)[^{]*\{\s*text-align:\s*(center|left)/);
+  });
+
+  test('DOM proof: the TOTAL row DT Final cell carries the same numeric cell class as body DT Final cells (both styled by the single generic nth-child(4) rule, not a per-row exception)', async () => {
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+
+    const bodyDtCell = findAll(finalSummaryDataRows(pageEl)[0], isTag('td'))[3];
+    const totalDtCell = findAll(finalSummaryTotalRow(pageEl), isTag('td'))[3];
+    assert.equal(bodyDtCell.className.includes('calculate-final-summary__num'), true);
+    assert.equal(totalDtCell.className.includes('calculate-final-summary__num'), true);
+  });
+
+  test('regression: the ↑ ↓ • ✕ DT Final indicator glyphs and their up/down/same/zero color classes are unchanged by this alignment/color fix', async () => {
+    assert.match(calculateCss, /#page-calculate \.calculate-final-summary__dt-icon--up\s*\{\s*color:\s*var\(--good/);
+    assert.match(calculateCss, /#page-calculate \.calculate-final-summary__dt-icon--down\s*\{\s*color:\s*var\(--bad/);
+    assert.match(calculateCss, /#page-calculate \.calculate-final-summary__dt-icon--same\s*\{\s*color:\s*var\(--accent,/);
+    assert.match(calculateCss, /#page-calculate \.calculate-final-summary__dt-icon--zero\s*\{\s*color:\s*var\(--bad/);
+
+    const pageEl = mountFullAccess();
+    mountRecommendationReadyOn(pageEl);
+    await clickCalculateRecommendation(pageEl);
+    const rows = finalSummaryDataRows(pageEl);
+    assert.equal(rowCellTexts(rows.find((r) => r.textContent.includes('Higher')))[3], '6 ↓');
+    assert.equal(rowCellTexts(rows.find((r) => r.textContent.includes('Lglo')))[3], '12 •');
   });
 });

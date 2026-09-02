@@ -116,6 +116,17 @@ export default {
   'calculate.recommendation.hopperSequence': 'Hopper Sequence',
   'calculate.recommendation.sourceBreakdown': 'Source Fleet Breakdown',
 
+  // V3.0 UI Polish -- Final Recommendation Summary table (presentation-only,
+  // between Source Fleet Breakdown and Fleet Adjustment). 'source'/'class'/
+  // 'hauler'/'total' are the same literal word in both locales by design.
+  'calculate.recommendation.finalSummary.title': 'Final Recommendation Summary',
+  'calculate.recommendation.finalSummary.source': 'Source',
+  'calculate.recommendation.finalSummary.class': 'Class',
+  'calculate.recommendation.finalSummary.dtFinal': 'Final DT',
+  'calculate.recommendation.finalSummary.tonnage': 'Tonnage (Wmt)',
+  'calculate.recommendation.finalSummary.hauler': 'Hauler',
+  'calculate.recommendation.finalSummary.total': 'TOTAL',
+
   'calculate.recommendation.targetNotAchievable': 'Target Not Achievable',
   'calculate.recommendation.bestAttainable': 'Best Attainable',
   'calculate.recommendation.gap': 'Gap',

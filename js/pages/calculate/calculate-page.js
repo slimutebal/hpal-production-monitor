@@ -1368,6 +1368,12 @@ function buildRecommendationResultChildren(result) {
   nodes.push(buildRatiosRow(candidate));
   nodes.push(buildSourceBreakdownDetails(candidate));
 
+  // FINAL RECOMMENDATION SUMMARY (V3.0 UI Polish) -- presentation-only
+  // table between Rincian Fleet Sumber and Penyesuaian Fleet. Reads
+  // directly from THIS already-selected `candidate`, never recomputed --
+  // see buildFinalSummarySection()'s own header comment.
+  nodes.push(buildFinalSummarySection(candidate));
+
   // PENYESUAIAN FLEET -> AKSI FLEET -> AKSI MATERIAL (this task's Section
   // 16/18-20): relocation/fleet-planning detail comes first, then what
   // each physical DT should do, then material interpretation last -- this
@@ -1664,6 +1670,129 @@ function buildRecommendationSourceRow(source) {
   }
 
   return row;
+}
+
+// FINAL RECOMMENDATION SUMMARY (V3.0 UI Polish) -- presentation-only.
+// Renders directly from the already-selected `candidate` (never a new
+// calculation): ALL of candidate.sources, same list Rincian Fleet Sumber
+// itself renders from, deliberately UNFILTERED by activeUnits so a source
+// whose final DT becomes 0 ("fleet mati") still gets its own row. Uses
+// each source's own pre-computed cycleTonnage (activeUnits * tonnesPerUnit,
+// established in blending-recommendation.js's buildCandidate()) for
+// Tonase. The TOTAL row's Ni reuses candidate.estimatedNi -- the same
+// already-established final weighted Ni used everywhere else in this
+// result -- never a plain arithmetic mean of the displayed sources' own Ni
+// values.
+function buildFinalSummarySection(candidate) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calculate-final-summary';
+
+  const title = document.createElement('h3');
+  title.className = 'calculate-subsection-label';
+  title.textContent = t('calculate.recommendation.finalSummary.title');
+  wrap.appendChild(title);
+
+  const scroll = document.createElement('div');
+  scroll.className = 'calculate-final-summary__scroll';
+
+  const table = document.createElement('table');
+  table.className = 'calculate-final-summary__table';
+  scroll.appendChild(table);
+  wrap.appendChild(scroll);
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  [
+    t('calculate.recommendation.finalSummary.source'),
+    t('calculate.recommendation.finalSummary.class'),
+    t('calculate.fields.ni'),
+    t('calculate.recommendation.finalSummary.dtFinal'),
+    t('calculate.recommendation.finalSummary.tonnage'),
+    t('calculate.recommendation.finalSummary.hauler'),
+  ].forEach((label) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  let totalActiveUnits = 0;
+  let totalTonnage = 0;
+  candidate.sources.forEach((source) => {
+    totalActiveUnits += source.activeUnits;
+    totalTonnage += source.cycleTonnage;
+    tbody.appendChild(buildFinalSummaryRow(source));
+  });
+  table.appendChild(tbody);
+
+  const tfoot = document.createElement('tfoot');
+  const totalRow = document.createElement('tr');
+  totalRow.className = 'calculate-final-summary__total-row';
+  totalRow.appendChild(buildFinalSummaryCell(t('calculate.recommendation.finalSummary.total')));
+  totalRow.appendChild(buildFinalSummaryCell(EM_DASH));
+  totalRow.appendChild(buildFinalSummaryCell(`${candidate.estimatedNi.toFixed(3)}%`, 'calculate-final-summary__num'));
+  totalRow.appendChild(buildFinalSummaryCell(fmtRit(totalActiveUnits), 'calculate-final-summary__num'));
+  totalRow.appendChild(buildFinalSummaryCell(fmtTon(totalTonnage), 'calculate-final-summary__num'));
+  totalRow.appendChild(buildFinalSummaryCell(''));
+  tfoot.appendChild(totalRow);
+  table.appendChild(tfoot);
+
+  return wrap;
+}
+
+// oreClass (HGLO/MGLO/LGLO) -> the CSS modifier class that colors just the
+// Class cell's text, per the requested green/yellow/brown scheme.
+const FINAL_SUMMARY_CLASS_COLOR = {
+  HGLO: 'calculate-final-summary__class--hglo',
+  MGLO: 'calculate-final-summary__class--mglo',
+  LGLO: 'calculate-final-summary__class--lglo',
+};
+
+function buildFinalSummaryRow(source) {
+  const row = document.createElement('tr');
+  row.className = 'calculate-final-summary__row';
+  row.appendChild(buildFinalSummaryCell(source.pileId));
+  row.appendChild(buildFinalSummaryCell(source.oreClass || EM_DASH, FINAL_SUMMARY_CLASS_COLOR[source.oreClass]));
+  row.appendChild(buildFinalSummaryCell(`${source.ni.toFixed(3)}%`, 'calculate-final-summary__num'));
+  row.appendChild(buildFinalSummaryDtCell(source.activeUnits, source.assignedUnits));
+  row.appendChild(buildFinalSummaryCell(fmtTon(source.cycleTonnage), 'calculate-final-summary__num'));
+  row.appendChild(buildFinalSummaryCell(source.contractor));
+  return row;
+}
+
+// DT Final cell: the numeric final active DT plus a status glyph comparing
+// it against the source's own original/current assignedUnits (before this
+// recommendation). Zero is checked FIRST and always renders the red "✕",
+// even though 0 is also, mathematically, "less than assigned" -- a dead
+// source must read as dead, not merely "reduced".
+function finalSummaryDtIndicator(activeUnits, assignedUnits) {
+  if (activeUnits === 0) return { symbol: '✕', modifier: 'calculate-final-summary__dt-icon--zero' };
+  if (activeUnits > assignedUnits) return { symbol: '↑', modifier: 'calculate-final-summary__dt-icon--up' };
+  if (activeUnits < assignedUnits) return { symbol: '↓', modifier: 'calculate-final-summary__dt-icon--down' };
+  return { symbol: '•', modifier: 'calculate-final-summary__dt-icon--same' };
+}
+
+function buildFinalSummaryDtCell(activeUnits, assignedUnits) {
+  const td = document.createElement('td');
+  td.className = 'calculate-final-summary__num';
+  const value = document.createElement('span');
+  value.textContent = `${fmtRit(activeUnits)} `;
+  td.appendChild(value);
+  const { symbol, modifier } = finalSummaryDtIndicator(activeUnits, assignedUnits);
+  const icon = document.createElement('span');
+  icon.className = `calculate-final-summary__dt-icon ${modifier}`;
+  icon.textContent = symbol;
+  td.appendChild(icon);
+  return td;
+}
+
+function buildFinalSummaryCell(text, extraClass) {
+  const td = document.createElement('td');
+  if (extraClass) td.className = extraClass;
+  td.textContent = text;
+  return td;
 }
 
 // Same-Contractor relocation detail -- purely displays the relocations

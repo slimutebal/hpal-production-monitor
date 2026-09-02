@@ -863,6 +863,118 @@
   color: var(--accent2, #fbbf24);
 }
 
+/* ---- Final Recommendation Summary table (V3.0 UI Polish) --
+   presentation-only, real <table> inside a horizontally-scrollable
+   wrapper (never stacked cards) so it stays readable at any mobile
+   width without wrapping numeric columns. ---- */
+#page-calculate .calculate-final-summary {
+  margin-top: 16px;
+}
+#page-calculate .calculate-final-summary__scroll {
+  overflow-x: auto;
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: var(--glass, rgba(255, 255, 255, 0.035));
+}
+#page-calculate .calculate-final-summary__table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+#page-calculate .calculate-final-summary__table th,
+#page-calculate .calculate-final-summary__table td {
+  padding: 8px 8px;
+  white-space: nowrap;
+}
+/* Column-position alignment (fixed order: Source, Class, Ni, DT Final,
+   Tonase, Hauler) -- Source/Hauler stay left-aligned text, Class/Ni/Tonase
+   are centered, and DT Final is right-aligned (V3.0 UI Polish fix) so its
+   number and status glyph read as one right-flushed value together --
+   this selector is generic across thead/tbody/tfoot, so the TOTAL row's
+   DT Final cell picks up the same right alignment automatically. */
+#page-calculate .calculate-final-summary__table th:nth-child(1),
+#page-calculate .calculate-final-summary__table td:nth-child(1),
+#page-calculate .calculate-final-summary__table th:nth-child(6),
+#page-calculate .calculate-final-summary__table td:nth-child(6) {
+  text-align: left;
+}
+#page-calculate .calculate-final-summary__table th:nth-child(2),
+#page-calculate .calculate-final-summary__table td:nth-child(2),
+#page-calculate .calculate-final-summary__table th:nth-child(3),
+#page-calculate .calculate-final-summary__table td:nth-child(3),
+#page-calculate .calculate-final-summary__table th:nth-child(5),
+#page-calculate .calculate-final-summary__table td:nth-child(5) {
+  text-align: center;
+}
+#page-calculate .calculate-final-summary__table th:nth-child(4),
+#page-calculate .calculate-final-summary__table td:nth-child(4) {
+  text-align: right;
+}
+#page-calculate .calculate-final-summary__table thead th {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted, #8fa3bd);
+  border-bottom: 1px solid var(--glass-border, rgba(255, 255, 255, 0.12));
+}
+#page-calculate .calculate-final-summary__table tbody td {
+  color: var(--text, inherit);
+  border-bottom: 1px solid var(--glass-border-soft, rgba(255, 255, 255, 0.07));
+}
+#page-calculate .calculate-final-summary__table tbody tr:last-child td {
+  border-bottom: none;
+}
+#page-calculate .calculate-final-summary__table .calculate-final-summary__num {
+  font-variant-numeric: tabular-nums;
+}
+/* Class column -- color only the class text, same green/yellow/brown
+   convention as the rest of the app's HGLO/MGLO/LGLO badges. */
+#page-calculate .calculate-final-summary__class--hglo {
+  color: var(--good, #34d399);
+}
+#page-calculate .calculate-final-summary__class--mglo {
+  color: var(--accent2, #fbbf24);
+}
+#page-calculate .calculate-final-summary__class--lglo {
+  color: #c08a5c;
+}
+/* Light theme's card background is near-white, where this same tan/brown
+   drops to roughly 2.7:1 contrast (fails WCAG AA) -- a single flat color
+   cannot clear AA against both a near-black and a near-white background
+   (the app's own --good/--bad/--accent2 tokens each carry two values for
+   exactly this reason), so LGLO gets a darker brown here, ~5.2:1 against
+   the light card background. */
+html[data-theme="light"] #page-calculate .calculate-final-summary__class--lglo {
+  color: #8a5a2b;
+}
+/* DT Final status glyph -- part of the DT Final cell, never its own
+   column. */
+#page-calculate .calculate-final-summary__dt-icon {
+  margin-left: 2px;
+  font-weight: 700;
+}
+#page-calculate .calculate-final-summary__dt-icon--up {
+  color: var(--good, #34d399);
+}
+#page-calculate .calculate-final-summary__dt-icon--down {
+  color: var(--bad, #f87171);
+}
+#page-calculate .calculate-final-summary__dt-icon--same {
+  color: var(--accent, #38bdf8);
+}
+#page-calculate .calculate-final-summary__dt-icon--zero {
+  color: var(--bad, #f87171);
+}
+#page-calculate .calculate-final-summary__total-row td {
+  font-weight: 800;
+  color: var(--text, inherit);
+  background: var(--accent-chip, rgba(56, 189, 248, 0.12));
+  border-top: 2px solid var(--accent, #38bdf8);
+  border-bottom: none;
+}
+
 /* ---- Same-Contractor relocation detail (this task's Section 14) ---- */
 #page-calculate .calculate-recommendation-relocations {
   margin-top: 14px;
