@@ -3,7 +3,7 @@
 **HPAL Production Monitor** adalah aplikasi web/PWA untuk monitoring hauling Limonite, perhitungan blending, rekomendasi feeding dan pembuatan laporan produksi harian dari file Excel timbangan.
 
 **Live App:** https://slimutebal.github.io/hpal-production-monitor/  
-**Current Release:** `v3.0.0 — Scalable Exact Recommendation Engine`
+**Current Release:** `v3.0.1 — DAP/EXW Split YTD Reporting`
 
 Aplikasi dapat digunakan langsung dari browser atau dipasang ke Home Screen/Desktop. Perhitungan utama dilakukan langsung di perangkat.
 
@@ -595,6 +595,8 @@ Alur utama:
 ### Fitur utama
 
 - Deteksi format workbook otomatis.
+- Deteksi buyer otomatis.
+- Deteksi delivery term DAP / EXW otomatis.
 - Week ISO otomatis.
 - Deteksi Day/Night Shift dari data timbang.
 - Personnel Directory.
@@ -602,13 +604,21 @@ Alur utama:
 - FRM.
 - 3rd Sampler.
 - PIC 3rd.
-- Area.
+- Loading Point / Area.
 - Daily.
 - WTD.
 - MTD.
-- YTD.
+- YTD DAP.
+- YTD EXW.
 - Preview laporan.
 - Copy Laporan.
+
+Report secara otomatis mengidentifikasi delivery term dari kode selling pada workbook:
+
+- Kode selling mengandung `EX` → EXW.
+- Kode selling tanpa `EX` → DAP.
+
+Daily, WTD, dan MTD tetap berupa total produksi gabungan. Akumulasi tahunan (YTD) dipisah menjadi YTD DAP dan YTD EXW. Arsitektur ini berlaku untuk seluruh FPP (HYNC, SLNC, EIEB), meskipun EXW saat ini secara operasional baru muncul pada data EIEB.
 
 ### Cara menggunakan
 
@@ -760,6 +770,17 @@ Dokumen keputusan teknis dan domain tersedia di folder `docs/`.
 ---
 
 ## Changelog
+
+### v3.0.1
+
+- Report kini mendeteksi DAP / EXW secara otomatis dari kode selling pada workbook yang diunggah.
+- Akumulasi Report tahunan dipisah menjadi `YTD DAP` dan `YTD EXW`.
+- Daily, WTD, dan MTD tetap berupa total produksi gabungan.
+- Output produksi WhatsApp kini hanya menampilkan nilai tonase, tanpa ritase kumulatif.
+- Workbook dengan campuran DAP/EXW diblokir agar report tidak ambigu.
+- Report YTD tunggal (format lama) gagal secara aman (fail closed) dan tidak menebak alokasi historis DAP/EXW.
+- Arsitektur DAP/EXW berlaku bersama untuk HYNC, SLNC, dan EIEB.
+- Cache PWA diperbarui agar perangkat yang sudah terpasang menerima modul Report terbaru.
 
 ### v3.0.0
 

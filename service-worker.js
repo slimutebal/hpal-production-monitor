@@ -1,16 +1,12 @@
-// V3.0.0: the V3.0 release version bump (Phase 7C release finalization),
-// superseding the interim v2.5.3-recommendation-worker identifier Phase 7B
-// used while the Worker boundary was being built. The executable Calculate
-// app shell changed across Phase 7A-7C -- recommendation-worker.js and
-// recommendation-worker-client.js are new, and calculate-page.js's own
-// import graph changed (findBlendRecommendations() is no longer imported
-// there directly; the Worker client is) -- so an already-installed PWA
-// must never keep serving a mixed old/new cache: an old cached
-// calculate-page.js talking to a Worker file that was never precached
-// would fail offline. Evicts every older cache via the existing
+// V3.0.1: Report application-shell assets changed -- shared-report-profile.js,
+// report-page.js, report-utils.js and the ESG format adapters now carry
+// DAP/EXW delivery-term detection and split YTD DAP / YTD EXW accumulation,
+// replacing the old single combined YTD. An already-installed PWA must not
+// keep serving the v3.0.0 cached Report modules, which parse and render
+// annual accumulation differently. Evicts every older cache via the existing
 // activate-time cleanup (no second version source; this is the ONE place
 // a release's cache identity is declared).
-const CACHE_NAME = 'hpal-production-monitor-v3.0.0-scalable-recommendation-engine';
+const CACHE_NAME = 'hpal-production-monitor-v3.0.1-report-dap-exw-ytd';
 const APP_SHELL = [
   './',
   './index.html',

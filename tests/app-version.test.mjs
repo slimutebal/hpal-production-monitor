@@ -24,7 +24,7 @@ const SERVICE_WORKER_SOURCE = readFileSync(path.join(ROOT, 'service-worker.js'),
 describe('app-version.js -- canonical version source', () => {
   test('exports the expected APP_NAME and APP_VERSION literals', () => {
     assert.equal(APP_NAME, 'HPAL Production Monitor');
-    assert.equal(APP_VERSION, 'v3.0.0');
+    assert.equal(APP_VERSION, 'v3.0.1');
   });
 });
 

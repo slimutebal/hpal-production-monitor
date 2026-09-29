@@ -62,14 +62,15 @@ function extractCacheName(source) {
 const appShell = extractAppShell(swSource);
 const cacheName = extractCacheName(swSource);
 
-describe('V3.0.0. Cache version bumped exactly once for the V3.0 release (Phase 7C release finalization)', () => {
-  test('CACHE_NAME reflects the final V3.0.0 release, not V2.4.1, V2.5.0, V2.5.1, V2.5.2, or the interim V2.5.3 Phase 7B identifier', () => {
+describe('V3.0.1. Cache version bumped for the DAP/EXW split-YTD Report release', () => {
+  test('CACHE_NAME reflects the V3.0.1 release, not V2.4.1, V2.5.x, or V3.0.0', () => {
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.1-mobile-input-sticky');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.0-operational-continuity');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.1-offline-first-startup');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.2-report-excel-hotfix');
     assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.3-recommendation-worker');
-    assert.match(cacheName, /^hpal-production-monitor-v3\.0\.0/);
+    assert.notEqual(cacheName, 'hpal-production-monitor-v3.0.0-scalable-recommendation-engine');
+    assert.match(cacheName, /^hpal-production-monitor-v3\.0\.1/);
   });
 
   test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
