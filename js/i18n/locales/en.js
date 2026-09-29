@@ -350,6 +350,8 @@ export default {
   'report.validation.weekUncalculable': 'Week could not be calculated from the weighbridge file date — check the uploaded file again.',
   'report.validation.shiftTie': 'Shift could not be determined — Day Shift and Night Shift hour distribution in the weighbridge file are equal ({count} rows each).',
   'report.validation.shiftNoValidHours': 'Shift could not be determined — no valid weighing hours in the weighbridge file.',
+  'report.validation.deliveryTermMixed': 'The weighbridge file contains both DAP and EXW selling codes — a single Report cannot contain mixed delivery terms.',
+  'report.validation.deliveryTermUnresolved': 'Delivery term (DAP/EXW) could not be determined from the weighbridge file\'s selling code — check the selling code column (备注 for HYNC/SLNC, Kode Sample/PILE ID for EIEB).',
   'report.warning.shiftFallback': 'No valid weighing hours were read — shift was automatically set to "Day Shift", please check manually.',
   'report.warning.dateMismatch': 'There is more than one distinct date within this weighbridge file — the date from the first row was used.',
   'report.warning.unmatchedTrucks': '{count} truck number(s) not found in List_DT (treated as "TIDAK DIKENALI"): {trucks}',

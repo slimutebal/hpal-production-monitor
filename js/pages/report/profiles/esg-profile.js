@@ -28,7 +28,7 @@ import { parseEsgFormatA } from './adapters/esg-format-a-adapter.js';
 import { parseEsgFormatB } from './adapters/esg-format-b-adapter.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
 import { lookupContractor, canonicalDtId } from '../../../services/contractor-directory-service.js';
-import { formatDateID, fmtTon, classifyShift } from '../report-utils.js';
+import { formatDateID, fmtTon, classifyShift, resolveWorkbookDeliveryTerm } from '../report-utils.js';
 import { getBuyerDisplayLabel } from './profile-registry.js';
 
 export { ESG_WORKBOOK_FORMAT };
@@ -215,8 +215,11 @@ function deriveWorkbookBuyerStatus(esgResult) {
 
 // Converts one ESG adapter result (Format A or B, both already in the
 // Phase 1 normalized row shape) into the full parsed-result contract the
-// live Report page expects.
-function buildEsgParsedResult(esgResult) {
+// live Report page expects. Exported (like resolveEsgContractor above) so
+// tests can exercise delivery-term resolution flowing through the real
+// aggregation step directly, without needing a browser XLSX global to
+// produce an `esgResult` -- see tests/report-delivery-term.test.mjs.
+export function buildEsgParsedResult(esgResult) {
   const { rows, warnings, sheetName, workbookFormat } = esgResult;
 
   const { shiftLabel, shiftFallback, shiftStatus, shiftDayCount, shiftNightCount, shiftInvalidCount } = detectEsgShift(rows);
@@ -242,6 +245,15 @@ function buildEsgParsedResult(esgResult) {
 
   const { workbookBuyer, workbookBuyerIssues } = deriveWorkbookBuyerStatus(esgResult);
 
+  // Delivery term (V3.1): resolved from the same valid rows' selling codes
+  // (Format A: "Kode Sample"; Format B: "PILE ID" -- both adapters attach
+  // `sellingCode` per row), through the exact same shared, buyer-agnostic
+  // resolveWorkbookDeliveryTerm() shared-report-profile.js's
+  // parseWeighbridgeWorkbook() uses for HYNC/SLNC -- no separate ESG
+  // delivery-term algorithm.
+  const deliveryTermResolution = resolveWorkbookDeliveryTerm(rows.map((r) => r.sellingCode));
+  const deliveryTerm = deliveryTermResolution.status === 'resolved' ? deliveryTermResolution.deliveryTerm : null;
+
   return {
     sheetName,
     fileDate,
@@ -262,6 +274,8 @@ function buildEsgParsedResult(esgResult) {
     dateMismatch,
     workbookBuyer,
     workbookBuyerIssues,
+    deliveryTerm,
+    deliveryTermResolution,
     // ESG-only additions, not read by the shared HYNC/SLNC render path:
     workbookFormat,
     domeGroups,

@@ -377,6 +377,58 @@ export function cleanInvisible(str) {
   return str.replace(ZERO_WIDTH_PATTERN, '');
 }
 
+// Delivery term (V3.1 Report -- DAP/EXW split YTD). Buyer-agnostic: one
+// shared classifier for every buyer's selling code (HYNC: 备注 = "SCHY...",
+// SLNC: 备注 = "SCSL...", EIEB/ESG: "Kode Sample" (Format A) / "PILE ID"
+// (Format B) = "SCESG..."), rather than a separate per-buyer rule. Confirmed
+// real production value from the local ESG reference workbooks (git-ignored,
+// docs/references/): "SCESG-EX-000202" for an EXW shipment. The business
+// rule is "EX immediately after the buyer prefix", never a loose
+// code.includes('EX') (which would false-positive on e.g. a hypothetical
+// "SCHY-EXPORT-xxxxx" code) -- implemented by splitting whatever remains
+// after the recognized buyer prefix on any run of non-alphanumeric
+// separator characters (only '-' confirmed in production data so far, but
+// this tolerates others) and checking whether the FIRST resulting token is
+// exactly "EX".
+export const DELIVERY_TERM_DAP = 'DAP';
+export const DELIVERY_TERM_EXW = 'EXW';
+
+const DELIVERY_TERM_BUYER_PREFIXES = ['SCHY', 'SCSL', 'SCESG'];
+
+// Returns DELIVERY_TERM_DAP or DELIVERY_TERM_EXW for a selling code
+// belonging to a recognized buyer prefix, or null when the code is
+// missing/blank or does not start with any recognized buyer prefix -- never
+// a guessed default. Trims and uppercases first, so whitespace/case in the
+// raw cell value never affects classification.
+export function detectDeliveryTerm(sellingCode) {
+  if (sellingCode == null) return null;
+  const code = String(sellingCode).trim().toUpperCase();
+  if (!code) return null;
+  const prefix = DELIVERY_TERM_BUYER_PREFIXES.find((p) => code.startsWith(p));
+  if (!prefix) return null;
+  const tokens = code.slice(prefix.length).split(/[^A-Z0-9]+/).filter(Boolean);
+  return tokens[0] === 'EX' ? DELIVERY_TERM_EXW : DELIVERY_TERM_DAP;
+}
+
+// Resolves one workbook-level delivery term from the selling codes of the
+// workbook's own valid rows (one entry per row; a row with no usable code
+// contributes null and is simply not counted, matching the per-row
+// null-safety of detectDeliveryTerm itself). Never infers DAP merely
+// because a code is missing -- a workbook where nothing resolves comes back
+// 'unresolved' so the caller can fail closed instead of guessing, and a
+// workbook whose valid rows classify to both terms comes back 'mixed' so
+// the caller can block Report generation rather than silently picking one.
+export function resolveWorkbookDeliveryTerm(sellingCodes) {
+  const termsFound = new Set();
+  (sellingCodes || []).forEach((code) => {
+    const term = detectDeliveryTerm(code);
+    if (term) termsFound.add(term);
+  });
+  if (termsFound.size === 0) return { status: 'unresolved' };
+  if (termsFound.size > 1) return { status: 'mixed', terms: Array.from(termsFound) };
+  return { status: 'resolved', deliveryTerm: Array.from(termsFound)[0] };
+}
+
 export function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')

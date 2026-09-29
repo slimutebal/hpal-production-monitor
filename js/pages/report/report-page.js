@@ -1413,6 +1413,22 @@ function goToStep2() {
     }
   }
 
+  // Delivery term (V3.1 -- DAP/EXW split YTD): resolved from the workbook's
+  // own selling-code column (report-utils.js's resolveWorkbookDeliveryTerm,
+  // buyer-agnostic -- same shared result field for HYNC/SLNC and EIEB/ESG).
+  // Only checked once the workbook's buyer itself is already resolvable --
+  // a bad selling-code column is very often also why buyer resolution
+  // failed, and that already surfaces its own, more specific message above,
+  // so this avoids a redundant/confusing second error for the same cause.
+  if (reportState.fileParsed && reportState.parsed && !(reportState.workbookBuyerIssues && reportState.workbookBuyerIssues.length)) {
+    const dt = reportState.parsed.deliveryTermResolution;
+    if (dt && dt.status === 'mixed') {
+      errors.push(t('report.validation.deliveryTermMixed'));
+    } else if (dt && dt.status === 'unresolved') {
+      errors.push(t('report.validation.deliveryTermUnresolved'));
+    }
+  }
+
   // Controlled Personnel selection (V2.3 Phase 4): a missing directory
   // snapshot blocks before any per-field check even runs; otherwise every
   // selection-level rule (required fields, stale/inactive ids, PIC/sampler
@@ -1437,7 +1453,12 @@ function goToStep2() {
     // isNightContinuation/sameDate both treat a null `date` as "no
     // match", so every accumulator resets to onShift alone, exactly the
     // approved ESG first-report/new-period behavior.
-    prevParsed = { date: null, daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 }, ytd: { ton: 0, rit: 0 }, errors: [] };
+    prevParsed = {
+      date: null,
+      daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 },
+      ytdDap: { ton: 0, rit: 0 }, ytdExw: { ton: 0, rit: 0 },
+      errors: [],
+    };
   }
 
   const buyerStatus = recomputeBuyerResolution({ openPopupOnNewMismatch: true });

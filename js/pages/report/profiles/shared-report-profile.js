@@ -9,7 +9,7 @@
 // This module must never import hync-profile.js or slnc-profile.js (that
 // would create an import cycle, since those two import this module).
 
-import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible, classifyShift, deriveAccumulationResets, accumulatePeriodValue } from '../report-utils.js';
+import { parseIDNumber, fmtTon, fmtRit, formatDateID, parseDateID, sameDate, cleanInvisible, classifyShift, deriveAccumulationResets, accumulatePeriodValue, resolveWorkbookDeliveryTerm } from '../report-utils.js';
 import { lookupHyncContractor } from '../../../services/contractor-adapter.js';
 import { lookupContractor, canonicalDtId } from '../../../services/contractor-directory-service.js';
 import { buyerFromRemark, getBuyerDisplayLabel } from './profile-registry.js';
@@ -107,10 +107,33 @@ export function resolveContractor(carNo) {
 /* ============================================================
    PREVIOUS REPORT TEXT PARSING
 ============================================================ */
+// Matches a "<Label> : <tonnage> wmt" line, tolerating both the legacy
+// bracketed ritase suffix ("[ <n> Rit ]", tried first so an old-format
+// previous report still parses) and the new tonnage-only format (V3.1: the
+// generated WhatsApp block no longer prints ritase for On Shift/Daily/WTD/
+// MTD/YTD DAP/YTD EXW at all). Returns null (not a zero-value object) when
+// the label isn't found at all, so callers can tell "found, ritase absent"
+// (rit: 0, found via the plain branch) apart from "line missing entirely".
+function grabTonnageLine(text, label) {
+  const bracketRe = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt\\s*\\[\\s*([\\d.,]+)\\s*Rit', 'i');
+  const bracketMatch = text.match(bracketRe);
+  if (bracketMatch) return { ton: parseIDNumber(bracketMatch[1]), rit: parseIDNumber(bracketMatch[2]) };
+
+  const plainRe = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt', 'i');
+  const plainMatch = text.match(plainRe);
+  if (plainMatch) return { ton: parseIDNumber(plainMatch[1]), rit: 0 };
+
+  return null;
+}
+
 export function parsePrevText(raw) {
   const text = cleanInvisible(raw);
   const errors = [];
-  const out = { date: null, week: null, daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 }, ytd: { ton: 0, rit: 0 } };
+  const out = {
+    date: null, week: null,
+    daily: { ton: 0, rit: 0 }, wtd: { ton: 0, rit: 0 }, mtd: { ton: 0, rit: 0 },
+    ytdDap: { ton: 0, rit: 0 }, ytdExw: { ton: 0, rit: 0 },
+  };
 
   const dateMatch = text.match(/Date\s*:\s*([^\n\r]+)/i);
   if (!dateMatch) {
@@ -127,19 +150,44 @@ export function parsePrevText(raw) {
   const weekMatch = text.match(/Week\s*:\s*(\d+)/i);
   out.week = weekMatch ? parseInt(weekMatch[1], 10) : null;
 
-  function grab(label) {
-    const re = new RegExp(label + '\\s*:\\s*([\\d.,]+)\\s*wmt\\s*\\[\\s*([\\d.,]+)\\s*Rit', 'i');
-    const m = text.match(re);
-    if (!m) {
-      errors.push(`Tidak menemukan baris "${label}" (format: ... wmt [ ... Rit ]).`);
+  function grabRequired(label) {
+    const result = grabTonnageLine(text, label);
+    if (!result) {
+      errors.push(`Tidak menemukan baris "${label}" (format: ... wmt, boleh dengan [ ... Rit ] untuk kompatibilitas format lama).`);
       return { ton: 0, rit: 0 };
     }
-    return { ton: parseIDNumber(m[1]), rit: parseIDNumber(m[2]) };
+    return result;
   }
-  out.daily = grab('Daily');
-  out.wtd = grab('WTD');
-  out.mtd = grab('MTD');
-  out.ytd = grab('YTD');
+  out.daily = grabRequired('Daily');
+  out.wtd = grabRequired('WTD');
+  out.mtd = grabRequired('MTD');
+
+  // Split YTD baseline (V3.1). "YTD DAP" / "YTD EXW" never match the plain
+  // "YTD" pattern below -- the word between "YTD" and the colon prevents it
+  // -- so the three lookups below are mutually exclusive by construction,
+  // never a substring collision.
+  const ytdDapResult = grabTonnageLine(text, 'YTD DAP');
+  const ytdExwResult = grabTonnageLine(text, 'YTD EXW');
+  const legacyYtdResult = grabTonnageLine(text, 'YTD');
+
+  if (ytdDapResult && ytdExwResult) {
+    out.ytdDap = ytdDapResult;
+    out.ytdExw = ytdExwResult;
+  } else if (ytdDapResult || ytdExwResult) {
+    // Only one of the two split lines is present -- an incomplete/corrupted
+    // baseline, not a legacy report and not a usable new-format one either.
+    errors.push('Baris "YTD DAP" dan "YTD EXW" pada teks report sebelumnya tidak lengkap -- keduanya harus ada bersamaan sebagai baseline.');
+  } else if (legacyYtdResult) {
+    // A legacy single "YTD" line cannot be mathematically split into DAP
+    // and EXW -- never guessed, never divided, never inferred from buyer.
+    // Fail closed with a specific migration message (kept as its own
+    // reachable branch, distinct from "not found" below, so a future
+    // manual-migration mechanism has a precise state to hook into without
+    // touching the accumulator itself).
+    errors.push('Teks report sebelumnya masih memakai format YTD lama (satu baris) dan tidak dapat dipakai sebagai baseline "YTD DAP"/"YTD EXW" yang baru. Diperlukan migrasi manual sebelum akumulasi YTD DAP/EXW dapat dilanjutkan.');
+  } else {
+    errors.push('Tidak menemukan baris "YTD DAP" dan "YTD EXW" (atau "YTD") di teks report sebelumnya.');
+  }
 
   return { ...out, errors };
 }
@@ -312,10 +360,16 @@ export function parseWeighbridgeWorkbook(workbook) {
     const contractor = resolveContractor(carNo);
     if (!contractor) unmatched.add(carNo);
 
-    records.push({ carNo, netKg, grossTime, dome, grade, oreClass, contractor: contractor || 'TIDAK DIKENALI' });
-
+    // 备注 doubles as both the buyer-detection prefix (buyerFromRemark,
+    // above) and the per-row selling code the delivery-term classifier
+    // reads (detectDeliveryTerm/resolveWorkbookDeliveryTerm,
+    // report-utils.js) -- confirmed the same field by Monitor's own
+    // existing column mapping (index.html: "备注: PILE ID / selling code").
     const remarkRaw = remarkIdx === -1 ? '' : row[remarkIdx];
-    remarkTally.push({ excelRow: r + 1, rawValue: String(remarkRaw ?? '').trim(), result: buyerFromRemark(remarkRaw) });
+    const sellingCode = String(remarkRaw ?? '').trim();
+
+    records.push({ carNo, netKg, grossTime, dome, grade, oreClass, contractor: contractor || 'TIDAK DIKENALI', sellingCode });
+    remarkTally.push({ excelRow: r + 1, rawValue: sellingCode, result: buyerFromRemark(remarkRaw) });
   }
 
   if (!records.length) throw new Error('Tidak ada baris data yang terbaca (cek isi file).');
@@ -378,6 +432,14 @@ export function parseWeighbridgeWorkbook(workbook) {
 
   const { workbookBuyer, workbookBuyerIssues } = resolveWorkbookBuyer(remarkTally);
 
+  // Delivery term (V3.1): resolved from the same valid rows' selling codes
+  // (备注), independent of whether buyer resolution itself succeeded --
+  // report-page.js only surfaces this result once the workbook's buyer is
+  // otherwise clean, to avoid a redundant second error for the same bad
+  // 备注 data.
+  const deliveryTermResolution = resolveWorkbookDeliveryTerm(records.map((r) => r.sellingCode));
+  const deliveryTerm = deliveryTermResolution.status === 'resolved' ? deliveryTermResolution.deliveryTerm : null;
+
   return {
     sheetName,
     fileDate: detectedDate,
@@ -398,6 +460,8 @@ export function parseWeighbridgeWorkbook(workbook) {
     dateMismatch,
     workbookBuyer,
     workbookBuyerIssues,
+    deliveryTerm,
+    deliveryTermResolution,
   };
 }
 
@@ -431,7 +495,21 @@ export function buildFileSummary(parsed) {
 //     about shiftLabel.
 //   - WTD: resets on any ISO week OR ISO week-year change.
 //   - MTD: resets on any calendar month or year change.
-//   - YTD: resets on any calendar year change.
+//   - YTD: resets on any calendar year change -- and (V3.1) is split into
+//     two independent buckets, YTD DAP and YTD EXW, by parsed.deliveryTerm
+//     (report-utils.js's detectDeliveryTerm/resolveWorkbookDeliveryTerm).
+//     Daily/WTD/MTD stay buyer-total regardless of delivery term -- only
+//     YTD is split. The bucket matching the current shift's deliveryTerm
+//     accumulates parsed.onShiftTon exactly like the pre-existing single
+//     YTD used to; the OTHER (inactive) bucket must carry forward
+//     unchanged within the same year, and reset to 0 (not linger) across a
+//     year boundary. Both of those are the exact same accumulatePeriodValue
+//     rule already used for every other bucket -- the inactive bucket's
+//     "current contribution" is simply 0 rather than onShiftTon, so
+//     accumulatePeriodValue(prevInactive, 0, !resetYtd) naturally carries
+//     it forward unchanged (0 added) when not resetting and naturally
+//     zeroes it out (falls to the literal current value, 0) at a year
+//     boundary -- no separate branch needed for the inactive bucket.
 // A missing/invalid previous date (e.g. the ESG empty-previous-report
 // case) makes every one of these comparisons false, so every bucket
 // naturally resets to the current On Shift alone -- never a literal 0
@@ -447,10 +525,19 @@ export function calculateTotals({ parsed, prev }) {
   const wtdRit = accumulatePeriodValue(prev.wtd.rit, parsed.onShiftRit, !resets.resetWtd);
   const mtdTon = accumulatePeriodValue(prev.mtd.ton, parsed.onShiftTon, !resets.resetMtd);
   const mtdRit = accumulatePeriodValue(prev.mtd.rit, parsed.onShiftRit, !resets.resetMtd);
-  const ytdTon = accumulatePeriodValue(prev.ytd.ton, parsed.onShiftTon, !resets.resetYtd);
-  const ytdRit = accumulatePeriodValue(prev.ytd.rit, parsed.onShiftRit, !resets.resetYtd);
 
-  return { isNightContinuation, periodResets: resets, dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit, ytdTon, ytdRit };
+  const isDap = parsed.deliveryTerm === 'DAP';
+  const isExw = parsed.deliveryTerm === 'EXW';
+  const ytdDapTon = accumulatePeriodValue(prev.ytdDap.ton, isDap ? parsed.onShiftTon : 0, !resets.resetYtd);
+  const ytdDapRit = accumulatePeriodValue(prev.ytdDap.rit, isDap ? parsed.onShiftRit : 0, !resets.resetYtd);
+  const ytdExwTon = accumulatePeriodValue(prev.ytdExw.ton, isExw ? parsed.onShiftTon : 0, !resets.resetYtd);
+  const ytdExwRit = accumulatePeriodValue(prev.ytdExw.rit, isExw ? parsed.onShiftRit : 0, !resets.resetYtd);
+
+  return {
+    isNightContinuation, periodResets: resets,
+    dailyTon, dailyRit, wtdTon, wtdRit, mtdTon, mtdRit,
+    ytdDapTon, ytdDapRit, ytdExwTon, ytdExwRit,
+  };
 }
 
 /* ============================================================
@@ -502,12 +589,19 @@ export function buildReportText({ buyer, parsed, inputs, domeAreas, totals, week
       lines.push('');
     }
   });
+  // V3.1: ritase is dropped from every line in this block (On Shift/Daily/
+  // WTD/MTD/YTD DAP/YTD EXW) -- it stays available elsewhere (parsed.*Rit,
+  // totals.*Rit) for internal use, just never printed here. YTD is split
+  // into two always-printed buckets (never conditionally hidden for a
+  // buyer that currently has no EXW volume) so HYNC/SLNC can carry a real
+  // EXW figure later without another output-format change.
   lines.push(`A. Ore Delivered to FPP ${buyerDisplay}`);
-  lines.push(`On Shift    : ${fmtTon(parsed.onShiftTon)} wmt [ ${fmtRit(parsed.onShiftRit)} Rit ]`);
-  lines.push(`Daily         : ${fmtTon(totals.dailyTon)} wmt [ ${fmtRit(totals.dailyRit)} Rit ]`);
-  lines.push(`WTD         : ${fmtTon(totals.wtdTon)} wmt [ ${fmtRit(totals.wtdRit)} Rit ]`);
-  lines.push(`MTD         : ${fmtTon(totals.mtdTon)} wmt [ ${fmtRit(totals.mtdRit)} Rit ]`);
-  lines.push(`YTD          : ${fmtTon(totals.ytdTon)} wmt [ ${fmtRit(totals.ytdRit)} Rit ]`);
+  lines.push(`On Shift    : ${fmtTon(parsed.onShiftTon)} wmt`);
+  lines.push(`Daily         : ${fmtTon(totals.dailyTon)} wmt`);
+  lines.push(`WTD         : ${fmtTon(totals.wtdTon)} wmt`);
+  lines.push(`MTD         : ${fmtTon(totals.mtdTon)} wmt`);
+  lines.push(`YTD DAP   : ${fmtTon(totals.ytdDapTon)} wmt`);
+  lines.push(`YTD EXW  : ${fmtTon(totals.ytdExwTon)} wmt`);
   lines.push('');
   lines.push('B. Problem and Action');
   lines.push(`1. Problem : ${inputs.problem || '-'}`);

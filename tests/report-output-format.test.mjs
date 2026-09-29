@@ -63,7 +63,7 @@ function baseParsed(overrides = {}) {
 }
 
 function zeroTotals() {
-  return { dailyTon: 0, dailyRit: 0, wtdTon: 0, wtdRit: 0, mtdTon: 0, mtdRit: 0, ytdTon: 0, ytdRit: 0 };
+  return { dailyTon: 0, dailyRit: 0, wtdTon: 0, wtdRit: 0, mtdTon: 0, mtdRit: 0, ytdDapTon: 0, ytdDapRit: 0, ytdExwTon: 0, ytdExwRit: 0 };
 }
 
 function manPowerBlock(text) {
@@ -283,10 +283,67 @@ describe('Manpower, contractor totals, and tonnage/ritase are unaffected by the 
     assert.ok(text.includes(`${'STM'.padEnd(20, ' ')}: 1 Trucks`));
   });
 
-  test('15. On Shift tonnage/ritase formatting is unchanged', () => {
+  test('15. On Shift tonnage formatting is unchanged, ritase no longer printed (V3.1)', () => {
     const parsed = baseParsed({ onShiftTon: 1234.5, onShiftRit: 42 });
     const text = buildReportText({ buyer: BUYER_HYNC, parsed, inputs: {}, domeAreas: {}, totals: zeroTotals(), weekNumber: 1, personnelLines: [] });
     const onShiftLine = text.split('\n').find((l) => l.startsWith('On Shift'));
-    assert.equal(onShiftLine, 'On Shift    : 1.234,50 wmt [ 42 Rit ]');
+    assert.equal(onShiftLine, 'On Shift    : 1.234,50 wmt');
+  });
+});
+
+/* ============================================================
+   16-20. V3.1 -- DELIVERY TERM: NO RITASE + SPLIT YTD DAP/YTD EXW
+============================================================ */
+describe('V3.1: the production accumulation block never shows ritase, and always prints both YTD DAP and YTD EXW', () => {
+  function productionBlock(buyer, totals) {
+    const text = buildReportText({
+      buyer, parsed: baseParsed({ onShiftTon: 33316.4, onShiftRit: 700 }), inputs: {}, domeAreas: {}, totals, weekNumber: 1, personnelLines: [],
+    });
+    const lines = text.split('\n');
+    const start = lines.indexOf(`A. Ore Delivered to FPP ${getBuyerDisplayLabel(buyer)}`);
+    return lines.slice(start + 1, start + 7);
+  }
+
+  function totalsOf(ytdDapTon, ytdExwTon) {
+    return { dailyTon: 33316.4, dailyRit: 700, wtdTon: 33316.4, wtdRit: 700, mtdTon: 1690214.05, mtdRit: 35000, ytdDapTon, ytdDapRit: 0, ytdExwTon, ytdExwRit: 0 };
+  }
+
+  test('16. exact production block for EIEB matches the approved literal template exactly', () => {
+    const block = productionBlock(BUYER_ESG, totalsOf(5012022.52, 2429899.98));
+    assert.deepEqual(block, [
+      'On Shift    : 33.316,40 wmt',
+      'Daily         : 33.316,40 wmt',
+      'WTD         : 33.316,40 wmt',
+      'MTD         : 1.690.214,05 wmt',
+      'YTD DAP   : 5.012.022,52 wmt',
+      'YTD EXW  : 2.429.899,98 wmt',
+    ]);
+  });
+
+  test('17. no line in the production block contains a ritase bracket, for any buyer', () => {
+    for (const buyer of [BUYER_HYNC, BUYER_SLNC, BUYER_ESG]) {
+      const block = productionBlock(buyer, totalsOf(100, 50));
+      block.forEach((line) => assert.ok(!line.includes('Rit'), `unexpected ritase in "${line}" for ${buyer}`));
+    }
+  });
+
+  test('18. YTD DAP and YTD EXW are both always printed for HYNC, even when EXW is currently zero', () => {
+    const block = productionBlock(BUYER_HYNC, totalsOf(500000, 0));
+    assert.ok(block.some((l) => l.startsWith('YTD DAP')));
+    assert.ok(block.some((l) => l.startsWith('YTD EXW')));
+    assert.equal(block.find((l) => l.startsWith('YTD EXW')), 'YTD EXW  : 0,00 wmt');
+  });
+
+  test('19. YTD DAP and YTD EXW are both always printed for SLNC, even when EXW is currently zero', () => {
+    const block = productionBlock(BUYER_SLNC, totalsOf(500000, 0));
+    assert.ok(block.some((l) => l.startsWith('YTD DAP')));
+    assert.ok(block.some((l) => l.startsWith('YTD EXW')));
+  });
+
+  test('20. YTD DAP and YTD EXW are both always printed for EIEB, even when DAP is currently zero', () => {
+    const block = productionBlock(BUYER_ESG, totalsOf(0, 500000));
+    assert.ok(block.some((l) => l.startsWith('YTD DAP')));
+    assert.ok(block.some((l) => l.startsWith('YTD EXW')));
+    assert.equal(block.find((l) => l.startsWith('YTD DAP')), 'YTD DAP   : 0,00 wmt');
   });
 });

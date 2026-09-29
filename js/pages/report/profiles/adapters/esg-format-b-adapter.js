@@ -41,6 +41,24 @@ const FALLBACK_COLUMNS = {
   'KODE ORE': 15,           // P
 };
 
+// Selling code column (V3.1 -- delivery term). Confirmed from the real
+// sample workbook (docs/references/08月05日SCM-ESG送矿汇总表 ... NIGHT
+// SHIFT.xlsx, local-only, git-ignored): header "PILE ID" on the same row-4
+// header as the other markers, between "TANGGAL" and "KODE ORE", values
+// like "SCESG-EX-000202" -- fed straight into report-utils.js's
+// detectDeliveryTerm(). Resolved independently of REQUIRED_MARKERS/
+// resolveColumns() above (see esg-format-a-adapter.js's identical rationale
+// for its own "Kode Sample" lookup) so a workbook missing this column
+// never breaks structural Format B detection or blocks every other field
+// -- only delivery-term resolution degrades to 'unresolved'.
+const SELLING_CODE_MARKER = 'PILE ID';
+const SELLING_CODE_FALLBACK_COLUMN = 14; // O
+
+function resolveSellingCodeColumn(matrix) {
+  const match = findMarkerColumns(matrix, [SELLING_CODE_MARKER], HEADER_WINDOW);
+  return match ? match.columns[SELLING_CODE_MARKER].col : SELLING_CODE_FALLBACK_COLUMN;
+}
+
 // Format B's "Time Loaded" column is text like "26-08-05 19:02" -- a
 // 2-digit year, confirmed YY-MM-DD HH:MM shape (mirrors the app's own
 // Monitor precedent, parseESGTime in index.html). Deliberately not routed
@@ -93,6 +111,7 @@ export function parseEsgFormatB(workbook, detection) {
   }
 
   const col = resolved.columns;
+  const sellingCodeCol = resolveSellingCodeColumn(matrix);
   const datesSeen = new Set();
 
   for (let r = resolved.dataStartRow; r < matrix.length; r++) {
@@ -194,6 +213,7 @@ export function parseEsgFormatB(workbook, detection) {
       dome: spec.dome,
       grade: spec.grade,
       oreClass: classifyEsgOreClass(spec.grade),
+      sellingCode: cellText(row[sellingCodeCol]),
     });
   }
 

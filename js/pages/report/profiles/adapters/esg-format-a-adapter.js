@@ -41,6 +41,26 @@ const FALLBACK_COLUMNS = {
   'Kode Dome': 10,  // K
 };
 
+// Selling code column (V3.1 -- delivery term). Confirmed from the real
+// sample workbook (docs/references/DATA TIMBANGAN 5 AGUSTUS 2026 SHIFT
+// 2.xlsx, local-only, git-ignored): header "Kode Sample" on row 15
+// (same row as "Vehicle No"/"Date", between "Cargo Weighing" and "Kode
+// Dome"), values like "SCESG-EX-000202" -- fed straight into
+// report-utils.js's detectDeliveryTerm(). Resolved independently of
+// REQUIRED_MARKERS/resolveColumns() above (a separate, non-required
+// findMarkerColumns lookup, falling back to its own fixed column) so a
+// workbook missing this column never breaks structural Format A detection
+// or blocks parsing of every other field -- only delivery-term resolution
+// degrades (to 'unresolved', via resolveWorkbookDeliveryTerm in
+// esg-profile.js), exactly the fail-closed behavior the feature requires.
+const SELLING_CODE_MARKER = 'Kode Sample';
+const SELLING_CODE_FALLBACK_COLUMN = 9; // J
+
+function resolveSellingCodeColumn(matrix) {
+  const match = findMarkerColumns(matrix, [SELLING_CODE_MARKER], HEADER_WINDOW);
+  return match ? match.columns[SELLING_CODE_MARKER].col : SELLING_CODE_FALLBACK_COLUMN;
+}
+
 function resolveColumns(matrix) {
   const match = findMarkerColumns(matrix, REQUIRED_MARKERS, HEADER_WINDOW);
   if (match) {
@@ -93,6 +113,7 @@ export function parseEsgFormatA(workbook, detection) {
     issues.push(createIssue('missing-buyer-evidence', 'Tidak ditemukan bukti buyer ESG pada metadata/letterhead (mis. "Stockpile ESG").'));
   }
 
+  const sellingCodeCol = resolveSellingCodeColumn(matrix);
   const datesSeen = new Set();
 
   for (let r = resolved.dataStartRow; r < matrix.length; r++) {
@@ -158,6 +179,7 @@ export function parseEsgFormatA(workbook, detection) {
       dome: spec.dome,
       grade: spec.grade,
       oreClass: classifyEsgOreClass(spec.grade),
+      sellingCode: cellText(row[sellingCodeCol]),
     });
   }
 

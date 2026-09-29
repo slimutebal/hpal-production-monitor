@@ -45,7 +45,7 @@ function baseParsed(overrides = {}) {
 }
 
 function zeroTotals() {
-  return { dailyTon: 100, dailyRit: 5, wtdTon: 200, wtdRit: 10, mtdTon: 300, mtdRit: 15, ytdTon: 400, ytdRit: 20 };
+  return { dailyTon: 100, dailyRit: 5, wtdTon: 200, wtdRit: 10, mtdTon: 300, mtdRit: 15, ytdDapTon: 400, ytdDapRit: 20, ytdExwTon: 0, ytdExwRit: 0 };
 }
 
 function buildTextForBuyer(buyer, samplerId, picThirdId) {

@@ -481,6 +481,8 @@ export default {
   'report.validation.weekUncalculable': 'Week tidak dapat dihitung dari tanggal file timbangan — periksa kembali file yang diupload.',
   'report.validation.shiftTie': 'Shift tidak dapat ditentukan — distribusi jam Day Shift dan Night Shift pada file timbangan sama besar ({count} baris masing-masing).',
   'report.validation.shiftNoValidHours': 'Shift tidak dapat ditentukan — tidak ada jam timbang yang valid pada file timbangan.',
+  'report.validation.deliveryTermMixed': 'File timbangan berisi selling code DAP dan EXW sekaligus — satu Report tidak bisa berisi dua delivery term yang berbeda.',
+  'report.validation.deliveryTermUnresolved': 'Delivery term (DAP/EXW) tidak dapat ditentukan dari selling code pada file timbangan — periksa kolom selling code (备注 untuk HYNC/SLNC, Kode Sample/PILE ID untuk EIEB).',
   'report.warning.shiftFallback': 'Tidak ada jam timbang valid terbaca — shift otomatis di-set "Day Shift", mohon cek manual.',
   'report.warning.dateMismatch': 'Ada lebih dari 1 tanggal berbeda di dalam file timbangan ini — dipakai tanggal dari baris pertama.',
   'report.warning.unmatchedTrucks': '{count} no. truck tidak ditemukan di List_DT (dianggap "TIDAK DIKENALI"): {trucks}',

@@ -1,4 +1,5 @@
 // V2.3 Report -- period-aware Daily/WTD/MTD/YTD accumulation.
+// V3.1 -- YTD split into two independent buckets, YTD DAP and YTD EXW.
 //
 // Run with Node's built-in test runner:
 //   node --test tests/report-period-accumulation.test.mjs
@@ -12,6 +13,16 @@
 // re-derived), and that the shared, buyer-agnostic calculateTotals() is
 // what every Report profile (HYNC, SLNC, ESG Format A, ESG Format B) goes
 // through -- there is no separate per-buyer accumulation rule to test.
+//
+// V3.1: YTD is no longer one bucket -- it is split into YTD DAP / YTD EXW
+// by parsed.deliveryTerm, while Daily/WTD/MTD stay buyer-total regardless
+// of delivery term (unchanged from V2.3). Every test below that predates
+// V3.1 defaults its fixture to deliveryTerm: 'DAP' (via parsedOf()'s
+// default parameter) and asserts through ytdDapTon/ytdDapRit instead of the
+// old single ytdTon/ytdRit -- this preserves the exact same reset-boundary
+// coverage those tests already proved, since a workbook that is always DAP
+// behaves identically to the pre-V3.1 single-bucket YTD. New tests specific
+// to the DAP/EXW split itself live in their own describe block below.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,13 +51,14 @@ function prevOf(date, overrides = {}) {
     daily: { ton: 0, rit: 0 },
     wtd: { ton: 200000, rit: 4000 },
     mtd: { ton: 500000, rit: 9000 },
-    ytd: { ton: 7000000, rit: 100000 },
+    ytdDap: { ton: 7000000, rit: 100000 },
+    ytdExw: { ton: 0, rit: 0 },
     ...overrides,
   };
 }
 
-function parsedOf(date, onShiftTon, onShiftRit, shiftLabel = 'Day Shift') {
-  return { fileDate: date, shiftLabel, onShiftTon, onShiftRit };
+function parsedOf(date, onShiftTon, onShiftRit, shiftLabel = 'Day Shift', deliveryTerm = 'DAP') {
+  return { fileDate: date, shiftLabel, onShiftTon, onShiftRit, deliveryTerm };
 }
 
 /* ============================================================
@@ -83,17 +95,17 @@ describe('Independent period-reset matrix', () => {
     assert.equal(t.mtdTon, 520000);
   });
 
-  test('4. new month, same year -> MTD resets, YTD continues', () => {
+  test('4. new month, same year -> MTD resets, YTD DAP continues', () => {
     const prev = prevOf(new Date(2026, 7, 31), { mtd: { ton: 520000, rit: 9000 } });
     const parsed = parsedOf(new Date(2026, 8, 1), 18000, 300);
     const t = calculateTotals({ parsed, prev });
     assert.equal(t.periodResets.resetMtd, true);
     assert.equal(t.mtdTon, 18000);
     assert.equal(t.periodResets.resetYtd, false);
-    assert.equal(t.ytdTon, 7018000);
+    assert.equal(t.ytdDapTon, 7018000);
   });
 
-  test('5. new year -> WTD/MTD/YTD all reset (clean ISO-week-changing year boundary)', () => {
+  test('5. new year -> WTD/MTD/YTD DAP/YTD EXW all reset (clean ISO-week-changing year boundary)', () => {
     // 2028-12-31 (Sun) is ISO week 52/2028; 2029-01-01 (Mon) is ISO week 1/2029 -- a genuine week reset too.
     const prev = prevOf(new Date(2028, 11, 31));
     const parsed = parsedOf(new Date(2029, 0, 1), 20000, 500);
@@ -101,7 +113,8 @@ describe('Independent period-reset matrix', () => {
     assert.deepEqual(t.periodResets, { resetDaily: true, resetWtd: true, resetMtd: true, resetYtd: true });
     assert.equal(t.wtdTon, 20000);
     assert.equal(t.mtdTon, 20000);
-    assert.equal(t.ytdTon, 20000);
+    assert.equal(t.ytdDapTon, 20000);
+    assert.equal(t.ytdExwTon, 0); // inactive bucket resets to 0, not a stale carried-over value
   });
 
   test('9. same month but different year resets MTD', () => {
@@ -112,12 +125,12 @@ describe('Independent period-reset matrix', () => {
     assert.equal(t.mtdTon, 10000);
   });
 
-  test('10. same year across a month boundary preserves YTD', () => {
-    const prev = prevOf(new Date(2026, 0, 31), { ytd: { ton: 999999, rit: 15000 } });
+  test('10. same year across a month boundary preserves YTD DAP', () => {
+    const prev = prevOf(new Date(2026, 0, 31), { ytdDap: { ton: 999999, rit: 15000 } });
     const parsed = parsedOf(new Date(2026, 1, 1), 1, 1);
     const t = calculateTotals({ parsed, prev });
     assert.equal(t.periodResets.resetYtd, false);
-    assert.equal(t.ytdTon, 1000000);
+    assert.equal(t.ytdDapTon, 1000000);
   });
 });
 
@@ -157,7 +170,8 @@ describe('ISO week-year identity (weekNumber + weekYear together, never weekNumb
       'Daily         : 100,00 wmt [ 1 Rit ]',
       'WTD         : 200.000,00 wmt [ 4.000 Rit ]',
       'MTD         : 500.000,00 wmt [ 9.000 Rit ]',
-      'YTD          : 7.000.000,00 wmt [ 100.000 Rit ]',
+      'YTD DAP   : 7.000.000,00 wmt',
+      'YTD EXW  : 0,00 wmt',
     ].join('\n');
     const prev = parsePrevText(prevText);
     assert.equal(prev.errors.length, 0);
@@ -185,7 +199,7 @@ describe('ISO week-year identity (weekNumber + weekYear together, never weekNumb
    MANDATORY DATE CASES
 ============================================================ */
 describe('Mandatory date cases', () => {
-  test('2026-08-09 -> 2026-08-10 (Week 32 -> Week 33): Daily reset, WTD reset, MTD continue, YTD continue', () => {
+  test('2026-08-09 -> 2026-08-10 (Week 32 -> Week 33): Daily reset, WTD reset, MTD continue, YTD DAP continue', () => {
     const prev = prevOf(new Date(2026, 7, 9));
     const parsed = parsedOf(new Date(2026, 7, 10), 20000, 400);
     const t = calculateTotals({ parsed, prev });
@@ -195,10 +209,10 @@ describe('Mandatory date cases', () => {
     assert.equal(t.periodResets.resetMtd, false);
     assert.equal(t.mtdTon, 520000);
     assert.equal(t.periodResets.resetYtd, false);
-    assert.equal(t.ytdTon, 7020000);
+    assert.equal(t.ytdDapTon, 7020000);
   });
 
-  test('2026-08-31 -> 2026-09-01: Daily reset, WTD follows the actual ISO comparison (continues here), MTD reset, YTD continue', () => {
+  test('2026-08-31 -> 2026-09-01: Daily reset, WTD follows the actual ISO comparison (continues here), MTD reset, YTD DAP continue', () => {
     assert.equal(isSameIsoWeek(new Date(2026, 7, 31), new Date(2026, 8, 1)), true); // both fall in the same ISO week
     const prev = prevOf(new Date(2026, 7, 31), { mtd: { ton: 520000, rit: 9000 } });
     const parsed = parsedOf(new Date(2026, 8, 1), 18000, 300);
@@ -209,12 +223,12 @@ describe('Mandatory date cases', () => {
     assert.equal(t.periodResets.resetMtd, true);
     assert.equal(t.mtdTon, 18000);
     assert.equal(t.periodResets.resetYtd, false);
-    assert.equal(t.ytdTon, 7018000);
+    assert.equal(t.ytdDapTon, 7018000);
   });
 
-  test('2026-12-31 -> 2027-01-01: Daily reset, MTD reset, YTD reset -- WTD does NOT reset (ISO edge case: still the same ISO week-year, 53/2026)', () => {
+  test('2026-12-31 -> 2027-01-01: Daily reset, MTD reset, YTD DAP reset -- WTD does NOT reset (ISO edge case: still the same ISO week-year, 53/2026)', () => {
     assert.equal(isSameIsoWeek(new Date(2026, 11, 31), new Date(2027, 0, 1)), true);
-    const prev = prevOf(new Date(2026, 11, 31), { mtd: { ton: 200000, rit: 3000 }, ytd: { ton: 7900000, rit: 150000 } });
+    const prev = prevOf(new Date(2026, 11, 31), { mtd: { ton: 200000, rit: 3000 }, ytdDap: { ton: 7900000, rit: 150000 } });
     const parsed = parsedOf(new Date(2027, 0, 1), 20000, 500);
     const t = calculateTotals({ parsed, prev });
     assert.equal(t.dailyTon, 20000);
@@ -223,7 +237,7 @@ describe('Mandatory date cases', () => {
     assert.equal(t.periodResets.resetMtd, true);
     assert.equal(t.mtdTon, 20000);
     assert.equal(t.periodResets.resetYtd, true);
-    assert.equal(t.ytdTon, 20000);
+    assert.equal(t.ytdDapTon, 20000);
   });
 
   test('ISO edge case, explicit: a calendar-year change alone must never be assumed to mean an ISO-week reset without consulting calculateIsoWeek()', () => {
@@ -270,12 +284,12 @@ describe('Tonnage and Rit reset together for every bucket, never independently',
     assert.equal(t.mtdRit, 300);
   });
 
-  test('13. YTD tonnage and Rit both reset together', () => {
-    const prev = prevOf(new Date(2026, 11, 31), { ytd: { ton: 7900000, rit: 150000 } });
+  test('13. YTD DAP tonnage and Rit both reset together', () => {
+    const prev = prevOf(new Date(2026, 11, 31), { ytdDap: { ton: 7900000, rit: 150000 } });
     const parsed = parsedOf(new Date(2027, 0, 10), 20000, 500); // clean new ISO year too, past the week-53 edge
     const t = calculateTotals({ parsed, prev });
-    assert.equal(t.ytdTon, 20000);
-    assert.equal(t.ytdRit, 500);
+    assert.equal(t.ytdDapTon, 20000);
+    assert.equal(t.ytdDapRit, 500);
   });
 
   test('14. Daily tonnage and Rit both reset together (Day Shift)', () => {
@@ -336,7 +350,7 @@ describe('Every buyer profile shares the exact same period-reset logic (no separ
   });
 
   test('19. EIEB internal ESG Format A workbook shape uses the exact same shared calculateTotals (no separate ESG accumulation function exists)', () => {
-    // esg-profile.js's buildEsgParsedResult() produces the same {fileDate, shiftLabel, onShiftTon, onShiftRit} fields calculateTotals() reads, regardless of workbookFormat -- simulated here directly since parsing itself requires the browser XLSX global.
+    // esg-profile.js's buildEsgParsedResult() produces the same {fileDate, shiftLabel, onShiftTon, onShiftRit, deliveryTerm} fields calculateTotals() reads, regardless of workbookFormat -- simulated here directly since parsing itself requires the browser XLSX global.
     const esgParsedFormatA = { ...parsed, workbookFormat: 'ESG_FORMAT_A' };
     const t = calculateTotals({ parsed: esgParsedFormatA, prev });
     assert.equal(t.periodResets.resetWtd, true);
@@ -377,6 +391,81 @@ describe('Pure period helpers -- null/invalid safety', () => {
     assert.equal(t.dailyTon, 30000);
     assert.equal(t.wtdTon, 30000);
     assert.equal(t.mtdTon, 30000);
-    assert.equal(t.ytdTon, 30000);
+    assert.equal(t.ytdDapTon, 30000);
+    assert.equal(t.ytdExwTon, 0);
+  });
+});
+
+/* ============================================================
+   V3.1 -- YTD DAP / YTD EXW SPLIT ACCUMULATION
+============================================================ */
+describe('YTD is split into two independent buckets by parsed.deliveryTerm', () => {
+  test('a DAP shift increments only YTD DAP -- YTD EXW is untouched', () => {
+    const prev = prevOf(new Date(2026, 7, 9), {
+      ytdDap: { ton: 5000000, rit: 80000 },
+      ytdExw: { ton: 2400000, rit: 40000 },
+    });
+    const parsed = parsedOf(new Date(2026, 7, 9), 12022.52, 250, 'Day Shift', 'DAP');
+    const t = calculateTotals({ parsed, prev });
+    assert.equal(t.ytdDapTon, 5012022.52);
+    assert.equal(t.ytdExwTon, 2400000); // inactive bucket unchanged
+    assert.equal(t.ytdExwRit, 40000);
+  });
+
+  test('an EXW shift increments only YTD EXW -- YTD DAP is untouched', () => {
+    const prev = prevOf(new Date(2026, 7, 9), {
+      ytdDap: { ton: 5000000, rit: 80000 },
+      ytdExw: { ton: 2400000, rit: 40000 },
+    });
+    const parsed = parsedOf(new Date(2026, 7, 9), 29899.98, 600, 'Day Shift', 'EXW');
+    const t = calculateTotals({ parsed, prev });
+    assert.equal(t.ytdExwTon, 2429899.98);
+    assert.equal(t.ytdDapTon, 5000000); // inactive bucket unchanged
+    assert.equal(t.ytdDapRit, 80000);
+  });
+
+  test('a new calendar year resets BOTH buckets before adding the current On Shift to only the active one', () => {
+    const prev = prevOf(new Date(2026, 11, 31), {
+      ytdDap: { ton: 5000000, rit: 80000 },
+      ytdExw: { ton: 2400000, rit: 40000 },
+    });
+    const parsedDap = parsedOf(new Date(2027, 0, 10), 20000, 500, 'Day Shift', 'DAP'); // past the week-53 ISO edge
+    const tDap = calculateTotals({ parsed: parsedDap, prev });
+    assert.equal(tDap.periodResets.resetYtd, true);
+    assert.equal(tDap.ytdDapTon, 20000);
+    assert.equal(tDap.ytdExwTon, 0);
+
+    const parsedExw = parsedOf(new Date(2027, 0, 10), 20000, 500, 'Day Shift', 'EXW');
+    const tExw = calculateTotals({ parsed: parsedExw, prev });
+    assert.equal(tExw.periodResets.resetYtd, true);
+    assert.equal(tExw.ytdExwTon, 20000);
+    assert.equal(tExw.ytdDapTon, 0);
+  });
+
+  test('Daily/WTD/MTD stay buyer-total regardless of delivery term (never split)', () => {
+    const prev = prevOf(new Date(2026, 7, 9), { daily: { ton: 1000, rit: 20 } });
+    const parsedDap = parsedOf(new Date(2026, 7, 9), 500, 10, 'Night Shift', 'DAP');
+    const parsedExw = parsedOf(new Date(2026, 7, 9), 500, 10, 'Night Shift', 'EXW');
+    const tDap = calculateTotals({ parsed: parsedDap, prev });
+    const tExw = calculateTotals({ parsed: parsedExw, prev });
+    assert.equal(tDap.dailyTon, 1500);
+    assert.equal(tExw.dailyTon, 1500);
+    assert.equal(tDap.wtdTon, tExw.wtdTon);
+    assert.equal(tDap.mtdTon, tExw.mtdTon);
+  });
+
+  test('works through the shared engine for HYNC, SLNC, and ESG/EIEB alike (no separate per-buyer split rule)', () => {
+    const prev = prevOf(new Date(2026, 7, 9), { ytdDap: { ton: 100, rit: 1 }, ytdExw: { ton: 50, rit: 1 } });
+    const parsed = parsedOf(new Date(2026, 7, 9), 10, 1, 'Day Shift', 'EXW');
+
+    const hync = calculateHyncTotals({ parsed, prev });
+    const slnc = calculateSlncTotals({ parsed, prev });
+    const esgA = calculateTotals({ parsed: { ...parsed, workbookFormat: 'ESG_FORMAT_A' }, prev });
+    const esgB = calculateTotals({ parsed: { ...parsed, workbookFormat: 'ESG_FORMAT_B' }, prev });
+
+    for (const t of [hync, slnc, esgA, esgB]) {
+      assert.equal(t.ytdExwTon, 60);
+      assert.equal(t.ytdDapTon, 100); // inactive bucket unchanged for every buyer shape alike
+    }
   });
 });
