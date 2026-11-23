@@ -56,6 +56,32 @@ const FALLBACK_COLUMNS = {
 const SELLING_CODE_MARKER = 'Kode Sample';
 const SELLING_CODE_FALLBACK_COLUMN = 9; // J
 
+// Date column parsing. Real Format A weighbridge files carry the Date
+// column either as an Excel numeric serial or as a plain "DD/MM/YYYY"
+// string (e.g. "22/11/2026"). Strings are parsed explicitly -- never via
+// Date.parse()/new Date(string), which would be locale-dependent and could
+// read DD/MM as MM/DD -- and every component is range-checked against the
+// real calendar (leap years included) so impossible dates such as
+// "31/02/2026" are rejected instead of being silently rolled over by the
+// JS Date constructor. Returns { y, m, d, H, M, S } (same shape as
+// decodeExcelSerial) or null when the value is not a valid date.
+const DD_MM_YYYY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+export function parseEsgDate(value) {
+  if (typeof value === 'number') return decodeExcelSerial(value);
+  if (typeof value !== 'string') return null;
+  const m = DD_MM_YYYY.exec(value.trim());
+  if (!m) return null;
+  const d = Number(m[1]);
+  const mo = Number(m[2]);
+  const y = Number(m[3]);
+  if (y < 1900 || mo < 1 || mo > 12 || d < 1) return null;
+  const isLeap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const daysInMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+  if (d > daysInMonth) return null;
+  return { y, m: mo, d, H: 0, M: 0, S: 0 };
+}
+
 function resolveSellingCodeColumn(matrix) {
   const match = findMarkerColumns(matrix, [SELLING_CODE_MARKER], HEADER_WINDOW);
   return match ? match.columns[SELLING_CODE_MARKER].col : SELLING_CODE_FALLBACK_COLUMN;
@@ -128,8 +154,7 @@ export function parseEsgFormatA(workbook, detection) {
     // below is a blocking issue, not a silent skip.
     let rowOk = true;
 
-    const dateSerial = row[col.Date];
-    const dateParts = typeof dateSerial === 'number' ? decodeExcelSerial(dateSerial) : null;
+    const dateParts = parseEsgDate(row[col.Date]);
     if (!dateParts) {
       issues.push(createIssue('invalid-date', `Tanggal tidak valid pada baris ${sourceRow}.`, { sourceRow, vehicleNo }));
       rowOk = false;

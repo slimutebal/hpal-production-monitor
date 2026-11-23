@@ -393,7 +393,7 @@ export function cleanInvisible(str) {
 export const DELIVERY_TERM_DAP = 'DAP';
 export const DELIVERY_TERM_EXW = 'EXW';
 
-const DELIVERY_TERM_BUYER_PREFIXES = ['SCHY', 'SCSL', 'SCESG'];
+const DELIVERY_TERM_BUYER_PREFIXES = ['SCHY', 'SCSL', 'SCESG', 'SCGEN'];
 
 // Returns DELIVERY_TERM_DAP or DELIVERY_TERM_EXW for a selling code
 // belonging to a recognized buyer prefix, or null when the code is

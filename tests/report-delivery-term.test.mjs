@@ -55,6 +55,27 @@ describe('detectDeliveryTerm -- one shared classifier for every buyer prefix', (
     assert.equal(detectDeliveryTerm('SCESG-EX-000202'), DELIVERY_TERM_EXW);
   });
 
+  test('SCGEN (ESG/EIEB) without an EX token -> DAP', () => {
+    assert.equal(detectDeliveryTerm('SCGEN-00001'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCGEN-00002'), DELIVERY_TERM_DAP);
+  });
+  test('SCGEN (ESG/EIEB) with an EX token immediately after the prefix -> EXW', () => {
+    assert.equal(detectDeliveryTerm('SCGEN-EX-00001'), DELIVERY_TERM_EXW);
+    assert.equal(detectDeliveryTerm('SCGEN-EX-00002'), DELIVERY_TERM_EXW);
+  });
+  test('SCGEN never uses a loose includes("EX") match', () => {
+    assert.equal(detectDeliveryTerm('SCGEN-EXPORT-00001'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCGEN-00001-EX'), DELIVERY_TERM_DAP);
+  });
+  test('SCGEN is normalized for case and whitespace', () => {
+    assert.equal(detectDeliveryTerm('  scgen-00001 '), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('  scgen-ex-00001 '), DELIVERY_TERM_EXW);
+  });
+  test('an unrecognized prefix similar to SCGEN still resolves to null', () => {
+    assert.equal(detectDeliveryTerm('SCGE-00001'), null);
+    assert.equal(detectDeliveryTerm('XSCGEN-00001'), null);
+  });
+
   test('lowercase and surrounding whitespace are normalized before classification', () => {
     assert.equal(detectDeliveryTerm('  schy-ex-0000012  '), DELIVERY_TERM_EXW);
     assert.equal(detectDeliveryTerm('  scsl-0000033  '), DELIVERY_TERM_DAP);
@@ -106,6 +127,41 @@ describe('resolveWorkbookDeliveryTerm -- one delivery term per workbook, or a bl
     assert.deepEqual(resolveWorkbookDeliveryTerm([]), { status: 'unresolved' });
     assert.deepEqual(resolveWorkbookDeliveryTerm(['', '  ', null, undefined]), { status: 'unresolved' });
     assert.deepEqual(resolveWorkbookDeliveryTerm(['GARBAGE', 'ALSO-GARBAGE']), { status: 'unresolved' });
+  });
+
+  test('all SCGEN rows without EX -> resolved DAP', () => {
+    const result = resolveWorkbookDeliveryTerm(['SCGEN-00001', 'SCGEN-00001', 'SCGEN-00002']);
+    assert.deepEqual(result, { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
+  });
+
+  test('all SCGEN-EX rows -> resolved EXW', () => {
+    const result = resolveWorkbookDeliveryTerm(['SCGEN-EX-00001', 'SCGEN-EX-00002']);
+    assert.deepEqual(result, { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW });
+  });
+
+  test('SCGEN DAP + SCGEN EXW rows -> mixed (blocking)', () => {
+    const result = resolveWorkbookDeliveryTerm(['SCGEN-00001', 'SCGEN-EX-00001']);
+    assert.equal(result.status, 'mixed');
+    assert.deepEqual(new Set(result.terms), new Set([DELIVERY_TERM_DAP, DELIVERY_TERM_EXW]));
+  });
+
+  test('SCGEN + SCESG rows with the same term -> resolved to that term', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCGEN-00001', 'SCESG-000202']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCGEN-EX-00001', 'SCESG-EX-000202']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW },
+    );
+  });
+
+  test('unknown prefixes alongside SCGEN are ignored; unknown prefixes alone stay unresolved', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCGEN-00001', 'UNKNOWN-00001']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+    assert.deepEqual(resolveWorkbookDeliveryTerm(['UNKNOWN-00001', 'SCGE-00001']), { status: 'unresolved' });
   });
 
   test('a handful of unclassifiable rows alongside a clean, single-term majority still resolves normally', () => {
@@ -172,6 +228,24 @@ describe('buildEsgParsedResult resolves delivery term from adapter rows through 
   test('all-DAP rows resolve parsed.deliveryTerm to DAP', () => {
     const parsed = buildEsgParsedResult(esgResult([esgRow({ sellingCode: 'SCESG-000202' })]));
     assert.equal(parsed.deliveryTerm, DELIVERY_TERM_DAP);
+  });
+
+  test('SCGEN-00001 / SCGEN-00002 rows (22 Nov 2026 Night Shift pattern) resolve to DAP, not unresolved', () => {
+    const parsed = buildEsgParsedResult(esgResult([
+      esgRow({ sellingCode: 'SCGEN-00001' }),
+      esgRow({ sourceRow: 2, sellingCode: 'SCGEN-00002' }),
+    ], { workbookFormat: 'ESG_FORMAT_B' }));
+    assert.equal(parsed.deliveryTerm, DELIVERY_TERM_DAP);
+    assert.deepEqual(parsed.deliveryTermResolution, { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
+  });
+
+  test('SCGEN DAP + SCGEN-EX rows resolve to a blocking mixed status', () => {
+    const parsed = buildEsgParsedResult(esgResult([
+      esgRow({ sellingCode: 'SCGEN-00001' }),
+      esgRow({ sourceRow: 2, sellingCode: 'SCGEN-EX-00001' }),
+    ]));
+    assert.equal(parsed.deliveryTerm, null);
+    assert.equal(parsed.deliveryTermResolution.status, 'mixed');
   });
 
   test('mixed rows resolve to a blocking mixed status, parsed.deliveryTerm is null', () => {
