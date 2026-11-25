@@ -76,6 +76,31 @@ describe('detectDeliveryTerm -- one shared classifier for every buyer prefix', (
     assert.equal(detectDeliveryTerm('XSCGEN-00001'), null);
   });
 
+  test('SCMMEIM (ESG/EIEB) without an EX token -> DAP; with EX immediately after the prefix -> EXW', () => {
+    assert.equal(detectDeliveryTerm('SCMMEIM-00001'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCMMEIM-EX-00001'), DELIVERY_TERM_EXW);
+  });
+  test('SCQMB (ESG/EIEB) without an EX token -> DAP; with EX immediately after the prefix -> EXW', () => {
+    assert.equal(detectDeliveryTerm('SCQMB-00270'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCQMB-EX-00270'), DELIVERY_TERM_EXW);
+  });
+  test('SCMMEIM / SCQMB never use a loose includes("EX") match', () => {
+    assert.equal(detectDeliveryTerm('SCQMB-EXPORT-00270'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCMMEIM-EXPORT-00001'), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('SCQMB-00270-EX'), DELIVERY_TERM_DAP);
+  });
+  test('SCMMEIM / SCQMB are normalized for case and whitespace', () => {
+    assert.equal(detectDeliveryTerm('  scqmb-00270 '), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('  scqmb-ex-00270 '), DELIVERY_TERM_EXW);
+    assert.equal(detectDeliveryTerm('  scmmeim-00001 '), DELIVERY_TERM_DAP);
+    assert.equal(detectDeliveryTerm('  scmmeim-ex-00001 '), DELIVERY_TERM_EXW);
+  });
+  test('unrecognized prefixes similar to SCMMEIM / SCQMB still resolve to null', () => {
+    assert.equal(detectDeliveryTerm('SCQM-00270'), null);
+    assert.equal(detectDeliveryTerm('SCMEIM-00001'), null);
+    assert.equal(detectDeliveryTerm('XSCQMB-00270'), null);
+  });
+
   test('lowercase and surrounding whitespace are normalized before classification', () => {
     assert.equal(detectDeliveryTerm('  schy-ex-0000012  '), DELIVERY_TERM_EXW);
     assert.equal(detectDeliveryTerm('  scsl-0000033  '), DELIVERY_TERM_DAP);
@@ -164,6 +189,78 @@ describe('resolveWorkbookDeliveryTerm -- one delivery term per workbook, or a bl
     assert.deepEqual(resolveWorkbookDeliveryTerm(['UNKNOWN-00001', 'SCGE-00001']), { status: 'unresolved' });
   });
 
+  test('all SCQMB DAP rows -> resolved DAP', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCQMB-00270', 'SCQMB-00271', 'SCQMB-00272']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+  });
+
+  test('all SCMMEIM DAP rows -> resolved DAP', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCMMEIM-00001', 'SCMMEIM-00002']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+  });
+
+  test('all SCQMB EXW rows -> resolved EXW', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCQMB-EX-00270', 'SCQMB-EX-00271']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW },
+    );
+  });
+
+  test('all SCMMEIM EXW rows -> resolved EXW', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCMMEIM-EX-00001', 'SCMMEIM-EX-00002']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW },
+    );
+  });
+
+  test('SCQMB / SCMMEIM DAP + EXW rows -> mixed (blocking)', () => {
+    for (const codes of [
+      ['SCQMB-00270', 'SCQMB-EX-00271'],
+      ['SCMMEIM-00001', 'SCMMEIM-EX-00001'],
+      ['SCQMB-00270', 'SCMMEIM-EX-00001'],
+    ]) {
+      const result = resolveWorkbookDeliveryTerm(codes);
+      assert.equal(result.status, 'mixed');
+      assert.deepEqual(new Set(result.terms), new Set([DELIVERY_TERM_DAP, DELIVERY_TERM_EXW]));
+    }
+  });
+
+  test('SCESG + SCMMEIM + SCQMB + SCGEN rows with the same term -> resolved to that term', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCESG-000202', 'SCMMEIM-00001', 'SCQMB-00270', 'SCGEN-00001']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCESG-EX-000202', 'SCMMEIM-EX-00001', 'SCQMB-EX-00270', 'SCGEN-EX-00001']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW },
+    );
+  });
+
+  test('unknown-only prefixes (including near-misses of SCMMEIM / SCQMB) stay unresolved', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['SCQM-00270', 'SCMEIM-00001', 'UNKNOWN-00001']),
+      { status: 'unresolved' },
+    );
+  });
+
+  test('existing SCHY / SCSL / SCESG / SCGEN workbook resolution is unchanged', () => {
+    assert.deepEqual(resolveWorkbookDeliveryTerm(['SCHY-0001', 'SCHY-0002']), { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
+    assert.deepEqual(resolveWorkbookDeliveryTerm(['SCSL-EX-0001', 'SCSL-EX-0002']), { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW });
+    assert.deepEqual(resolveWorkbookDeliveryTerm(['SCESG-000202']), { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
+    assert.deepEqual(resolveWorkbookDeliveryTerm(['SCGEN-EX-00001']), { status: 'resolved', deliveryTerm: DELIVERY_TERM_EXW });
+  });
+
+  test('lowercase / whitespace SCQMB and SCMMEIM codes resolve, and SCQMB-EXPORT is not EXW', () => {
+    assert.deepEqual(
+      resolveWorkbookDeliveryTerm(['  scqmb-00270 ', 'scmmeim-00001  ', 'SCQMB-EXPORT-00270']),
+      { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP },
+    );
+  });
+
   test('a handful of unclassifiable rows alongside a clean, single-term majority still resolves normally', () => {
     const result = resolveWorkbookDeliveryTerm(['SCHY-0001', 'SCHY-0002', '']);
     assert.deepEqual(result, { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
@@ -238,6 +335,41 @@ describe('buildEsgParsedResult resolves delivery term from adapter rows through 
     assert.equal(parsed.deliveryTerm, DELIVERY_TERM_DAP);
     assert.deepEqual(parsed.deliveryTermResolution, { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
   });
+
+  // Synthetic fixture for the 24 Nov 2026 Day Shift SCQMB case (production
+  // workbooks not committed): 78 + 74 + 50 = 202 ritase across SCQMB-00270/
+  // 00271/00272, 10.757,12 wmt total. Exercised for both ESG workbook
+  // formats -- Format A ("Kode Sample", ATQ) and Format B ("PILE ID", ESG).
+  for (const workbookFormat of ['ESG_FORMAT_A', 'ESG_FORMAT_B']) {
+    test(`SCQMB-00270/00271/00272 rows (24 Nov 2026 Day Shift pattern, ${workbookFormat}) resolve to DAP, not unresolved`, () => {
+      const ritasePerCode = [['SCQMB-00270', 78], ['SCQMB-00271', 74], ['SCQMB-00272', 50]];
+      const totalKg = 10757120;
+      const totalRit = 202;
+      const rows = [];
+      let assignedKg = 0;
+      ritasePerCode.forEach(([sellingCode, rit]) => {
+        for (let i = 0; i < rit; i++) {
+          const netKg = rows.length === totalRit - 1 ? totalKg - assignedKg : 53250;
+          assignedKg += netKg;
+          rows.push(esgRow({
+            sourceRow: rows.length + 1,
+            sellingCode,
+            netKg,
+            loadedAt: new Date(2026, 10, 24, 9, 0),
+            date: new Date(2026, 10, 24),
+          }));
+        }
+      });
+      assert.equal(rows.length, totalRit);
+      assert.equal(rows.reduce((s, r) => s + r.netKg, 0), totalKg);
+
+      const parsed = buildEsgParsedResult(esgResult(rows, { workbookFormat }));
+      assert.equal(parsed.onShiftRit, 202);
+      assert.ok(Math.abs(parsed.onShiftTon - 10757.12) < 1e-6);
+      assert.equal(parsed.deliveryTerm, DELIVERY_TERM_DAP);
+      assert.deepEqual(parsed.deliveryTermResolution, { status: 'resolved', deliveryTerm: DELIVERY_TERM_DAP });
+    });
+  }
 
   test('SCGEN DAP + SCGEN-EX rows resolve to a blocking mixed status', () => {
     const parsed = buildEsgParsedResult(esgResult([

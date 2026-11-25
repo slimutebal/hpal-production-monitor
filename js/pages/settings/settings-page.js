@@ -21,6 +21,10 @@
 //   and the four Personnel Directory summary cards (unchanged from the
 //   pre-Phase-8 design below).
 //
+//   v3.1.1: both tiers additionally render the Application Update section
+//   (after Preferences, before Personnel Directory) -- see
+//   buildUpdateCardMarkup()/renderUpdateCard().
+//
 // The whole shell is rebuilt (buildMarkup()/collectElements()/wireEvents()
 // all re-run) every time the access tier actually changes (subscribeAccessChange()
 // at the bottom of initSettingsPage()) -- this is the one deliberate
@@ -89,6 +93,7 @@ import {
 } from './settings-personnel.js';
 import { getPreferences, setAppearance, VALID_LOCALES, VALID_APPEARANCES } from '../../services/app-preferences-service.js';
 import { APP_NAME, APP_VERSION } from '../../shared/app-version.js';
+import { getAppUpdateController, UPDATE_STATUS, UPDATE_ERROR } from '../../services/app-update-service.js';
 import { t, setLocale as applyLocale, onLocaleChange, translatePage } from '../../i18n/i18n.js';
 import { onRouteChange } from '../../router.js';
 import {
@@ -195,9 +200,21 @@ let licenseVerifyInFlight = false;
 // whichever of tryFlushPendingLicenseAttention()'s call sites runs first.
 let pendingLicenseAttention = false;
 
+// Application Update card (v3.1.1). The update state itself lives in
+// js/services/app-update-service.js's app-wide controller -- not in the
+// DOM -- so it survives every renderForAccessTier() rebuild; this page
+// only re-renders it. postUpdateNotice is the one-shot "updated to vX"
+// confirmation shown after the reload applyUpdate() performed, kept until
+// the update state moves past a plain check result.
+let appUpdate = null;
+let postUpdateNotice = null;
+
 export function initSettingsPage() {
   page = document.getElementById('page-settings');
   if (!page) return;
+
+  appUpdate = getAppUpdateController();
+  postUpdateNotice = appUpdate.consumePostUpdateResult();
 
   renderForAccessTier();
 
@@ -209,6 +226,7 @@ export function initSettingsPage() {
     translatePage(page);
     renderPreferenceCards();
     renderLicenseCard();
+    renderUpdateCard();
     // Re-render whatever dynamic (non data-i18n) text is currently on
     // screen so a locale switch doesn't leave those strings behind in the
     // old language -- translatePage() above only ever touches static
@@ -217,9 +235,15 @@ export function initSettingsPage() {
   });
 
   window.addEventListener('online', handleNetworkOnline);
+  window.addEventListener('online', handleUpdateNetworkOnline);
   window.addEventListener('offline', () => {
     if (hasFullAccess()) renderOfflineIndicator();
   });
+
+  // Both access tiers: the update card re-renders on every controller
+  // state change, against whichever shell is current.
+  appUpdate.subscribe(() => renderUpdateCard());
+
   // Monitor's own theme toggle (index.html's classic, non-module inline
   // script) cannot `import` app-preferences-service.js, so it dispatches
   // this same raw window event directly on every change instead -- this
@@ -234,7 +258,11 @@ export function initSettingsPage() {
   // tryFlushPendingLicenseAttention()'s own visibility check is reliable
   // here.
   onRouteChange((route) => {
-    if (route === 'settings') tryFlushPendingLicenseAttention();
+    if (route !== 'settings') return;
+    tryFlushPendingLicenseAttention();
+    // Opening Settings checks for an update automatically (throttled by
+    // the controller; never reloads -- see handleUpdateApplyClick()).
+    appUpdate.autoCheck();
   });
 
   // The route guard (app.js, denying #/report) and report-page.js's own
@@ -268,6 +296,7 @@ function renderForAccessTier() {
   translatePage(page);
   renderLicenseCard();
   renderPreferenceCards();
+  renderUpdateCard();
 
   if (fullAccess) {
     loadCachedPersonnelDirectory();
@@ -326,6 +355,9 @@ function buildMarkup(fullAccess) {
         </div>
       </section>
 
+      <h2 class="settings-section-label" data-i18n="settings.section.update">Pembaruan Aplikasi</h2>
+      ${buildUpdateCardMarkup()}
+
       ${fullAccess ? buildOperationalMarkup() : ''}
     </div>
 
@@ -375,6 +407,37 @@ function buildLicenseCardMarkup() {
       </div>
 
       <p class="settings-sync-message" id="settings-license-message" role="status" aria-live="polite"></p>
+    </section>
+  `;
+}
+
+// Application Update card (v3.1.1) -- rendered in BOTH access tiers, after
+// Preferences and before the FULL_ACCESS-only Personnel Directory. Reuses
+// .settings-card/.settings-sync-meta/.settings-btn/.settings-sync-message
+// as-is; renderUpdateCard() fills it from the update controller's state.
+function buildUpdateCardMarkup() {
+  return `
+    <section class="settings-card settings-update-card" id="settings-update-card" aria-labelledby="settings-update-title">
+      <h2 id="settings-update-title" data-i18n="settings.update.title">Versi Aplikasi</h2>
+      <dl class="settings-sync-meta">
+        <div class="settings-sync-meta__row">
+          <dt data-i18n="settings.update.installedLabel">Versi terpasang</dt>
+          <dd id="settings-update-installed">${APP_VERSION}</dd>
+        </div>
+        <div class="settings-sync-meta__row" id="settings-update-latest-row" hidden>
+          <dt data-i18n="settings.update.latestLabel">Versi terbaru</dt>
+          <dd id="settings-update-latest">-</dd>
+        </div>
+        <div class="settings-sync-meta__row">
+          <dt data-i18n="settings.update.statusLabel">Status</dt>
+          <dd id="settings-update-status">-</dd>
+        </div>
+      </dl>
+      <div class="settings-btn-row">
+        <button type="button" class="settings-btn settings-btn-secondary" id="settings-update-check-btn" data-i18n="settings.update.state.idle">Periksa Pembaruan</button>
+        <button type="button" class="settings-btn settings-btn-primary" id="settings-update-apply-btn" hidden data-i18n="settings.update.applyButton">Perbarui Sekarang</button>
+      </div>
+      <p class="settings-sync-message" id="settings-update-message" role="status" aria-live="polite"></p>
     </section>
   `;
 }
@@ -539,6 +602,16 @@ function collectElements(page, fullAccess) {
       installedAt: page.querySelector('#settings-license-installed-at'),
       message: page.querySelector('#settings-license-message'),
     },
+    update: {
+      card: page.querySelector('#settings-update-card'),
+      installed: page.querySelector('#settings-update-installed'),
+      latestRow: page.querySelector('#settings-update-latest-row'),
+      latest: page.querySelector('#settings-update-latest'),
+      status: page.querySelector('#settings-update-status'),
+      checkBtn: page.querySelector('#settings-update-check-btn'),
+      applyBtn: page.querySelector('#settings-update-apply-btn'),
+      message: page.querySelector('#settings-update-message'),
+    },
     modal: {
       overlay: page.querySelector('#settings-modal-overlay'),
       title: page.querySelector('#settings-modal-title'),
@@ -598,6 +671,9 @@ function wireEvents(fullAccess) {
       handleUnlockClick();
     }
   });
+
+  els.update.checkBtn.addEventListener('click', handleUpdateCheckClick);
+  els.update.applyBtn.addEventListener('click', handleUpdateApplyClick);
 
   els.modal.cancelBtn.addEventListener('click', closeModal);
   els.modal.overlay.addEventListener('click', (event) => {
@@ -729,6 +805,94 @@ function handleRemoveLicenseConfirm() {
   modalConfirmHandler = null;
   currentModalRecord = null;
   removeLicense();
+}
+
+/* ============================================================
+   APPLICATION UPDATE CARD (v3.1.1) -- both access tiers. The lifecycle
+   (check / download / ready / apply / reload-once) is owned by
+   js/services/app-update-service.js; this section only renders its state
+   and forwards the two button clicks.
+============================================================ */
+const UPDATE_BUSY_STATUSES = new Set([
+  UPDATE_STATUS.CHECKING,
+  UPDATE_STATUS.AVAILABLE,
+  UPDATE_STATUS.DOWNLOADING,
+  UPDATE_STATUS.APPLYING,
+]);
+
+const UPDATE_ERROR_MESSAGE_KEYS = {
+  [UPDATE_ERROR.NETWORK]: 'settings.update.error.network',
+  [UPDATE_ERROR.INSTALL_FAILED]: 'settings.update.error.installFailed',
+  [UPDATE_ERROR.APPLY_FAILED]: 'settings.update.error.applyFailed',
+  [UPDATE_ERROR.NO_REGISTRATION]: 'settings.update.error.noRegistration',
+};
+
+// { text, type } for the card's message line. The post-update notice
+// stays visible across the automatic re-check that follows the reload,
+// and is dropped once the state moves on to anything else.
+function buildUpdateMessage(state) {
+  const status = state.status;
+  if (postUpdateNotice) {
+    if (status === UPDATE_STATUS.IDLE || status === UPDATE_STATUS.CHECKING || status === UPDATE_STATUS.CURRENT) {
+      if (postUpdateNotice.ok === true) return { text: t('settings.update.notice.updated', { version: postUpdateNotice.version }), type: 'ok' };
+      if (postUpdateNotice.ok === false) return { text: t('settings.update.notice.notApplied', { target: postUpdateNotice.target }), type: 'warn' };
+      return { text: t('settings.update.notice.reloaded', { version: postUpdateNotice.version }), type: 'info' };
+    }
+    postUpdateNotice = null;
+  }
+  if (status === UPDATE_STATUS.DOWNLOADING) return { text: t('settings.update.hint.downloading'), type: 'info' };
+  if (status === UPDATE_STATUS.READY) return { text: t('settings.update.hint.ready'), type: 'info' };
+  if (status === UPDATE_STATUS.OFFLINE) return { text: t('settings.update.hint.offline'), type: 'warn' };
+  if (status === UPDATE_STATUS.UNSUPPORTED) return { text: t('settings.update.hint.unsupported'), type: 'warn' };
+  if (status === UPDATE_STATUS.ERROR) {
+    return { text: t(UPDATE_ERROR_MESSAGE_KEYS[state.error] || 'settings.update.error.network'), type: 'error' };
+  }
+  return { text: '', type: null };
+}
+
+function renderUpdateCard() {
+  if (!appUpdate || !els || !els.update || !els.update.card) return;
+  const state = appUpdate.getState();
+  const u = els.update;
+
+  u.installed.textContent = state.installedVersion;
+  u.latestRow.hidden = !state.latestVersion;
+  u.latest.textContent = state.latestVersion || '-';
+  u.status.textContent = state.status === UPDATE_STATUS.IDLE ? '-' : t(`settings.update.state.${state.status}`);
+
+  u.checkBtn.disabled = UPDATE_BUSY_STATUSES.has(state.status) || state.status === UPDATE_STATUS.UNSUPPORTED;
+  u.checkBtn.textContent = state.status === UPDATE_STATUS.CHECKING
+    ? t('settings.update.state.checking')
+    : t('settings.update.state.idle');
+
+  const showApply = state.status === UPDATE_STATUS.READY || state.status === UPDATE_STATUS.APPLYING;
+  u.applyBtn.hidden = !showApply;
+  u.applyBtn.disabled = state.status === UPDATE_STATUS.APPLYING;
+  u.applyBtn.textContent = state.status === UPDATE_STATUS.APPLYING
+    ? t('settings.update.state.applying')
+    : t('settings.update.applyButton');
+
+  const message = buildUpdateMessage(state);
+  u.message.textContent = message.text;
+  u.message.className = `settings-sync-message${message.type ? ` settings-sync-message--${message.type}` : ''}`;
+}
+
+function handleUpdateCheckClick() {
+  postUpdateNotice = null;
+  appUpdate.checkForUpdates();
+}
+
+// Owner decision: no extra confirmation dialog -- the user's own click on
+// "Perbarui Sekarang / Update Now" IS the approval. This is the ONLY call
+// site of applyUpdate() in the app, so no other path can ever activate a
+// waiting worker or reload the page.
+function handleUpdateApplyClick() {
+  appUpdate.applyUpdate();
+}
+
+function handleUpdateNetworkOnline() {
+  if (!appUpdate || !page || !page.classList.contains('is-active')) return;
+  if (appUpdate.getState().status === UPDATE_STATUS.OFFLINE) appUpdate.autoCheck();
 }
 
 /* ============================================================

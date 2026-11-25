@@ -587,3 +587,13 @@
 #page-settings .settings-license-input-row .settings-btn {
   flex: 0 0 auto;
 }
+
+/* v3.1.1 -- Application Update card (both access tiers). Reuses the
+   existing card/meta/button/message styles; only lets Check and Update
+   Now share the row evenly and wrap on very narrow screens. */
+#page-settings .settings-update-card .settings-btn-row {
+  flex-wrap: wrap;
+}
+#page-settings .settings-update-card .settings-btn {
+  flex: 1 1 140px;
+}

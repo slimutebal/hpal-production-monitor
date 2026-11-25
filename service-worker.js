@@ -1,12 +1,58 @@
-// V3.0.1: Report application-shell assets changed -- shared-report-profile.js,
-// report-page.js, report-utils.js and the ESG format adapters now carry
-// DAP/EXW delivery-term detection and split YTD DAP / YTD EXW accumulation,
-// replacing the old single combined YTD. An already-installed PWA must not
-// keep serving the v3.0.0 cached Report modules, which parse and render
-// annual accumulation differently. Evicts every older cache via the existing
-// activate-time cleanup (no second version source; this is the ONE place
-// a release's cache identity is declared).
-const CACHE_NAME = 'hpal-production-monitor-v3.0.1-report-dap-exw-ytd';
+// HPAL Production Monitor service worker -- offline-first application shell
+// with a USER-APPROVED update lifecycle (v3.1.1 in-app update system).
+//
+// RELEASE IDENTITY. APP_VERSION and ASSET_REVISION below are GENERATED --
+// never edit them by hand. Run, before every release:
+//
+//   node tests/tools/sync-service-worker-release.mjs
+//
+// APP_VERSION mirrors js/shared/app-version.js (the one canonical version
+// source); ASSET_REVISION is a content hash of every APP_SHELL file.
+// tests/service-worker.test.mjs fails if either is stale. Because both are
+// part of this script's bytes, ANY release that changes a precached asset
+// changes this file, which is the only thing browsers compare to detect a
+// service-worker update. (v3.1.0 shipped changed Report modules without
+// touching this file, so installed PWAs never saw it -- that is the gap
+// this closes.) CACHE_NAME is derived from both, so each release precaches
+// into its own, complete, never-mixed cache.
+//
+// LIFECYCLE.
+//   install  -- precaches the complete APP_SHELL into this release's cache,
+//               bypassing the HTTP cache (cache: 'reload'), then verifies
+//               the precached js/shared/app-version.js really is
+//               APP_VERSION. A stale/half-propagated deployment therefore
+//               FAILS installation instead of being offered as an update.
+//               Does NOT skipWaiting() on its own: the new release waits
+//               until the user taps "Perbarui Sekarang / Update Now" in
+//               Settings (SKIP_WAITING message). One exception -- the
+//               one-time migration off a legacy (pre-updater) worker, which
+//               has no Update Now button to offer: see
+//               activeWorkerSupportsUserApprovedUpdates().
+//   activate -- marks this cache as owned by an updater-aware worker,
+//               deletes ONLY this app's obsolete application-shell caches
+//               (CACHE_PREFIX), never another application's caches, and
+//               claims open clients. It never touches localStorage,
+//               IndexedDB, or any other persisted user data -- licenses,
+//               preferences, contractor/personnel caches and the offline
+//               write queue all live in localStorage, outside Cache Storage.
+//   message  -- SKIP_WAITING (user approved the update) and GET_VERSION
+//               (Settings asks a waiting worker which version it carries).
+//               Message types are mirrored from
+//               js/services/app-update-service.js's SW_MESSAGE
+//               (test-enforced identical).
+const APP_VERSION = 'v3.1.1';
+const ASSET_REVISION = 'c81f5059824c';
+const CACHE_PREFIX = 'hpal-production-monitor-';
+const CACHE_NAME = `${CACHE_PREFIX}shell-${APP_VERSION}-${ASSET_REVISION}`;
+const SW_MESSAGE_SKIP_WAITING = 'HPAL_SW_SKIP_WAITING';
+const SW_MESSAGE_GET_VERSION = 'HPAL_SW_GET_VERSION';
+const SW_MESSAGE_VERSION = 'HPAL_SW_VERSION';
+// Written into a release's own cache when its worker ACTIVATES. Its
+// presence tells a newer worker that the currently active one is
+// updater-aware (i.e. its page offers Update Now), so the newer worker
+// must wait for the user instead of activating itself.
+const UPDATER_MARKER_URL = './__hpal-sw-updater-active__';
+const VERSION_MARKER_URL = './js/shared/app-version.js';
 const APP_SHELL = [
   './',
   './index.html',
@@ -35,6 +81,7 @@ const APP_SHELL = [
   './js/services/personnel-write-queue.js',
   './js/services/app-preferences-service.js',
   './js/services/license-service.js',
+  './js/services/app-update-service.js',
   './js/i18n/i18n.js',
   './js/i18n/locales/id.js',
   './js/i18n/locales/en.js',
@@ -87,23 +134,83 @@ const APP_SHELL = [
   './icons/icon-maskable-512.png'
 ];
 
+// True only when an active worker exists AND it is updater-aware (its
+// release cache carries UPDATER_MARKER_URL). A legacy pre-updater worker
+// (v3.0.1 and earlier -- cache 'hpal-production-monitor-v3.0.1-...', no
+// marker) controls pages that have no Update Now button, so waiting for the
+// user there would strand the update forever: the new worker activates
+// itself once, exactly as every legacy release did, and from then on all
+// future releases wait for the user.
+async function activeWorkerSupportsUserApprovedUpdates() {
+  if (!self.registration || !self.registration.active) return false;
+  const keys = await caches.keys();
+  for (const key of keys) {
+    if (!key.startsWith(CACHE_PREFIX)) continue;
+    const cache = await caches.open(key);
+    if (await cache.match(UPDATER_MARKER_URL)) return true;
+  }
+  return false;
+}
+
+async function verifyPrecachedVersion(cache) {
+  const response = await cache.match(VERSION_MARKER_URL);
+  const text = response ? await response.text() : '';
+  if (!text.includes(`'${APP_VERSION}'`)) {
+    throw new Error(`Precached app-version.js does not declare ${APP_VERSION}; deployment not complete.`);
+  }
+}
+
+async function handleInstall() {
+  const waitForUser = await activeWorkerSupportsUserApprovedUpdates();
+  // Same CACHE_NAME already present only when a previous worker had the
+  // exact same release identity (worker-script-only change). That cache
+  // may be the ACTIVE one, so a failed install must never delete it.
+  const cacheExisted = await caches.has(CACHE_NAME);
+  const cache = await caches.open(CACHE_NAME);
+  try {
+    // cache: 'reload' -- never precache a stale copy from the browser's
+    // HTTP cache (GitHub Pages serves assets with max-age).
+    await cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' })));
+    await verifyPrecachedVersion(cache);
+  } catch (error) {
+    if (!cacheExisted) await caches.delete(CACHE_NAME);
+    throw error;
+  }
+  if (!waitForUser) await self.skipWaiting();
+}
+
+async function handleActivate() {
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(UPDATER_MARKER_URL, new Response(APP_VERSION, { headers: { 'Content-Type': 'text/plain' } }));
+  // The replacement is installed and now active -- only at this point are
+  // this application's older shell caches removed. Caches outside
+  // CACHE_PREFIX (another app on the same origin) are never touched.
+  const keys = await caches.keys();
+  await Promise.all(keys
+    .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+    .map((key) => caches.delete(key)));
+  await self.clients.claim();
+}
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(handleInstall());
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys
-        .filter((key) => key !== CACHE_NAME)
-        .map((key) => caches.delete(key))
-      ))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil(handleActivate());
+});
+
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === SW_MESSAGE_SKIP_WAITING) {
+    const activation = self.skipWaiting();
+    if (typeof event.waitUntil === 'function') event.waitUntil(activation);
+    return;
+  }
+  if (data.type === SW_MESSAGE_GET_VERSION) {
+    const port = event.ports && event.ports[0];
+    if (port) port.postMessage({ type: SW_MESSAGE_VERSION, version: APP_VERSION, assetRevision: ASSET_REVISION });
+  }
 });
 
 self.addEventListener('fetch', (event) => {
@@ -122,56 +229,38 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (request.mode === 'navigate') {
-    // V2.5.1 -- local-first navigation (startup audit Root Cause A). The
-    // previous strategy was network-first: it awaited a real network
-    // round-trip on EVERY cold start before any HTML could be parsed,
-    // even though a complete, valid cached index.html already existed --
-    // only a network FAILURE fell back to cache; a network that was
-    // merely slow (a re-establishing connection on a just-relaunched iOS
-    // PWA, a degraded signal) was awaited in full, extending the white
-    // screen for as long as that took.
-    //
-    // This is now cache-first with background revalidation: a cached
-    // index.html (always read/written under the literal './index.html'
-    // key -- the same identity APP_SHELL's own install-time precache
-    // uses, so there is exactly one cached copy, never several under
-    // different keys, per this task's Section 5) is served immediately
-    // with no network wait at all. A network request is still always
-    // issued independently, in the background via event.waitUntil(), to
-    // refresh that same cache entry for the NEXT launch; its failure is
-    // swallowed -- the user already has a working page, so a slow/absent
-    // network must never be surfaced as an error here. Only when no
-    // cached index exists at all (first-ever load, or a cleared cache)
-    // does this fall back to actually waiting on the network, exactly
-    // like the old behavior.
+    // Local-first navigation (V2.5.1 startup audit Root Cause A): the
+    // cached index.html -- always under the literal './index.html' key,
+    // the same identity APP_SHELL's install-time precache uses -- is
+    // served immediately with no network wait. v3.1.1: it is read from
+    // THIS release's cache only, and the old background refresh that
+    // wrote the freshly deployed index.html into the running release's
+    // cache is gone -- it mixed a new index.html with the old release's
+    // cached modules. New releases now arrive only as a complete,
+    // verified precache via the update lifecycle above. Only when no
+    // cached index exists at all (first-ever load) does this wait on the
+    // network.
     event.respondWith((async () => {
-      const cachedResponse = await caches.match('./index.html');
+      const cache = await caches.open(CACHE_NAME);
+      const cachedResponse = await cache.match('./index.html');
+      if (cachedResponse) return cachedResponse;
 
-      const networkRefresh = fetch(request).then((response) => {
-        if (response && response.status === 200) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
-        }
-        return response;
-      });
-
-      if (cachedResponse) {
-        // Never make the navigation wait on this -- it exists purely to
-        // keep the cache warm for the next cold start.
-        event.waitUntil(networkRefresh.catch(() => {}));
-        return cachedResponse;
+      try {
+        return await fetch(request);
+      } catch (error) {
+        const anyCachedIndex = await caches.match('./index.html');
+        if (anyCachedIndex) return anyCachedIndex;
+        throw error;
       }
-
-      // No cached index at all -- the only path left is to actually wait
-      // for the network; if even that fails outright, try the cache one
-      // more time (a concurrent install may have just populated it).
-      return networkRefresh.catch(() => caches.match('./index.html'));
     })());
     return;
   }
 
+  // Static assets: cache-first from THIS release's cache (never another
+  // release's), falling back to the network for anything not precached.
   event.respondWith(
-    caches.match(request)
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.match(request))
       .then((cached) => cached || fetch(request).then((response) => {
         if (!response || response.status !== 200 || response.type === 'opaque') return response;
         const copy = response.clone();

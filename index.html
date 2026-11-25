@@ -342,9 +342,15 @@
 // Registration failure is swallowed -- the app remains fully usable
 // online without a service worker; this is a progressive enhancement,
 // never a requirement to load the page.
+//
+// v3.1.1 in-app update system: updateViaCache 'none' makes every update
+// check (the browser's own, and Settings' registration.update()) fetch
+// the deployed service-worker.js fresh, never from the HTTP cache. This
+// page never reloads itself on a worker change -- only Settings' explicit
+// "Perbarui Sekarang / Update Now" does (js/services/app-update-service.js).
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+    navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' }).catch(() => {});
   });
 }
 </script>

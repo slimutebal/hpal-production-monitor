@@ -27,6 +27,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
 
+import { APP_VERSION } from '../js/shared/app-version.js';
+import { SW_MESSAGE } from '../js/services/app-update-service.js';
+import { computeAssetRevision, extractServiceWorkerConstant, readAssetBytes } from './tools/sw-release-revision.mjs';
+
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const swSource = readFileSync(path.join(ROOT, 'service-worker.js'), 'utf8');
 const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -53,29 +57,54 @@ function extractAppShell(source) {
   return [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
 }
 
-function extractCacheName(source) {
-  const match = source.match(/const CACHE_NAME = '([^']+)';/);
-  assert.ok(match, 'service-worker.js must define a const CACHE_NAME string');
-  return match[1];
-}
-
 const appShell = extractAppShell(swSource);
-const cacheName = extractCacheName(swSource);
+const swAppVersion = extractServiceWorkerConstant(swSource, 'APP_VERSION');
+const swAssetRevision = extractServiceWorkerConstant(swSource, 'ASSET_REVISION');
+const swCachePrefix = extractServiceWorkerConstant(swSource, 'CACHE_PREFIX');
+const cacheName = `${swCachePrefix}shell-${swAppVersion}-${swAssetRevision}`;
 
-describe('V3.0.1. Cache version bumped for the DAP/EXW split-YTD Report release', () => {
-  test('CACHE_NAME reflects the V3.0.1 release, not V2.4.1, V2.5.x, or V3.0.0', () => {
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.4.1-mobile-input-sticky');
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.0-operational-continuity');
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.1-offline-first-startup');
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.2-report-excel-hotfix');
-    assert.notEqual(cacheName, 'hpal-production-monitor-v2.5.3-recommendation-worker');
-    assert.notEqual(cacheName, 'hpal-production-monitor-v3.0.0-scalable-recommendation-engine');
-    assert.match(cacheName, /^hpal-production-monitor-v3\.0\.1/);
+// v3.1.1 -- replaces the old hand-bumped CACHE_NAME string literal (which
+// v3.1.0 forgot to bump, so installed PWAs never noticed that release).
+describe('v3.1.1. Release identity: generated, canonical, and tied to every precached asset', () => {
+  test('service-worker.js APP_VERSION mirrors the canonical js/shared/app-version.js APP_VERSION', () => {
+    assert.equal(swAppVersion, APP_VERSION);
   });
 
-  test('CACHE_NAME is declared exactly once (a single version source, not two)', () => {
+  test('ASSET_REVISION matches the current content of every APP_SHELL file (run tests/tools/sync-service-worker-release.mjs if this fails)', () => {
+    const expected = computeAssetRevision(ROOT, appShell);
+    assert.equal(
+      swAssetRevision,
+      expected,
+      `service-worker.js ASSET_REVISION is stale (${swAssetRevision} != ${expected}). A precached asset changed without the worker changing, so installed PWAs would never detect this release. Run: node tests/tools/sync-service-worker-release.mjs`,
+    );
+  });
+
+  test('the asset revision is sensitive to asset content and insensitive to CRLF/LF checkout differences', () => {
+    const base = computeAssetRevision(ROOT, ['./js/shared/app-version.js']);
+    assert.match(base, /^[0-9a-f]{12}$/);
+    assert.notEqual(base, computeAssetRevision(ROOT, ['./js/shared/ore-classification.js']));
+    const lf = readAssetBytes(ROOT, './js/shared/app-version.js');
+    assert.equal(lf.includes(0x0d), false, 'text assets are hashed with LF line endings');
+  });
+
+  test('CACHE_NAME is declared exactly once and derived from CACHE_PREFIX + APP_VERSION + ASSET_REVISION (no second hand-maintained version)', () => {
     const occurrences = [...swSource.matchAll(/const CACHE_NAME = /g)];
     assert.equal(occurrences.length, 1);
+    assert.match(swSource, /const CACHE_NAME = `\$\{CACHE_PREFIX\}shell-\$\{APP_VERSION\}-\$\{ASSET_REVISION\}`;/);
+    assert.equal(swCachePrefix, 'hpal-production-monitor-');
+    assert.notEqual(cacheName, 'hpal-production-monitor-v3.0.1-report-dap-exw-ytd');
+  });
+
+  test('message types are identical to js/services/app-update-service.js SW_MESSAGE', () => {
+    assert.equal(extractServiceWorkerConstant(swSource, 'SW_MESSAGE_SKIP_WAITING'), SW_MESSAGE.SKIP_WAITING);
+    assert.equal(extractServiceWorkerConstant(swSource, 'SW_MESSAGE_GET_VERSION'), SW_MESSAGE.GET_VERSION);
+    assert.equal(extractServiceWorkerConstant(swSource, 'SW_MESSAGE_VERSION'), SW_MESSAGE.VERSION);
+  });
+
+  test('the update service module (imported by Settings) is precached for offline startup', () => {
+    assert.ok(appShell.includes('./js/services/app-update-service.js'));
+    const settingsSource = readFileSync(path.join(ROOT, 'js', 'pages', 'settings', 'settings-page.js'), 'utf8');
+    assert.match(settingsSource, /from '\.\.\/\.\.\/services\/app-update-service\.js'/);
   });
 });
 
@@ -284,21 +313,24 @@ describe('V3.0 Phase 7C -- Worker module graph is fully offline-cacheable, walke
   });
 });
 
-describe('23/28. Offline shell behavior and cache policy preserved', () => {
-  test('install handler still caches the full APP_SHELL and calls skipWaiting()', () => {
-    assert.match(swSource, /cache\.addAll\(APP_SHELL\)/);
-    assert.match(swSource, /self\.skipWaiting\(\)/);
+describe('23/28. Offline shell behavior and cache policy', () => {
+  test('install precaches the full APP_SHELL, and skipWaiting() is called only conditionally (migration) or on the user\'s SKIP_WAITING message', () => {
+    assert.match(swSource, /cache\.addAll\(APP_SHELL\.map\(\(url\) => new Request\(url, \{ cache: 'reload' \}\)\)\)/);
+    const codeOnly = stripLineComments(swSource);
+    const skipWaitingCalls = codeOnly.match(/self\.skipWaiting\(\)/g) || [];
+    assert.equal(skipWaitingCalls.length, 2, 'exactly two call sites: the legacy-migration branch of install, and the SKIP_WAITING message');
+    assert.match(codeOnly, /if \(!waitForUser\) await self\.skipWaiting\(\);/);
+    assert.doesNotMatch(codeOnly, /\.then\(\(\) => self\.skipWaiting\(\)\)/, 'install must no longer activate unconditionally');
   });
 
-  test('activate handler still deletes every cache key other than the current CACHE_NAME (old caches cleaned up automatically)', () => {
-    const activateBlock = swSource.match(/self\.addEventListener\('activate'[\s\S]*?\}\);/);
-    assert.ok(activateBlock);
-    assert.match(activateBlock[0], /key\s*!==\s*CACHE_NAME/);
-    assert.match(activateBlock[0], /caches\.delete/);
-    assert.match(activateBlock[0], /self\.clients\.claim\(\)/);
+  test('activate deletes only this app\'s other shell caches (CACHE_PREFIX), then claims clients', () => {
+    const activateBody = swSource.slice(swSource.indexOf('async function handleActivate()'), swSource.indexOf("self.addEventListener('install'"));
+    assert.match(activateBody, /key\.startsWith\(CACHE_PREFIX\) && key !== CACHE_NAME/);
+    assert.match(activateBody, /caches\.delete/);
+    assert.match(activateBody, /self\.clients\.claim\(\)/);
   });
 
-  test('cross-origin requests are never cached -- fetched directly and returned, regardless of Calculate/PWA changes', () => {
+  test('cross-origin requests are never cached -- fetched directly and returned', () => {
     assert.match(swSource, /requestUrl\.origin\s*!==\s*self\.location\.origin/);
     const crossOriginBlock = swSource.match(/if \(requestUrl\.origin !== self\.location\.origin\) \{[\s\S]*?\}/);
     assert.ok(crossOriginBlock);
@@ -310,226 +342,369 @@ describe('23/28. Offline shell behavior and cache policy preserved', () => {
     assert.match(swSource, /request\.method\s*!==\s*'GET'/);
   });
 
-  test("V2.5.1: navigation is now LOCAL-FIRST, not network-first (startup audit Root Cause A) -- the cached index.html key/identity is preserved", () => {
-    const navBlock = swSource.match(/request\.mode === 'navigate'[\s\S]*?return;\s*\n\s*\}/);
-    assert.ok(navBlock);
-    // Same cache identity as before (and as APP_SHELL's own install-time
-    // entry) -- this task's Section 5: never a second/duplicate key.
-    const indexHtmlKeyOccurrences = navBlock[0].match(/'\.\/index\.html'/g) || [];
-    assert.ok(indexHtmlKeyOccurrences.length >= 2, 'expected both the cache read and the cache write to use the literal \'./index.html\' key');
-    // The cache lookup must happen, and the response must be usable,
-    // BEFORE the fetch() promise is awaited/resolved -- i.e. cache-first,
-    // not network-first. A `caches.match(...)` that is `await`ed ahead of
-    // any `fetch(request)` call in the same block is the source-level
-    // signature of that ordering.
-    const cacheMatchIdx = navBlock[0].indexOf("caches.match('./index.html')");
-    const fetchIdx = navBlock[0].indexOf('fetch(request)');
-    assert.ok(cacheMatchIdx !== -1 && fetchIdx !== -1);
-    assert.ok(cacheMatchIdx < fetchIdx, 'the cache lookup must be issued before the network fetch, not after (cache-first, not network-first)');
-    // The background refresh must be handed to event.waitUntil(), and the
-    // cached response must be returned WITHOUT awaiting it.
-    assert.match(navBlock[0], /event\.waitUntil\(/);
-    const waitUntilIdx = navBlock[0].indexOf('event.waitUntil(');
-    const returnCachedIdx = navBlock[0].indexOf('return cachedResponse;');
-    assert.ok(waitUntilIdx !== -1 && returnCachedIdx !== -1 && waitUntilIdx < returnCachedIdx);
+  test('13. the worker never touches persisted user data: no localStorage, IndexedDB, clear(), unregister(), or blanket cache deletion', () => {
+    const codeOnly = stripLineComments(swSource);
+    assert.doesNotMatch(codeOnly, /localStorage/);
+    assert.doesNotMatch(codeOnly, /indexedDB/i);
+    assert.doesNotMatch(codeOnly, /\.clear\(\)/);
+    assert.doesNotMatch(codeOnly, /unregister/);
+    // Every caches.delete() is scoped: either this install's own new cache
+    // on failure, or a CACHE_PREFIX-filtered key on activate.
+    const deletes = codeOnly.match(/caches\.delete\([^)]*\)/g) || [];
+    assert.deepEqual(deletes.sort(), ['caches.delete(CACHE_NAME)', 'caches.delete(key)'].sort());
   });
 });
 
 /* ============================================================
-   V2.5.1 -- BEHAVIORAL proof of the new local-first navigation contract
-   (this task's Section 4/43), not just a source-text pattern match.
-   service-worker.js still cannot be `import`ed under Node (it references
-   `self`/`caches`/`clients`), so the fetch handler's actual arrow-function
-   BODY is extracted verbatim (brace-matching, the same technique
-   tests/monitor-contractor-bridge.test.mjs already uses for index.html's
-   classic-script functions) and evaluated via Node's vm module against a
-   minimal, purpose-built mock of `self`/`caches`/`fetch` -- this actually
-   RUNS the real, shipped fetch-handling logic, not a re-implementation of
-   it.
+   BEHAVIORAL proof of the worker lifecycle (install / activate / message /
+   fetch). service-worker.js is a classic worker script that cannot be
+   `import`ed under Node, so the WHOLE real script is evaluated in a vm
+   context against a small in-memory mock of self / Cache Storage / fetch /
+   Request / Response -- this runs the shipped handlers themselves, not a
+   re-implementation of them.
 ============================================================ */
-describe('4/43. Local-first navigation -- behavioral proof', () => {
-  function extractFetchHandlerBody(source) {
-    const marker = "self.addEventListener('fetch', (event) => {";
-    const startIdx = source.indexOf(marker);
-    assert.ok(startIdx !== -1, "expected self.addEventListener('fetch', (event) => { ... in service-worker.js");
-    const bodyStart = startIdx + marker.length;
-    let depth = 1;
-    let i = bodyStart;
-    for (; i < source.length && depth > 0; i++) {
-      if (source[i] === '{') depth++;
-      else if (source[i] === '}') depth--;
-    }
-    assert.equal(depth, 0, 'unbalanced braces extracting the fetch handler body');
-    return source.slice(bodyStart, i - 1);
+const ORIGIN = 'https://example.test';
+const SW_URL = `${ORIGIN}/service-worker.js`;
+const LEGACY_CACHE = 'hpal-production-monitor-v3.0.1-report-dap-exw-ytd';
+
+function toUrl(key) {
+  return new URL(typeof key === 'string' ? key : key.url, SW_URL).href;
+}
+
+class MockResponse {
+  constructor(body = '', init = {}) {
+    this._body = body;
+    this.status = init.status ?? 200;
+    this.type = init.type ?? 'basic';
   }
+  get ok() { return this.status >= 200 && this.status < 300; }
+  async text() { return String(this._body); }
+  clone() { return new MockResponse(this._body, { status: this.status, type: this.type }); }
+  static error() { return new MockResponse('', { status: 0, type: 'error' }); }
+}
 
-  const fetchHandlerBody = extractFetchHandlerBody(swSource);
+class MockRequest {
+  constructor(url, init = {}) {
+    this.url = toUrl(url);
+    this.cache = init.cache ?? 'default';
+    this.method = init.method ?? 'GET';
+    this.mode = init.mode ?? 'cors';
+  }
+}
 
-  // A tiny in-memory Cache/CacheStorage mock -- just enough surface
-  // (`match`/`open`→`{put}`) for the real fetch handler body to run
-  // against, keyed by the exact string/URL the handler itself passes in.
-  function createMockCaches(initialEntries) {
-    const store = new Map(Object.entries(initialEntries || {}));
-    const putCalls = [];
-    const cache = {
-      put: async (key, response) => {
-        const k = typeof key === 'string' ? key : key.url;
-        store.set(k, response);
-        putCalls.push({ key: k, response });
-      },
-    };
+function createCacheStorage(initial = {}) {
+  const caches = new Map();
+  const makeCache = () => {
+    const store = new Map();
     return {
-      match: async (key) => store.get(typeof key === 'string' ? key : key.url),
-      open: async () => cache,
-      _store: store,
-      _putCalls: putCalls,
+      store,
+      async match(key) { return store.get(toUrl(key)); },
+      async put(key, response) { store.set(toUrl(key), response); },
+      async addAll(requests) {
+        const responses = [];
+        for (const request of requests) {
+          const response = await sandboxFetch(request);
+          if (!response || !response.ok) throw new TypeError(`addAll: bad response for ${request.url}`);
+          responses.push([request, response]);
+        }
+        responses.forEach(([request, response]) => store.set(toUrl(request), response));
+      },
     };
+  };
+  let sandboxFetch = null;
+  for (const [name, entries] of Object.entries(initial)) {
+    const cache = makeCache();
+    for (const [key, value] of Object.entries(entries)) cache.store.set(toUrl(key), value);
+    caches.set(name, cache);
+  }
+  return {
+    _caches: caches,
+    _setFetch(fn) { sandboxFetch = fn; },
+    async open(name) {
+      if (!caches.has(name)) caches.set(name, makeCache());
+      return caches.get(name);
+    },
+    async has(name) { return caches.has(name); },
+    async keys() { return [...caches.keys()]; },
+    async delete(name) { return caches.delete(name); },
+    async match(key) {
+      for (const cache of caches.values()) {
+        const hit = await cache.match(key);
+        if (hit) return hit;
+      }
+      return undefined;
+    },
+  };
+}
+
+// Simulates the deployed site: app-version.js carries `appVersionText`
+// (defaults to the real file), every other asset a tagged body.
+function deployedSite({ appVersionText = readFileSync(path.join(ROOT, 'js', 'shared', 'app-version.js'), 'utf8'), failPath = null } = {}) {
+  const requests = [];
+  const fetchImpl = async (request) => {
+    requests.push(request);
+    const { pathname } = new URL(request.url);
+    if (failPath && pathname === failPath) throw new TypeError('Failed to fetch');
+    if (pathname === '/js/shared/app-version.js') return new MockResponse(appVersionText);
+    return new MockResponse(`network:${pathname}`);
+  };
+  return { fetchImpl, requests };
+}
+
+function loadServiceWorker({ cacheEntries = {}, activeWorker = null, fetchImpl = deployedSite().fetchImpl } = {}) {
+  const handlers = {};
+  const calls = { skipWaiting: 0, claim: 0 };
+  const caches = createCacheStorage(cacheEntries);
+  caches._setFetch((request) => sandbox.fetch(request));
+  const sandbox = {
+    self: {
+      location: { origin: ORIGIN, href: SW_URL },
+      registration: { active: activeWorker },
+      addEventListener: (type, fn) => { handlers[type] = fn; },
+      skipWaiting: async () => { calls.skipWaiting += 1; },
+      clients: { claim: async () => { calls.claim += 1; } },
+    },
+    caches,
+    fetch: fetchImpl,
+    Request: MockRequest,
+    Response: MockResponse,
+    URL,
+    console,
+  };
+  vm.runInContext(swSource, vm.createContext(sandbox));
+
+  async function dispatchExtendable(type, extra = {}) {
+    const promises = [];
+    handlers[type]({ ...extra, waitUntil: (p) => promises.push(Promise.resolve(p)) });
+    return Promise.all(promises);
   }
 
-  function createMockResponse(tag, status = 200) {
-    const resp = { status, type: 'basic', _tag: tag };
-    resp.clone = () => ({ ...resp });
-    return resp;
-  }
-
-  // Runs the real fetch handler body against a mock request/fetch/caches,
-  // resolving once respondWith() has been called, and returns both the
-  // eventual respondWith() value and every waitUntil() promise (already
-  // settled, failures swallowed) so the test can assert on both the
-  // immediate response AND the background work.
-  async function runFetchHandler({ request, fetchImpl, cacheEntries }) {
-    const mockCaches = createMockCaches(cacheEntries);
-    let respondWithValue;
-    let respondWithSettled = false;
-    const waitUntilPromises = [];
-    const event = {
+  async function dispatchFetch(request) {
+    let responsePromise = null;
+    const waitUntil = [];
+    handlers.fetch({
       request,
-      respondWith(promiseOrValue) {
-        respondWithValue = Promise.resolve(promiseOrValue).then((v) => {
-          respondWithSettled = true;
-          return v;
-        });
-      },
-      waitUntil(promiseOrValue) {
-        waitUntilPromises.push(Promise.resolve(promiseOrValue).catch(() => {}));
-      },
-    };
-    const sandbox = {
-      event,
-      self: { location: { origin: 'https://example.test' } },
-      caches: mockCaches,
-      fetch: fetchImpl,
-      URL,
-      console,
-      // CACHE_NAME is a free variable the real handler body closes over
-      // from service-worker.js's own module scope (it's declared outside
-      // the extracted fetch-handler body) -- reuse the real, extracted
-      // value so this sandbox matches actual runtime scoping exactly.
-      CACHE_NAME: cacheName,
-    };
-    const context = vm.createContext(sandbox);
-    // Wrapped in an IIFE: the extracted body is a function BODY (it
-    // contains top-level `return;` statements from the real handler,
-    // e.g. the non-GET/early-return guard), which is only legal syntax
-    // inside an actual function, not at vm.runInContext()'s top level.
-    vm.runInContext(`(function(){\n${fetchHandlerBody}\n})();`, context);
-    const response = await respondWithValue;
-    return { response, respondWithSettled, waitUntilPromises, mockCaches };
+      respondWith: (p) => { responsePromise = Promise.resolve(p); },
+      waitUntil: (p) => waitUntil.push(Promise.resolve(p).catch(() => {})),
+    });
+    const response = responsePromise ? await responsePromise : undefined;
+    await Promise.all(waitUntil);
+    await new Promise((resolve) => setImmediate(resolve));
+    return { response, respondedWith: responsePromise !== null };
   }
 
-  function navigateRequest(url = 'https://example.test/') {
+  return {
+    handlers,
+    calls,
+    caches,
+    sandbox,
+    install: () => dispatchExtendable('install'),
+    activate: () => dispatchExtendable('activate'),
+    message: (data, ports = []) => dispatchExtendable('message', { data, ports }),
+    fetch: dispatchFetch,
+  };
+}
+
+const ACTIVE_WORKER = { state: 'activated', scriptURL: SW_URL };
+const UPDATER_MARKER = './__hpal-sw-updater-active__';
+const PREVIOUS_UPDATER_CACHE = 'hpal-production-monitor-shell-v3.1.0-aaaaaaaaaaaa';
+
+describe('14. Install: complete, fresh, verified precache', () => {
+  test('first install precaches every APP_SHELL entry into this release\'s cache, bypassing the HTTP cache', async () => {
+    const site = deployedSite();
+    const sw = loadServiceWorker({ fetchImpl: site.fetchImpl });
+    await sw.install();
+    const cache = sw.caches._caches.get(cacheName);
+    assert.ok(cache, `expected cache ${cacheName}`);
+    for (const entry of appShell) {
+      assert.ok(cache.store.has(toUrl(entry)), `missing precached ${entry}`);
+    }
+    assert.equal(site.requests.length, appShell.length);
+    assert.ok(site.requests.every((r) => r.cache === 'reload'), 'every precache request must use cache: reload');
+  });
+
+  test('9. stale/half-propagated deployment: precached app-version.js does not match APP_VERSION -> install fails, its new cache is removed, the active release is untouched', async () => {
+    const site = deployedSite({ appVersionText: "export const APP_VERSION = 'v3.0.1';" });
+    const activeCache = { './index.html': new MockResponse('old-index'), [UPDATER_MARKER]: new MockResponse('v3.1.0') };
+    const sw = loadServiceWorker({ fetchImpl: site.fetchImpl, activeWorker: ACTIVE_WORKER, cacheEntries: { [PREVIOUS_UPDATER_CACHE]: activeCache } });
+    await assert.rejects(sw.install(), /does not declare/);
+    assert.equal(sw.caches._caches.has(cacheName), false);
+    assert.equal(sw.caches._caches.has(PREVIOUS_UPDATER_CACHE), true);
+    assert.equal(sw.calls.skipWaiting, 0);
+  });
+
+  test('9b. a network failure during precache fails the install without partial writes or touching other caches', async () => {
+    const site = deployedSite({ failPath: '/js/pages/report/report-utils.js' });
+    const sw = loadServiceWorker({ fetchImpl: site.fetchImpl, activeWorker: ACTIVE_WORKER, cacheEntries: { [PREVIOUS_UPDATER_CACHE]: { [UPDATER_MARKER]: new MockResponse('v3.1.0') } } });
+    await assert.rejects(sw.install());
+    assert.equal(sw.caches._caches.has(cacheName), false);
+    assert.equal(sw.caches._caches.has(PREVIOUS_UPDATER_CACHE), true);
+  });
+
+  test('a failed install never deletes a pre-existing cache with the same release identity (it may be the active one)', async () => {
+    const site = deployedSite({ failPath: '/index.html' });
+    const sw = loadServiceWorker({ fetchImpl: site.fetchImpl, activeWorker: ACTIVE_WORKER, cacheEntries: { [cacheName]: { './index.html': new MockResponse('active-index'), [UPDATER_MARKER]: new MockResponse(APP_VERSION) } } });
+    await assert.rejects(sw.install());
+    assert.equal(sw.caches._caches.has(cacheName), true);
+  });
+});
+
+describe('8/10. Waiting for the user -- no unexpected activation', () => {
+  test('8. an updater-aware worker is active: the new release installs and WAITS (no skipWaiting)', async () => {
+    const sw = loadServiceWorker({
+      activeWorker: ACTIVE_WORKER,
+      cacheEntries: { [PREVIOUS_UPDATER_CACHE]: { './index.html': new MockResponse('old'), [UPDATER_MARKER]: new MockResponse('v3.1.0') } },
+    });
+    await sw.install();
+    assert.equal(sw.calls.skipWaiting, 0);
+  });
+
+  test('migration: the active worker is a legacy pre-updater release (no marker) -> one-time self-activation, since its page has no Update Now button', async () => {
+    const sw = loadServiceWorker({
+      activeWorker: ACTIVE_WORKER,
+      cacheEntries: { [LEGACY_CACHE]: { './index.html': new MockResponse('legacy-index') } },
+    });
+    await sw.install();
+    assert.equal(sw.calls.skipWaiting, 1);
+  });
+
+  test('first-ever install (no active worker) activates immediately as before', async () => {
+    const sw = loadServiceWorker();
+    await sw.install();
+    assert.equal(sw.calls.skipWaiting, 1);
+  });
+
+  test('11. SKIP_WAITING message (sent only by Settings\' Update Now) activates the waiting worker; unknown messages do nothing', async () => {
+    const sw = loadServiceWorker();
+    await sw.message({ type: 'SOMETHING_ELSE' });
+    assert.equal(sw.calls.skipWaiting, 0);
+    await sw.message({ type: SW_MESSAGE.SKIP_WAITING });
+    assert.equal(sw.calls.skipWaiting, 1);
+  });
+
+  test('2. GET_VERSION answers with this worker\'s APP_VERSION over the supplied port', async () => {
+    const sw = loadServiceWorker();
+    const received = [];
+    await sw.message({ type: SW_MESSAGE.GET_VERSION }, [{ postMessage: (m) => received.push(m) }]);
+    // JSON round-trip: the object was created inside the vm realm.
+    assert.deepEqual(JSON.parse(JSON.stringify(received)), [{ type: SW_MESSAGE.VERSION, version: APP_VERSION, assetRevision: swAssetRevision }]);
+  });
+});
+
+describe('13. Activate: replaces obsolete shell caches only, never user or foreign data', () => {
+  test('deletes this app\'s legacy and previous-release shell caches, keeps foreign caches, marks itself updater-aware, claims clients', async () => {
+    const sw = loadServiceWorker({
+      cacheEntries: {
+        [LEGACY_CACHE]: { './index.html': new MockResponse('legacy') },
+        [PREVIOUS_UPDATER_CACHE]: { './index.html': new MockResponse('prev') },
+        'another-app-runtime-cache': { '/data.json': new MockResponse('{}') },
+      },
+    });
+    await sw.install();
+    await sw.activate();
+    assert.deepEqual([...sw.caches._caches.keys()].sort(), [cacheName, 'another-app-runtime-cache'].sort());
+    const marker = await sw.caches._caches.get(cacheName).match(UPDATER_MARKER);
+    assert.equal(await marker.text(), APP_VERSION);
+    assert.equal(sw.calls.claim, 1);
+  });
+
+  test('after activation, the NEXT release sees the marker and waits for the user', async () => {
+    const first = loadServiceWorker();
+    await first.install();
+    await first.activate();
+    const carriedOver = Object.fromEntries([...first.caches._caches.entries()].map(([name, cache]) => [name, Object.fromEntries(cache.store)]));
+    const next = loadServiceWorker({ activeWorker: ACTIVE_WORKER, cacheEntries: carriedOver });
+    await next.install();
+    assert.equal(next.calls.skipWaiting, 0);
+  });
+});
+
+describe('4/43. Local-first navigation and cache-first assets -- behavioral proof', () => {
+  function navigateRequest(url = `${ORIGIN}/`) {
     return { method: 'GET', mode: 'navigate', url };
   }
 
-  test('A. cached index exists: the cached response is returned WITHOUT waiting for the network (a hung fetch() never delays it)', async () => {
-    const cached = createMockResponse('cached');
-    let fetchStarted = false;
-    const hungFetch = () => {
-      fetchStarted = true;
-      return new Promise(() => {}); // never resolves -- simulates a hung/very slow network
-    };
-
-    const { response, respondWithSettled } = await runFetchHandler({
-      request: navigateRequest(),
-      fetchImpl: hungFetch,
-      cacheEntries: { './index.html': cached },
+  test('A. cached index exists in this release\'s cache: served immediately, the network is not awaited (a hung fetch never delays it)', async () => {
+    let fetchCalls = 0;
+    const sw = loadServiceWorker({
+      fetchImpl: () => { fetchCalls += 1; return new Promise(() => {}); },
+      cacheEntries: { [cacheName]: { './index.html': new MockResponse('cached-index') } },
     });
-
-    assert.equal(respondWithSettled, true);
-    assert.equal(response._tag, 'cached');
-    assert.equal(fetchStarted, true, 'the background network refresh must still have been started (independently requested), just never awaited for the response');
+    const { response } = await sw.fetch(navigateRequest());
+    assert.equal(await response.text(), 'cached-index');
+    assert.equal(fetchCalls, 0);
   });
 
-  test('B. network refresh runs in the background (event.waitUntil) and updates the SAME cache entry once it resolves', async () => {
-    const cached = createMockResponse('cached');
-    const fresh = createMockResponse('fresh');
-    const fetchImpl = async () => fresh;
-
-    const { waitUntilPromises, mockCaches } = await runFetchHandler({
-      request: navigateRequest(),
-      fetchImpl,
-      cacheEntries: { './index.html': cached },
+  test('B. navigation never writes a freshly deployed index.html into the running release\'s cache (no mixed-version shell)', async () => {
+    const sw = loadServiceWorker({
+      fetchImpl: async () => new MockResponse('NEW-index'),
+      cacheEntries: { [cacheName]: { './index.html': new MockResponse('cached-index') } },
     });
-
-    assert.equal(waitUntilPromises.length, 1, 'the background refresh must be registered via event.waitUntil()');
-    await waitUntilPromises[0];
-    assert.equal(mockCaches._putCalls.length, 1);
-    assert.equal(mockCaches._putCalls[0].key, './index.html');
-    assert.equal(mockCaches._putCalls[0].response._tag, 'fresh');
+    await sw.fetch(navigateRequest());
+    const stored = await sw.caches._caches.get(cacheName).match('./index.html');
+    assert.equal(await stored.text(), 'cached-index');
   });
 
-  test('C. no cached index exists: falls back to the network (first-ever load / cleared cache)', async () => {
-    const fresh = createMockResponse('fresh');
-    const fetchImpl = async () => fresh;
-
-    const { response } = await runFetchHandler({
-      request: navigateRequest(),
-      fetchImpl,
-      cacheEntries: {},
-    });
-
-    assert.equal(response._tag, 'fresh');
+  test('C. no cached index at all: falls back to the network (first-ever load)', async () => {
+    const sw = loadServiceWorker({ fetchImpl: async () => new MockResponse('network-index') });
+    const { response } = await sw.fetch(navigateRequest());
+    assert.equal(await response.text(), 'network-index');
   });
 
-  test('D. network failure WITH a cached index: the cached index is still returned, the failure is swallowed (never an uncaught rejection)', async () => {
-    const cached = createMockResponse('cached');
-    const fetchImpl = async () => { throw new Error('network down'); };
-
-    const { response, waitUntilPromises } = await runFetchHandler({
-      request: navigateRequest(),
-      fetchImpl,
-      cacheEntries: { './index.html': cached },
+  test('D. offline with no index in this release\'s cache: any cached index is still served rather than an error', async () => {
+    const sw = loadServiceWorker({
+      fetchImpl: async () => { throw new TypeError('offline'); },
+      cacheEntries: { [LEGACY_CACHE]: { './index.html': new MockResponse('legacy-index') } },
     });
-
-    assert.equal(response._tag, 'cached');
-    // The failed background refresh must not reject -- runFetchHandler's
-    // waitUntil tracking already .catch()es it the same way a real SW
-    // runtime would need to for an unhandled rejection not to surface;
-    // awaiting it here must not throw.
-    await assert.doesNotReject(async () => { await waitUntilPromises[0]; });
+    const { response } = await sw.fetch(navigateRequest());
+    assert.equal(await response.text(), 'legacy-index');
   });
 
   test('cross-origin requests still bypass the cache entirely (Google Apps Script contractor sync must never be cached)', async () => {
-    const fetchImpl = async () => createMockResponse('cross-origin-response');
-    const { response, mockCaches } = await runFetchHandler({
-      request: { method: 'GET', mode: 'no-cors', url: 'https://script.google.com/macros/s/xyz/exec' },
-      fetchImpl,
-      cacheEntries: {},
-    });
-    assert.equal(response._tag, 'cross-origin-response');
-    assert.equal(mockCaches._putCalls.length, 0);
+    const sw = loadServiceWorker({ fetchImpl: async () => new MockResponse('cross-origin-response') });
+    const { response } = await sw.fetch({ method: 'GET', mode: 'no-cors', url: 'https://script.google.com/macros/s/xyz/exec' });
+    assert.equal(await response.text(), 'cross-origin-response');
+    assert.equal(sw.caches._caches.size, 0);
   });
 
-  test('non-navigation same-origin GET requests keep the pre-existing cache-first strategy (static assets unaffected by this task)', async () => {
-    const cached = createMockResponse('cached-asset');
-    const fetchImpl = async () => createMockResponse('network-asset');
-    const { response, mockCaches } = await runFetchHandler({
-      request: { method: 'GET', mode: 'cors', url: 'https://example.test/js/app.js' },
-      fetchImpl,
-      cacheEntries: { 'https://example.test/js/app.js': cached },
+  test('non-GET requests are not intercepted', async () => {
+    const sw = loadServiceWorker();
+    const { respondedWith } = await sw.fetch({ method: 'POST', mode: 'cors', url: `${ORIGIN}/x` });
+    assert.equal(respondedWith, false);
+  });
+
+  test('14. static assets: cache hit in this release\'s cache is served with no network fetch', async () => {
+    let fetchCalls = 0;
+    const sw = loadServiceWorker({
+      fetchImpl: async () => { fetchCalls += 1; return new MockResponse('network-asset'); },
+      cacheEntries: { [cacheName]: { './js/app.js': new MockResponse('cached-asset') } },
     });
-    assert.equal(response._tag, 'cached-asset');
-    assert.equal(mockCaches._putCalls.length, 0, 'a cache hit must never trigger a redundant network fetch/cache.put for static assets');
+    const { response } = await sw.fetch({ method: 'GET', mode: 'cors', url: `${ORIGIN}/js/app.js` });
+    assert.equal(await response.text(), 'cached-asset');
+    assert.equal(fetchCalls, 0);
+  });
+
+  test('static assets are never served from ANOTHER release\'s cache (no old-module/new-shell mixing)', async () => {
+    const sw = loadServiceWorker({
+      fetchImpl: async () => new MockResponse('network-asset'),
+      cacheEntries: { [LEGACY_CACHE]: { './js/app.js': new MockResponse('legacy-asset') } },
+    });
+    const { response } = await sw.fetch({ method: 'GET', mode: 'cors', url: `${ORIGIN}/js/app.js` });
+    assert.equal(await response.text(), 'network-asset');
+  });
+
+  test('14b. offline after install: every precached APP_SHELL file is served from cache with zero network access', async () => {
+    const online = loadServiceWorker();
+    await online.install();
+    await online.activate();
+    const precached = Object.fromEntries([...online.caches._caches.entries()].map(([name, cache]) => [name, Object.fromEntries(cache.store)]));
+    const offline = loadServiceWorker({ fetchImpl: async () => { throw new TypeError('offline'); }, cacheEntries: precached });
+    for (const entry of appShell.filter((e) => e !== './')) {
+      const { response } = await offline.fetch({ method: 'GET', mode: 'cors', url: toUrl(entry) });
+      assert.ok(response, `no offline response for ${entry}`);
+    }
+    const { response: nav } = await offline.fetch(navigateRequest());
+    assert.ok(nav, 'navigation must work offline');
   });
 });
 
@@ -552,8 +727,17 @@ describe('26. Manifest / installability unchanged and still valid', () => {
 describe('PWA registration (V2.4 Phase 8 -- previously missing)', () => {
   test('index.html registers the service worker, feature-detected and deferred to window load', () => {
     assert.match(indexHtml, /'serviceWorker' in navigator/);
-    assert.match(indexHtml, /navigator\.serviceWorker\.register\('\.\/service-worker\.js'\)/);
+    assert.match(indexHtml, /navigator\.serviceWorker\.register\('\.\/service-worker\.js'/);
     assert.match(indexHtml, /addEventListener\('load'/);
+  });
+
+  test('v3.1.1: registered with updateViaCache: \'none\' so update checks always fetch the deployed worker fresh', () => {
+    assert.match(indexHtml, /navigator\.serviceWorker\.register\('\.\/service-worker\.js', \{ updateViaCache: 'none' \}\)/);
+  });
+
+  test('v3.1.1: index.html never reloads on a worker change by itself (no controllerchange auto-reload)', () => {
+    assert.doesNotMatch(indexHtml, /controllerchange/);
+    assert.doesNotMatch(indexHtml, /location\.reload\(/);
   });
 
   test('index.html links assets/css/calculate.css', () => {
